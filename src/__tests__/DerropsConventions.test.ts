@@ -297,8 +297,9 @@ describe('DerropsConventions', () => {
 
     it('type in name() overrides the default', () => {
       const oaspec = conventions.with({ domain: 'oaspec', type: 'openSearchIndex' })
-      expect(oaspec.name({ type: 'lambdaFunction', service: 'indexer', key: 'handler' }))
-        .toBe('acme--oaspec--indexer--handler')
+      expect(oaspec.name({ type: 'lambdaFunction', service: 'indexer', key: 'handler' })).toBe(
+        'acme--oaspec--indexer--handler',
+      )
     })
 
     it('with() without type preserves an existing default type', () => {
@@ -310,15 +311,18 @@ describe('DerropsConventions', () => {
     it('with() with a new type replaces the existing default', () => {
       const oaspec = conventions.with({ type: 'openSearchIndex' })
       const lambda = oaspec.with({ type: 'lambdaFunction' })
-      expect(lambda.name({ service: 'indexer', key: 'handler' })).toBe('acme--platform--indexer--handler')
+      expect(lambda.name({ service: 'indexer', key: 'handler' })).toBe(
+        'acme--platform--indexer--handler',
+      )
     })
 
     it('does not mutate the parent instance', () => {
       const oaspec = conventions.with({ domain: 'oaspec', type: 'openSearchIndex' })
       void oaspec
       // parent still requires type
-      expect(conventions.name({ type: 'lambdaFunction', service: 'api', key: 'handler' }))
-        .toBe('acme--platform--api--handler')
+      expect(conventions.name({ type: 'lambdaFunction', service: 'api', key: 'handler' })).toBe(
+        'acme--platform--api--handler',
+      )
     })
   })
 
