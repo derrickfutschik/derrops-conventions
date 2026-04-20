@@ -1,5 +1,5 @@
 {
-  "name": "derrops-conventions",
+  "name": "@derrops-conventions",
   "version": "0.1.0",
   "description": "Repeatable naming conventions for AWS resources following Derrops conventions",
   "private": false,

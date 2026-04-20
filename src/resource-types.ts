@@ -335,7 +335,7 @@ export const RESOURCE_TYPES = {
     global: false,
     segmentDelimiter: '--',
     wordDelimiter: '-',
-    segments: ['org', 'tenant', 'domain'],
+    segments: ['org', 'tenant', 'domain', 'entity'],
   },
 
   // ── Config / Secrets ─────────────────────────────────────────────────────

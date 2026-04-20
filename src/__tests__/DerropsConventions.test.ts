@@ -287,6 +287,41 @@ describe('DerropsConventions', () => {
     })
   })
 
+  describe('default type via with({ type })', () => {
+    const conventions = new DerropsConventions({ org: 'acme', env: 'dev', domain: 'platform' })
+
+    it('omits type from name() when default is set', () => {
+      const oaspec = conventions.with({ domain: 'oaspec', type: 'openSearchIndex' })
+      expect(oaspec.name({})).toBe('acme--oaspec')
+    })
+
+    it('type in name() overrides the default', () => {
+      const oaspec = conventions.with({ domain: 'oaspec', type: 'openSearchIndex' })
+      expect(oaspec.name({ type: 'lambdaFunction', service: 'indexer', key: 'handler' }))
+        .toBe('acme--oaspec--indexer--handler')
+    })
+
+    it('with() without type preserves an existing default type', () => {
+      const oaspec = conventions.with({ domain: 'oaspec', type: 'openSearchIndex' })
+      const prod = oaspec.with({ env: 'prod' })
+      expect(prod.name({})).toBe('acme--oaspec')
+    })
+
+    it('with() with a new type replaces the existing default', () => {
+      const oaspec = conventions.with({ type: 'openSearchIndex' })
+      const lambda = oaspec.with({ type: 'lambdaFunction' })
+      expect(lambda.name({ service: 'indexer', key: 'handler' })).toBe('acme--platform--indexer--handler')
+    })
+
+    it('does not mutate the parent instance', () => {
+      const oaspec = conventions.with({ domain: 'oaspec', type: 'openSearchIndex' })
+      void oaspec
+      // parent still requires type
+      expect(conventions.name({ type: 'lambdaFunction', service: 'api', key: 'handler' }))
+        .toBe('acme--platform--api--handler')
+    })
+  })
+
   describe('openSearchIndex', () => {
     const c = new DerropsConventions({
       org: 'acme',
@@ -310,6 +345,20 @@ describe('DerropsConventions', () => {
     it('includes tenant between org and domain in silo model', () => {
       expect(c.with({ tenant: 't-a3f8b2' }).name({ type: 'openSearchIndex' })).toBe(
         'acme--t-a3f8b2--payments',
+      )
+    })
+  })
+
+  describe('openSearchIndexSavings', () => {
+    const c = new DerropsConventions({
+      org: 'acme',
+      domain: 'payments',
+      service: 'checkout-api',
+    })
+
+    it('uses org + domain segments with -- entity, delimiter', () => {
+      expect(c.name({ type: 'openSearchIndex', entity: 'transactions' })).toBe(
+        'acme--payments--transactions',
       )
     })
   })

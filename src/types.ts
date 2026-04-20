@@ -5,6 +5,7 @@ export type SegmentKey =
   | 'tenant'
   | 'domain'
   | 'service'
+  | 'entity'
   | 'partition'
   | 'key'
 
@@ -15,6 +16,7 @@ export interface Segments {
   tenant?: string
   domain?: string
   service?: string
+  entity?: string
   partition?: string
   key?: string
 }
