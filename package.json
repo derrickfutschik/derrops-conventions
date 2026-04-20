@@ -1,0 +1,37 @@
+{
+  "name": "derrops-conventions",
+  "version": "0.1.0",
+  "description": "Repeatable naming conventions for AWS resources following Derrops conventions",
+  "private": false,
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    }
+  },
+  "sideEffects": false,
+  "engines": {
+    "node": ">=18.17"
+  },
+  "scripts": {
+    "build": "tsup src/index.ts --format esm,cjs --dts --clean",
+    "dev": "tsc -w",
+    "test": "NODE_OPTIONS=--experimental-vm-modules jest",
+    "test:watch": "NODE_OPTIONS=--experimental-vm-modules jest --watch",
+    "test:coverage": "NODE_OPTIONS=--experimental-vm-modules jest --coverage"
+  },
+  "devDependencies": {
+    "@jest/globals": "*",
+    "@types/jest": "*",
+    "@types/node": "^22.7.8",
+    "jest": "*",
+    "ts-jest": "*",
+    "tsup": "^8.3.0",
+    "typescript": "^5.6.3"
+  }
+}
