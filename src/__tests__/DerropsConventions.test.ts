@@ -200,8 +200,14 @@ describe('DerropsConventions', () => {
         .domain(['payments', 'identity', 'platform'])
         .service(['checkout-api', 'auth-service'])
 
-      expect(c.name({ type: 'lambdaFunction', domain: 'payments', service: 'checkout-api', key: 'handler' }))
-        .toBe('acme--payments--checkout-api--handler')
+      expect(
+        c.name({
+          type: 'lambdaFunction',
+          domain: 'payments',
+          service: 'checkout-api',
+          key: 'handler',
+        }),
+      ).toBe('acme--payments--checkout-api--handler')
     })
 
     it('chaining domain() on the same key replaces the previous constraint', () => {
@@ -209,18 +215,24 @@ describe('DerropsConventions', () => {
         .domain(['payments', 'identity'])
         .domain(['analytics'])
 
-      expect(c.name({ type: 'lambdaFunction', domain: 'analytics', service: 'etl', key: 'job' }))
-        .toBe('acme--analytics--etl--job')
+      expect(
+        c.name({ type: 'lambdaFunction', domain: 'analytics', service: 'etl', key: 'job' }),
+      ).toBe('acme--analytics--etl--job')
     })
 
     it('with() preserves constraint type after helper', () => {
-      const base = new DerropsConventions({ org: 'acme' })
-        .domain(['payments', 'identity'])
+      const base = new DerropsConventions({ org: 'acme' }).domain(['payments', 'identity'])
 
       const prod = base.with({ env: 'prod' })
 
-      expect(prod.name({ type: 'lambdaFunction', domain: 'payments', service: 'checkout-api', key: 'handler' }))
-        .toBe('acme--payments--checkout-api--handler')
+      expect(
+        prod.name({
+          type: 'lambdaFunction',
+          domain: 'payments',
+          service: 'checkout-api',
+          key: 'handler',
+        }),
+      ).toBe('acme--payments--checkout-api--handler')
     })
 
     it('all segment helpers are available', () => {
@@ -234,29 +246,71 @@ describe('DerropsConventions', () => {
         .partition(['2024/01'])
         .key(['stripe-key'])
 
-      expect(c.name({ type: 's3Bucket', region: 'ap-southeast-2', env: 'prod', org: 'acme', domain: 'payments', service: 'checkout-api', key: 'stripe-key' }))
-        .toBe('ap-southeast-2--prod--acme--payments--checkout-api--stripe-key')
+      expect(
+        c.name({
+          type: 's3Bucket',
+          region: 'ap-southeast-2',
+          env: 'prod',
+          org: 'acme',
+          domain: 'payments',
+          service: 'checkout-api',
+          key: 'stripe-key',
+        }),
+      ).toBe('ap-southeast-2--prod--acme--payments--checkout-api--stripe-key')
     })
   })
 
   describe('constrain()', () => {
     it('variadic form still works for dynamic segment lists', () => {
       const segments = ['payments', 'identity'] as const
-      const c = new DerropsConventions({ org: 'acme' })
-        .constrain('domain', ...segments)
+      const c = new DerropsConventions({ org: 'acme' }).constrain('domain', ...segments)
 
-      expect(c.name({ type: 'lambdaFunction', domain: 'payments', service: 'api', key: 'handler' }))
-        .toBe('acme--payments--api--handler')
+      expect(
+        c.name({ type: 'lambdaFunction', domain: 'payments', service: 'api', key: 'handler' }),
+      ).toBe('acme--payments--api--handler')
     })
 
     it('helper and constrain() produce identical runtime output', () => {
-      const viaHelper = new DerropsConventions({ org: 'acme', domain: 'payments', service: 'api' })
-        .domain(['payments', 'identity'])
-      const viaConstrain = new DerropsConventions({ org: 'acme', domain: 'payments', service: 'api' })
-        .constrain('domain', 'payments', 'identity')
+      const viaHelper = new DerropsConventions({
+        org: 'acme',
+        domain: 'payments',
+        service: 'api',
+      }).domain(['payments', 'identity'])
+      const viaConstrain = new DerropsConventions({
+        org: 'acme',
+        domain: 'payments',
+        service: 'api',
+      }).constrain('domain', 'payments', 'identity')
 
       const opts = { type: 'lambdaFunction' as const, key: 'handler' }
       expect(viaHelper.name(opts)).toBe(viaConstrain.name(opts))
+    })
+  })
+
+  describe('openSearchIndex', () => {
+    const c = new DerropsConventions({
+      org: 'acme',
+      domain: 'payments',
+      service: 'checkout-api',
+    })
+
+    it('uses org + domain segments with -- delimiter', () => {
+      expect(c.name({ type: 'openSearchIndex' })).toBe('acme--payments')
+    })
+
+    it('service and key are excluded — fixed segments list is org + domain only', () => {
+      expect(c.name({ type: 'openSearchIndex', key: 'transactions' })).toBe('acme--payments')
+    })
+
+    it('omits region and env regardless of defaults', () => {
+      const withEnv = c.with({ region: 'ap-southeast-2', env: 'prod' })
+      expect(withEnv.name({ type: 'openSearchIndex' })).toBe('acme--payments')
+    })
+
+    it('includes tenant between org and domain in silo model', () => {
+      expect(c.with({ tenant: 't-a3f8b2' }).name({ type: 'openSearchIndex' })).toBe(
+        'acme--t-a3f8b2--payments',
+      )
     })
   })
 

@@ -333,8 +333,9 @@ export const RESOURCE_TYPES = {
   },
   openSearchIndex: {
     global: false,
-    segmentDelimiter: '/',
+    segmentDelimiter: '--',
     wordDelimiter: '-',
+    segments: ['org', 'tenant', 'domain'],
   },
 
   // ── Config / Secrets ─────────────────────────────────────────────────────

@@ -1,4 +1,12 @@
-export type SegmentKey = 'region' | 'env' | 'org' | 'tenant' | 'domain' | 'service' | 'partition' | 'key'
+export type SegmentKey =
+  | 'region'
+  | 'env'
+  | 'org'
+  | 'tenant'
+  | 'domain'
+  | 'service'
+  | 'partition'
+  | 'key'
 
 export interface Segments {
   region?: string
@@ -34,4 +42,3 @@ export interface ResourceTypeConfig {
   /** Prepend the segment delimiter at the start of the name (e.g. SSM `/acme/...`) */
   leadingDelimiter?: boolean
 }
-
