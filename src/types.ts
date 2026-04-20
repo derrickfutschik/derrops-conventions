@@ -11,6 +11,17 @@ export interface Segments {
   key?: string
 }
 
+/** Maps a subset of segment keys to narrowed string literal unions. */
+export type SegmentConstraints = Partial<Record<SegmentKey, string>>
+
+/**
+ * Resolves the segment interface for a given constraint map `C`.
+ * Keys present in `C` are narrowed to their literal union; all other keys remain `string`.
+ */
+export type ConstrainedSegments<C extends SegmentConstraints> = {
+  [K in SegmentKey]?: K extends keyof C ? C[K] : string
+}
+
 export interface ResourceTypeConfig {
   /** Whether the resource exists in a global namespace and needs region/env for uniqueness */
   global: boolean
