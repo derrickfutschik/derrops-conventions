@@ -19,6 +19,8 @@ Every AWS resource name is built from an ordered set of segments:
 
 The delimiter and which segments are included vary by resource type. Globally unique services (S3 buckets) include `region` and `env`; account-scoped services omit them. Services with native hierarchy support (SSM, S3 object keys, IAM) use `/` instead of `--`. DNS records use a reversed hierarchy with `.`.
 
+Some resource types also append a fixed suffix after all segments — for example, SQS FIFO queues require `.fifo`, DynamoDB GSIs end in `--gsi`. The library handles all of this automatically.
+
 `DerropsConventions` encodes all of this — you supply segments, it applies the right rules per resource type.
 
 ---
@@ -66,25 +68,41 @@ naming.name({ type: 'cloudwatchMetricNamespace' })
 naming.name({ type: 'route53Record', org: 'acme.com' })
 // → 'checkout-api.prod.acme.com'
 
-// Kafka topic — native dot hierarchy
-naming.name({ type: 'kafkaTopic' })
-// → 'acme.payments.checkout-api'
+// SQS FIFO queue — .fifo suffix appended automatically
+naming.name({ type: 'sqsFifoQueue', key: 'events' })
+// → 'acme--payments--checkout-api--events.fifo'
+
+// DynamoDB GSI — --gsi suffix appended automatically
+naming.name({ type: 'dynamoDbGsi', key: 'by-user' })
+// → 'acme--payments--checkout-api--by-user--gsi'
+
+// Subnet — kind (private/public) and AZ segments
+naming.name({ type: 'subnet', kind: 'private', az: '1a' })
+// → 'acme--payments--checkout-api--private--1a'
 ```
 
 ---
 
 ## Segment reference
 
-| Segment     | Required?                           | Example                 | Description                                             |
-| ----------- | ----------------------------------- | ----------------------- | ------------------------------------------------------- |
-| `region`    | Globally unique resources only (S3) | `ap-southeast-2`        | AWS region code                                         |
-| `env`       | Globally unique resources + DNS     | `prod`, `dev`           | Deployment environment; omit if account-segregated      |
-| `org`       | Always                              | `acme`                  | Top-level organisational boundary                       |
-| `tenant`    | Silo multi-tenancy only             | `t-a3f8b2`              | Opaque tenant ID — never a human-readable name          |
-| `domain`    | Always                              | `payments`              | Bounded business capability                             |
-| `service`   | Always                              | `checkout-api`          | Deployable service unit                                 |
-| `partition` | Time-series data in S3 only         | `2024/01/15/14`         | Date/time partition (only segment that may contain `/`) |
-| `key`       | Always                              | `stripe-webhook-secret` | Specific resource, config value, or filename            |
+| Segment     | Used in                                 | Example                 | Description                                                         |
+| ----------- | --------------------------------------- | ----------------------- | ------------------------------------------------------------------- |
+| `region`    | Globally unique resources (S3)          | `ap-southeast-2`        | AWS region code                                                     |
+| `env`       | Globally unique resources + DNS         | `prod`, `dev`           | Deployment environment; omit if account-segregated                  |
+| `org`       | All resources                           | `acme`                  | Top-level organisational boundary                                   |
+| `tenant`    | Silo multi-tenancy only                 | `t-a3f8b2`              | Opaque tenant ID — never a human-readable name                      |
+| `domain`    | All resources                           | `payments`              | Bounded business capability                                         |
+| `service`   | Most resources                          | `checkout-api`          | Deployable service unit                                             |
+| `entity`    | OpenSearch indexes                      | `transactions`          | Data entity within a domain                                         |
+| `partition` | Time-series S3 data                     | `2024/01/15/14`         | Date/time partition path (only segment that may contain `/`)        |
+| `key`       | Most resources                          | `stripe-webhook-secret` | Specific resource, config value, or filename                        |
+| `purpose`   | Security groups, volumes, target groups | `web`, `db`             | Functional role of a resource within its service                    |
+| `kind`      | Subnets, EC2 instances                  | `private`, `public`     | Sub-classification — e.g. subnet visibility, EC2 instance role      |
+| `az`        | Subnets                                 | `1a`, `1b`, `1c`        | Availability zone suffix for per-AZ resources                       |
+| `num`       | EC2 instances                           | `01`, `02`, `03`        | Ordinal instance number when multiple instances share the same role |
+| `consumer`  | API Gateway keys                        | `partner-a`             | Consuming service or external principal                             |
+| `target`    | AppSync data sources                    | `user-table`            | Target resource or data source                                      |
+| `version`   | ECR image tags                          | `1.2.3`, `latest`       | Version identifier — use with a custom `segmentOrder` for ECR       |
 
 Stability decreases left to right — `org` and `domain` change almost never; `key` changes frequently. See the [conventions guide](https://blog.slaops.com/blog/derrops-conventions#segment-stability) for the full stability matrix.
 
@@ -94,7 +112,7 @@ Stability decreases left to right — `org` and `domain` change almost never; `k
 
 ### `new DerropsConventions(defaults?)`
 
-Creates a naming instance with optional default segment values. Any segment set here is used for all `name()` calls on this instance unless overridden at call time.
+Creates a naming instance with optional default segment values. Any segment set here is used for all `name()` and `tags()` calls on this instance unless overridden at call time.
 
 ```typescript
 const naming = new DerropsConventions({ org: 'acme', domain: 'payments' })
@@ -108,6 +126,8 @@ Generates a resource name. `type` is always required (or set a default via `.wit
 naming.name({ type: 'dynamoDb', service: 'checkout-api', key: 'transactions' })
 // → 'acme--payments--checkout-api--transactions'
 ```
+
+For resource types with a fixed suffix (`.fifo`, `--gsi`, `--dlq`, etc.) the suffix is appended automatically — no manual string concatenation needed.
 
 ### `.with(overrides)`
 
@@ -125,29 +145,37 @@ paymentsSsmNaming.name({ type: 'lambdaFunction', key: 'handler' })
 
 Does not mutate the original instance.
 
-### `.domain(values)` / `.service(values)` / `.key(values)` / etc.
-
-Segment constraint helpers — narrow the accepted literal union for a segment at the TypeScript level. Passing an invalid value becomes a compile-time error.
-
-```typescript
-const naming = new DerropsConventions({ org: 'acme' })
-  .domain(['payments', 'identity', 'platform'])
-  .service(['checkout-api', 'auth-service'])
-
-naming.name({ type: 'lambdaFunction', domain: 'payments', service: 'checkout-api', key: 'handler' })
-// TypeScript error if domain or service is not in the allowed lists
-```
-
-Available helpers: `.region()`, `.env()`, `.org()`, `.tenant()`, `.domain()`, `.service()`, `.partition()`, `.key()`
-
 ### `.constrain(key, ...values)`
 
-Variadic form of the segment helpers — useful when the value list is dynamic.
+Narrows the accepted literal union for a segment at the TypeScript level. Passing a value not in the list becomes a compile-time error. No runtime validation is performed.
 
 ```typescript
 const segments = ['payments', 'identity'] as const
 const naming = new DerropsConventions({ org: 'acme' }).constrain('domain', ...segments)
 ```
+
+### Segment constraint helpers
+
+Typed wrappers around `.constrain()` for each segment. Each returns a more-specific instance type so TypeScript enforces the allowed values.
+
+```typescript
+const naming = new DerropsConventions({ org: 'acme' })
+  .domain(['payments', 'identity', 'platform'])
+  .service(['checkout-api', 'auth-service'])
+  .kind(['private', 'public'])
+  .az(['1a', '1b', '1c'])
+
+// TypeScript error if domain, service, kind, or az is not in the allowed list
+naming.name({
+  type: 'subnet',
+  domain: 'payments',
+  service: 'checkout-api',
+  kind: 'private',
+  az: '1a',
+})
+```
+
+Available helpers: `.region()`, `.env()`, `.org()`, `.tenant()`, `.domain()`, `.service()`, `.partition()`, `.key()`, `.purpose()`, `.kind()`, `.az()`, `.num()`, `.consumer()`, `.target()`, `.version()`
 
 ### `.segmentOrder(...segments)`
 
@@ -180,9 +208,140 @@ DerropsConventions.registerResourceType('myQueue', {
 
 ---
 
+## Tagging
+
+`tags()` generates the standard resource tags alongside names. The full pipeline for each `tags()` call:
+
+```
+instance defaults + call overrides
+        ↓
+  built-in segment tags   (domain, service, org, environment — filtered by tagKeys())
+        ↓
+     tagRule()            (computed from segments — e.g. sensitivity flags, cost codes)
+        ↓
+     tagAugment()         (computed from accumulated tags — e.g. timestamps, composites)
+        ↓
+  limit validation        (keyMax, valueMax, maxTags)
+        ↓
+     policy()             (custom predicates — throw if false)
+        ↓
+      return tags
+```
+
+`tagRule()` and `tagAugment()` output is written **as-is** — `tagPrefix()` and `tagKeyCasing()` do **not** apply to rule- or augmentor-generated keys. The caller controls the exact key format for custom tags.
+
+### `.tags(overrides?)`
+
+Returns the tag dict. Segment overrides work the same as in `name()`.
+
+```typescript
+naming.tags()
+// → { domain: 'payments', service: 'checkout-api' }
+
+naming.tags({ service: 'auth-service' })
+// → { domain: 'payments', service: 'auth-service' }
+```
+
+### `.tagKeys(...keys)`
+
+Set which built-in tag keys appear in `tags()` output. Defaults to `['domain', 'service']` — `org` and `environment` are hidden by default because account-segregated deployments already provide that context.
+
+```typescript
+naming.tagKeys('org', 'domain', 'service', 'environment').tags()
+// → { org: 'acme', domain: 'payments', service: 'checkout-api', environment: 'prod' }
+```
+
+### `.tagPrefix(prefix)`
+
+Prepend a string to every built-in tag key. Include the separator you want (e.g. `'slaops:'`, `'my-app/'`, `'MyApp_'`). Applied after `tagKeyCasing()`.
+
+```typescript
+naming.tagPrefix('slaops:').tags()
+// → { 'slaops:domain': 'payments', 'slaops:service': 'checkout-api' }
+```
+
+### `.tagKeyCasing(casing)`
+
+Set the casing applied to built-in tag keys before they are written. Defaults to `'kebab'`.
+
+| Casing   | `environment` | multi-word key `cost-center` |
+| -------- | ------------- | ---------------------------- |
+| `kebab`  | `environment` | `cost-center`                |
+| `camel`  | `environment` | `costCenter`                 |
+| `snake`  | `environment` | `cost_center`                |
+| `pascal` | `Environment` | `CostCenter`                 |
+
+```typescript
+naming.tagKeyCasing('pascal').tagPrefix('MyApp_').tags()
+// → { 'MyApp_Domain': 'payments', 'MyApp_Service': 'checkout-api' }
+```
+
+### `.tagRule(fn)`
+
+Register a custom tag rule — a function that receives the resolved segment values and returns additional key-value pairs merged into the `tags()` output. Multiple rules run in registration order.
+
+```typescript
+// Flag sensitive resources
+naming.tagRule((segments) => ({
+  sensitive: String(segments.env === 'prod' && segments.domain === 'auth'),
+}))
+
+// Add a cost code derived from the domain
+naming.tagRule((segments) => ({
+  'cost-center': costCenterFor(segments.domain ?? ''),
+}))
+```
+
+### `.tagAugment(fn)`
+
+Register a tag augmentor — runs after all `tagRule()` results are merged. Receives a **snapshot** of the current accumulated tags and returns additional key-value pairs to merge in. Use this for tags computed from the already-resolved tag set, or for dynamic values that don't come from segments (timestamps, UUIDs).
+
+```typescript
+// Add a timestamp tag on every tags() call
+naming.tagAugment(() => ({ 'updated-at': new Date().toISOString() }))
+
+// Derive a composite tag from already-resolved tags
+naming.tagAugment((tags) => ({
+  'resource-id': `${tags['domain']}/${tags['service']}`,
+}))
+```
+
+### `.policy(fn, message?)`
+
+Register a tag policy — a predicate evaluated against the final resolved tags. If the predicate returns `false`, `tags()` throws with the supplied message. Policies run after limit validation.
+
+```typescript
+// Require a cost-center tag on every resource
+naming
+  .tagRule((segments) => ({ 'cost-center': costCenterFor(segments.domain) }))
+  .policy((tags) => 'cost-center' in tags, 'cost-center tag is required')
+
+// Require service tag to be non-empty
+naming.policy((tags) => Boolean(tags['service']), 'service tag must not be empty')
+```
+
+### `.keyMax(n)` / `.valueMax(n)` / `.maxTags(n)`
+
+Set tag size limits. Defaults match AWS constraints:
+
+| Method     | Default | AWS limit                |
+| ---------- | ------- | ------------------------ |
+| `keyMax`   | 128     | 128 characters per key   |
+| `valueMax` | 256     | 256 characters per value |
+| `maxTags`  | 50      | 50 tags per resource     |
+
+`tags()` throws if any limit is exceeded.
+
+```typescript
+// Stricter internal limits
+naming.keyMax(64).valueMax(128).maxTags(20)
+```
+
+---
+
 ## Multi-tenancy (silo model)
 
-Pass an opaque `tenant` ID to add tenant-scoped prefixes. See [the conventions guide](https://blog.slaops.com/blog/derrops-conventions#multi-tenancy) for the full decision matrix on tenant-first vs tenant-second-last placement and when to use the silo vs pool model.
+Pass an opaque `tenant` ID to add tenant-scoped prefixes. See [the conventions guide](https://blog.slaops.com/blog/derrops-conventions#multi-tenancy) for the full decision matrix on tenant placement and when to use the silo vs pool model.
 
 ```typescript
 const tenantNaming = naming.with({ tenant: 't-a3f8b2' })
@@ -200,83 +359,101 @@ tenantNaming.name({ type: 's3Bucket', key: 'data' })
 
 ## Resource types reference
 
-| Type key                      | AWS resource               | Delimiter | Global? | Example output                                             |
-| ----------------------------- | -------------------------- | --------- | ------- | ---------------------------------------------------------- |
-| `s3Bucket`                    | S3 Bucket                  | `--`      | ✅      | `ap-southeast-2--prod--acme--payments--checkout-api--data` |
-| `s3ObjectKey`                 | S3 Object Key              | `/`       | ❌      | `acme/payments/checkout-api/schema.sql`                    |
-| `s3LogKey`                    | S3 Log/Event Key           | `/`       | ❌      | `acme/payments/checkout-api/2024/01/15/14/events.json`     |
-| `cloudwatchLogsGroup`         | CloudWatch Log Group       | `/`       | ❌      | `/acme/payments/checkout-api/application-logs`             |
-| `cloudwatchMetricNamespace`   | CloudWatch Metrics NS      | `/`       | ❌      | `acme/payments` _(org/domain only)_                        |
-| `ecr`                         | ECR Repository             | `/`       | ❌      | `acme/payments/checkout-api`                               |
-| `ecsCluster`                  | ECS Cluster                | `--`      | ❌      | `acme--payments--checkout-api--cluster`                    |
-| `ecsService`                  | ECS Service                | `--`      | ❌      | `acme--payments--checkout-api`                             |
-| `ecsTaskDefinition`           | ECS Task Definition        | `--`      | ❌      | `acme--payments--checkout-api`                             |
-| `dynamoDb`                    | DynamoDB Table             | `--`      | ❌      | `acme--payments--checkout-api--transactions`               |
-| `dynamoDbGsi`                 | DynamoDB GSI               | `--`      | ❌      | `acme--payments--checkout-api--gsi`                        |
-| `rdsInstance`                 | RDS Instance               | `--`      | ❌      | `acme--payments--checkout-api--primary`                    |
-| `rdsDbName`                   | RDS Database Name          | `_`       | ❌      | `acme_payments_checkout-api`                               |
-| `rdsParameterGroup`           | RDS Parameter Group        | `--`      | ❌      | `acme--payments--checkout-api--params`                     |
-| `rdsSubnetGroup`              | RDS Subnet Group           | `--`      | ❌      | `acme--payments--checkout-api--subnet-group`               |
-| `rdsProxy`                    | RDS Proxy                  | `--`      | ❌      | `acme--payments--checkout-api--proxy`                      |
-| `ec2Instance`                 | EC2 Instance               | `--`      | ❌      | `acme--payments--checkout-api--web-01`                     |
-| `ec2SecurityGroup`            | EC2 Security Group         | `--`      | ❌      | `acme--payments--checkout-api--alb`                        |
-| `ec2Volume`                   | EC2 Volume                 | `--`      | ❌      | `acme--payments--checkout-api--volume-data`                |
-| `ec2ElasticIp`                | EC2 Elastic IP             | `--`      | ❌      | `acme--payments--checkout-api--eip`                        |
-| `lambdaFunction`              | Lambda Function            | `--`      | ❌      | `acme--payments--checkout-api--webhook-handler`            |
-| `lambdaLayer`                 | Lambda Layer               | `--`      | ❌      | `acme--shared-utilities--common-libs`                      |
-| `autoScalingGroup`            | Auto Scaling Group         | `--`      | ❌      | `acme--payments--checkout-api--asg`                        |
-| `launchTemplate`              | Launch Template            | `--`      | ❌      | `acme--payments--checkout-api--launch-template`            |
-| `iamRole`                     | IAM Role (path)            | `/`       | ❌      | `/acme/payments/checkout-api/checkout-api--lambda-role`    |
-| `iamPath`                     | IAM Path prefix            | `/`       | ❌      | `/acme/payments/checkout-api/`                             |
-| `iamPolicy`                   | IAM Policy                 | `--`      | ❌      | `acme--payments--checkout-api--s3-access-policy`           |
-| `iamUser`                     | IAM User                   | `--`      | ❌      | `acme--payments--checkout-api--service-user`               |
-| `route53HostedZone`           | Route53 Hosted Zone        | `.`       | ✅      | `prod.acme.com`                                            |
-| `route53Record`               | Route53 DNS Record         | `.`       | ✅      | `checkout-api.prod.acme.com`                               |
-| `route53PrivateRecord`        | Route53 Private Record     | `.`       | ✅      | `checkout-api.prod.acme.com`                               |
-| `cloudFrontDistribution`      | CloudFront Distribution    | `--`      | ❌      | `acme--payments--checkout-api--cdn`                        |
-| `cloudFrontAlias`             | CloudFront Alias (CNAME)   | `.`       | ✅      | `checkout-api.prod.acme.com`                               |
-| `acmCertificate`              | ACM Certificate            | `.`       | ✅      | `checkout-api.prod.acme.com`                               |
-| `vpc`                         | VPC                        | `--`      | ❌      | `acme--payments--checkout-api--vpc`                        |
-| `subnet`                      | Subnet                     | `--`      | ❌      | `acme--payments--checkout-api--subnet-private-1a`          |
-| `routeTable`                  | Route Table                | `--`      | ❌      | `acme--payments--checkout-api--rt-private`                 |
-| `networkAcl`                  | Network ACL                | `--`      | ❌      | `acme--payments--checkout-api--nacl`                       |
-| `alb`                         | ALB / NLB                  | `--`      | ❌      | `acme--payments--checkout-api--alb`                        |
-| `targetGroup`                 | Target Group               | `--`      | ❌      | `acme--payments--checkout-api--tg-api`                     |
-| `snsTopic`                    | SNS Topic                  | `--`      | ❌      | `acme--payments--checkout-api--transactions`               |
-| `sqsQueue`                    | SQS Queue                  | `--`      | ❌      | `acme--payments--checkout-api--events`                     |
-| `sqsFifoQueue`                | SQS FIFO Queue             | `--`      | ❌      | `acme--payments--checkout-api--events.fifo`                |
-| `sqsDlq`                      | SQS Dead-letter Queue      | `--`      | ❌      | `acme--payments--checkout-api--events--dlq`                |
-| `kinesisStream`               | Kinesis Stream             | `--`      | ❌      | `acme--payments--checkout-api--events`                     |
-| `eventBridgeBus`              | EventBridge Bus            | `--`      | ❌      | `acme--payments--checkout-api--events`                     |
-| `eventBridgeRule`             | EventBridge Rule           | `--`      | ❌      | `acme--payments--checkout-api--process-webhook-rule`       |
-| `kafkaTopic`                  | Kafka / MSK Topic          | `.`       | ❌      | `acme.payments.checkout-api.events`                        |
-| `apiGatewayRestApi`           | API Gateway REST API       | `--`      | ❌      | `acme--payments--checkout-api--api`                        |
-| `apiGatewayHttpApi`           | API Gateway HTTP API       | `--`      | ❌      | `acme--payments--checkout-api--http-api`                   |
-| `apiGatewayKey`               | API Gateway Key            | `--`      | ❌      | `acme--payments--checkout-api--mobile-client`              |
-| `appSyncApi`                  | AppSync API                | `--`      | ❌      | `acme--payments--checkout-api--api`                        |
-| `stepFunctions`               | Step Functions             | `--`      | ❌      | `acme--payments--checkout-api--order-processing`           |
-| `elastiCacheCluster`          | ElastiCache Cluster        | `--`      | ❌      | `acme--payments--checkout-api--cache`                      |
-| `elastiCacheReplicationGroup` | ElastiCache Replication Gp | `--`      | ❌      | `acme--payments--checkout-api--replication-group`          |
-| `openSearchDomain`            | OpenSearch Domain          | `--`      | ❌      | `acme--payments--checkout-api`                             |
-| `openSearchIndex`             | OpenSearch Index           | `--`      | ❌      | `acme--payments` _(org/domain/entity)_                     |
-| `ssmParam`                    | SSM Parameter              | `/`       | ❌      | `/acme/payments/checkout-api/stripe-webhook-secret`        |
-| `secretsManager`              | Secrets Manager Secret     | `/`       | ❌      | `acme/payments/checkout-api/db-password`                   |
-| `appConfigApplication`        | AppConfig Application      | `--`      | ❌      | `acme--payments--checkout-api`                             |
-| `glueDatabase`                | Glue Database              | `_`       | ❌      | `acme_payments_checkout_api`                               |
-| `glueJob`                     | Glue Job                   | `--`      | ❌      | `acme--analytics--etl--transform-job`                      |
-| `glueCrawler`                 | Glue Crawler               | `--`      | ❌      | `acme--analytics--data-crawlers`                           |
-| `athenaWorkgroup`             | Athena Workgroup           | `--`      | ❌      | `acme--analytics--etl--workgroup`                          |
-| `redshiftCluster`             | Redshift Cluster           | `--`      | ❌      | `acme--analytics--warehouse--cluster`                      |
-| `redshiftDatabase`            | Redshift Database          | `_`       | ❌      | `acme_analytics_warehouse`                                 |
-| `mskCluster`                  | MSK Cluster                | `--`      | ❌      | `acme--events--streaming--cluster`                         |
-| `cloudFormationStack`         | CloudFormation Stack       | `--`      | ❌      | `acme--payments--checkout-api--stack`                      |
-| `configRule`                  | AWS Config Rule            | `--`      | ❌      | `acme--payments--checkout-api--encryption-enabled-rule`    |
-| `configAggregator`            | Config Aggregator          | `--`      | ❌      | `acme--payments--config-aggregator`                        |
-| `wafWebAcl`                   | WAF Web ACL                | `--`      | ❌      | `acme--payments--checkout-api--waf`                        |
-| `backupPlan`                  | AWS Backup Plan            | `--`      | ❌      | `acme--payments--checkout-api--backup-plan`                |
-| `backupVault`                 | AWS Backup Vault           | `--`      | ❌      | `acme--payments--checkout-api--vault`                      |
-| `xraySamplingRule`            | X-Ray Sampling Rule        | `--`      | ❌      | `acme--payments--checkout-api--sampling-rule`              |
-| `securityHubInsight`          | Security Hub Insight       | `--`      | ❌      | `acme--payments--checkout-api--critical-findings-insight`  |
+`suffix` column shows the fixed string appended to the end of the name by the library automatically.
+
+| Type key                      | AWS resource                  | Delimiter | Global? | Suffix           | Example output                                             |
+| ----------------------------- | ----------------------------- | --------- | ------- | ---------------- | ---------------------------------------------------------- |
+| `s3Bucket`                    | S3 Bucket                     | `--`      | ✅      |                  | `ap-southeast-2--prod--acme--payments--checkout-api--data` |
+| `s3ObjectKey`                 | S3 Object Key                 | `/`       | ❌      |                  | `acme/payments/checkout-api/schema.sql`                    |
+| `s3LogKey`                    | S3 Log/Event Key              | `/`       | ❌      |                  | `acme/payments/checkout-api/2024/01/15/14/events.json`     |
+| `cloudwatchLogsGroup`         | CloudWatch Log Group          | `/`       | ❌      |                  | `/acme/payments/checkout-api/application-logs`             |
+| `cloudwatchMetricNamespace`   | CloudWatch Metrics NS         | `/`       | ❌      |                  | `acme/payments` _(org/domain only)_                        |
+| `ecr`                         | ECR Repository                | `/`       | ❌      |                  | `acme/payments/checkout-api`                               |
+| `ecsCluster`                  | ECS Cluster                   | `--`      | ❌      |                  | `acme--payments--checkout-api--cluster`                    |
+| `ecsService`                  | ECS Service                   | `--`      | ❌      |                  | `acme--payments--checkout-api`                             |
+| `ecsTaskDefinition`           | ECS Task Definition           | `--`      | ❌      |                  | `acme--payments--checkout-api`                             |
+| `dynamoDb`                    | DynamoDB Table                | `--`      | ❌      |                  | `acme--payments--checkout-api--transactions`               |
+| `dynamoDbGsi`                 | DynamoDB GSI                  | `--`      | ❌      | `--gsi`          | `acme--payments--checkout-api--by-user--gsi`               |
+| `rdsInstance`                 | RDS Instance                  | `--`      | ❌      |                  | `acme--payments--checkout-api--primary`                    |
+| `rdsDbName`                   | RDS Database Name             | `_`       | ❌      |                  | `acme_payments_checkout-api`                               |
+| `rdsParameterGroup`           | RDS Parameter Group           | `--`      | ❌      |                  | `acme--payments--checkout-api--params`                     |
+| `rdsSubnetGroup`              | RDS Subnet Group              | `--`      | ❌      |                  | `acme--payments--checkout-api--subnet-group`               |
+| `rdsProxy`                    | RDS Proxy                     | `--`      | ❌      |                  | `acme--payments--checkout-api--proxy`                      |
+| `ec2Instance`                 | EC2 Instance                  | `--`      | ❌      |                  | `acme--payments--checkout-api--web--01` _(kind + num)_     |
+| `ec2SecurityGroup`            | EC2 Security Group            | `--`      | ❌      |                  | `acme--payments--checkout-api--web` _(purpose)_            |
+| `ec2Volume`                   | EC2 Volume                    | `--`      | ❌      |                  | `acme--payments--checkout-api--data` _(purpose)_           |
+| `ec2ElasticIp`                | EC2 Elastic IP                | `--`      | ❌      | `--eip`          | `acme--payments--checkout-api--eip`                        |
+| `lambdaFunction`              | Lambda Function               | `--`      | ❌      |                  | `acme--payments--checkout-api--webhook-handler`            |
+| `lambdaLayer`                 | Lambda Layer                  | `--`      | ❌      |                  | `acme--shared-utilities--common-libs`                      |
+| `lambdaAlias`                 | Lambda Alias                  | `--`      | ❌      |                  | `prod` _(env only)_                                        |
+| `autoScalingGroup`            | Auto Scaling Group            | `--`      | ❌      | `--asg`          | `acme--payments--checkout-api--asg`                        |
+| `launchTemplate`              | Launch Template               | `--`      | ❌      |                  | `acme--payments--checkout-api--launch-template`            |
+| `iamRole`                     | IAM Role (path)               | `/`       | ❌      |                  | `/acme/payments/checkout-api/lambda-role`                  |
+| `iamPath`                     | IAM Path prefix               | `/`       | ❌      |                  | `/acme/payments/checkout-api/`                             |
+| `iamPolicy`                   | IAM Policy                    | `--`      | ❌      |                  | `acme--payments--checkout-api--s3-access-policy`           |
+| `iamUser`                     | IAM User                      | `--`      | ❌      |                  | `acme--payments--checkout-api--service-user`               |
+| `route53HostedZone`           | Route53 Hosted Zone           | `.`       | ✅      |                  | `prod.acme.com`                                            |
+| `route53Record`               | Route53 DNS Record            | `.`       | ✅      |                  | `checkout-api.prod.acme.com`                               |
+| `route53PrivateRecord`        | Route53 Private Record        | `.`       | ✅      |                  | `checkout-api.prod.acme.com`                               |
+| `cloudFrontDistribution`      | CloudFront Distribution       | `--`      | ❌      |                  | `acme--payments--checkout-api--cdn`                        |
+| `cloudFrontAlias`             | CloudFront Alias (CNAME)      | `.`       | ✅      |                  | `checkout-api.prod.acme.com`                               |
+| `acmCertificate`              | ACM Certificate               | `.`       | ✅      |                  | `checkout-api.prod.acme.com`                               |
+| `vpc`                         | VPC                           | `--`      | ❌      |                  | `acme--payments--checkout-api--vpc`                        |
+| `subnet`                      | Subnet                        | `--`      | ❌      |                  | `acme--payments--checkout-api--private--1a` _(kind + az)_  |
+| `routeTable`                  | Route Table                   | `--`      | ❌      |                  | `acme--payments--checkout-api--rt-private`                 |
+| `networkAcl`                  | Network ACL                   | `--`      | ❌      | `--nacl`         | `acme--payments--checkout-api--nacl`                       |
+| `alb`                         | ALB / NLB                     | `--`      | ❌      |                  | `acme--payments--checkout-api--alb`                        |
+| `targetGroup`                 | Target Group                  | `--`      | ❌      |                  | `acme--payments--checkout-api--checkout` _(purpose)_       |
+| `snsTopic`                    | SNS Topic                     | `--`      | ❌      |                  | `acme--payments--checkout-api--transactions`               |
+| `sqsQueue`                    | SQS Queue                     | `--`      | ❌      |                  | `acme--payments--checkout-api--events`                     |
+| `sqsFifoQueue`                | SQS FIFO Queue                | `--`      | ❌      | `.fifo`          | `acme--payments--checkout-api--events.fifo`                |
+| `sqsDlq`                      | SQS Dead-letter Queue         | `--`      | ❌      | `--dlq`          | `acme--payments--checkout-api--events--dlq`                |
+| `kinesisStream`               | Kinesis Stream                | `--`      | ❌      |                  | `acme--payments--checkout-api--events`                     |
+| `eventBridgeBus`              | EventBridge Bus               | `--`      | ❌      |                  | `acme--payments--checkout-api--events`                     |
+| `eventBridgeRule`             | EventBridge Rule              | `--`      | ❌      | `-rule`          | `acme--payments--checkout-api--process-webhook-rule`       |
+| `kafkaTopic`                  | Kafka / MSK Topic             | `.`       | ❌      |                  | `acme.payments.checkout-api.events`                        |
+| `apiGatewayRestApi`           | API Gateway REST API          | `--`      | ❌      |                  | `acme--payments--checkout-api--api`                        |
+| `apiGatewayHttpApi`           | API Gateway HTTP API          | `--`      | ❌      |                  | `acme--payments--checkout-api--http-api`                   |
+| `apiGatewayKey`               | API Gateway Key               | `--`      | ❌      |                  | `acme--payments--checkout-api--partner-a` _(consumer)_     |
+| `apiGatewayStage`             | API Gateway Stage             | `--`      | ❌      |                  | `prod` _(env only)_                                        |
+| `appSyncApi`                  | AppSync API                   | `--`      | ❌      |                  | `acme--payments--checkout-api--api`                        |
+| `appSyncDataSource`           | AppSync Data Source           | `--`      | ❌      |                  | `acme--payments--checkout-api--user-table` _(target)_      |
+| `stepFunctions`               | Step Functions                | `--`      | ❌      |                  | `acme--payments--checkout-api--order-processing`           |
+| `elastiCacheCluster`          | ElastiCache Cluster           | `--`      | ❌      |                  | `acme--payments--checkout-api--cache`                      |
+| `elastiCacheReplicationGroup` | ElastiCache Replication Group | `--`      | ❌      |                  | `acme--payments--checkout-api--replication-group`          |
+| `elastiCacheParameterGroup`   | ElastiCache Parameter Group   | `--`      | ❌      | `--params`       | `acme--payments--checkout-api--params`                     |
+| `openSearchDomain`            | OpenSearch Domain             | `--`      | ❌      |                  | `acme--payments--checkout-api`                             |
+| `openSearchIndex`             | OpenSearch Index              | `--`      | ❌      |                  | `acme--payments` _(org/domain/entity)_                     |
+| `ssmParam`                    | SSM Parameter                 | `/`       | ❌      |                  | `/acme/payments/checkout-api/stripe-webhook-secret`        |
+| `ssmDocument`                 | SSM Document                  | `--`      | ❌      |                  | `acme--payments--checkout-api--patch-baseline`             |
+| `ssmMaintenanceWindow`        | SSM Maintenance Window        | `--`      | ❌      | `-window`        | `acme--payments--checkout-api--weekend-window`             |
+| `secretsManager`              | Secrets Manager Secret        | `/`       | ❌      |                  | `acme/payments/checkout-api/db-password`                   |
+| `appConfigApplication`        | AppConfig Application         | `--`      | ❌      |                  | `acme--payments--checkout-api`                             |
+| `appConfigEnvironment`        | AppConfig Environment         | `--`      | ❌      |                  | `prod` _(env only)_                                        |
+| `appConfigProfile`            | AppConfig Profile             | `--`      | ❌      | `-profile`       | `acme--payments--checkout-api--feature-flags-profile`      |
+| `glueDatabase`                | Glue Database                 | `_`       | ❌      |                  | `acme_payments_checkout_api`                               |
+| `glueJob`                     | Glue Job                      | `--`      | ❌      | `-job`           | `acme--payments--checkout-api--transform-job`              |
+| `glueCrawler`                 | Glue Crawler                  | `--`      | ❌      | `-crawler`       | `acme--payments--checkout-api--raw-data-crawler`           |
+| `athenaWorkgroup`             | Athena Workgroup              | `--`      | ❌      |                  | `acme--analytics--etl--workgroup`                          |
+| `redshiftCluster`             | Redshift Cluster              | `--`      | ❌      |                  | `acme--analytics--warehouse--cluster`                      |
+| `redshiftDatabase`            | Redshift Database             | `_`       | ❌      |                  | `acme_analytics_warehouse`                                 |
+| `redshiftSubnetGroup`         | Redshift Subnet Group         | `--`      | ❌      | `--subnet-group` | `acme--payments--checkout-api--subnet-group`               |
+| `mskCluster`                  | MSK Cluster                   | `--`      | ❌      |                  | `acme--events--streaming--cluster`                         |
+| `cloudFormationStack`         | CloudFormation Stack          | `--`      | ❌      | `-stack`         | `acme--payments--checkout-api--infra-stack`                |
+| `configRule`                  | AWS Config Rule               | `--`      | ❌      | `-rule`          | `acme--payments--checkout-api--encryption-enabled-rule`    |
+| `configAggregator`            | Config Aggregator             | `--`      | ❌      |                  | `acme--payments--config-aggregator`                        |
+| `wafWebAcl`                   | WAF Web ACL                   | `--`      | ❌      | `--waf`          | `acme--payments--checkout-api--waf`                        |
+| `wafIpSet`                    | WAF IP Set                    | `--`      | ❌      | `--ipset`        | `acme--payments--checkout-api--blocked-ips--ipset`         |
+| `wafRuleGroup`                | WAF Rule Group                | `--`      | ❌      |                  | `acme--payments--checkout-api--rate-limit`                 |
+| `serviceCatalogPortfolio`     | Service Catalog Portfolio     | `--`      | ❌      | `--portfolio`    | `acme--payments--portfolio`                                |
+| `serviceCatalogProduct`       | Service Catalog Product       | `--`      | ❌      | `-product`       | `acme--payments--checkout-api--product`                    |
+| `quickSightDataset`           | QuickSight Dataset            | `--`      | ❌      | `--dataset`      | `acme--payments--checkout-api--orders--dataset`            |
+| `quickSightAnalysis`          | QuickSight Analysis           | `--`      | ❌      | `--analysis`     | `acme--payments--checkout-api--revenue--analysis`          |
+| `quickSightDashboard`         | QuickSight Dashboard          | `--`      | ❌      |                  | `acme--payments--checkout-api--revenue`                    |
+| `backupPlan`                  | AWS Backup Plan               | `--`      | ❌      |                  | `acme--payments--checkout-api--backup-plan`                |
+| `backupVault`                 | AWS Backup Vault              | `--`      | ❌      |                  | `acme--payments--checkout-api--vault`                      |
+| `xraySamplingRule`            | X-Ray Sampling Rule           | `--`      | ❌      |                  | `acme--payments--checkout-api--sampling-rule`              |
+| `securityHubInsight`          | Security Hub Insight          | `--`      | ❌      |                  | `acme--payments--checkout-api--critical-findings-insight`  |
 
 ---
 

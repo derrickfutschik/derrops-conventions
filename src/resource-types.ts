@@ -75,6 +75,7 @@ export const RESOURCE_TYPES = {
     global: false,
     segmentDelimiter: '--',
     wordDelimiter: '-',
+    suffix: '--gsi',
   },
   rdsInstance: {
     global: false,
@@ -108,21 +109,26 @@ export const RESOURCE_TYPES = {
     global: false,
     segmentDelimiter: '--',
     wordDelimiter: '-',
+    segments: ['org', 'domain', 'service', 'kind', 'num'],
   },
   ec2SecurityGroup: {
     global: false,
     segmentDelimiter: '--',
     wordDelimiter: '-',
+    segments: ['org', 'domain', 'service', 'purpose'],
   },
   ec2Volume: {
     global: false,
     segmentDelimiter: '--',
     wordDelimiter: '-',
+    segments: ['org', 'domain', 'service', 'purpose'],
   },
   ec2ElasticIp: {
     global: false,
     segmentDelimiter: '--',
     wordDelimiter: '-',
+    segments: ['org', 'domain', 'service'],
+    suffix: '--eip',
   },
   lambdaFunction: {
     global: false,
@@ -138,6 +144,8 @@ export const RESOURCE_TYPES = {
     global: false,
     segmentDelimiter: '--',
     wordDelimiter: '-',
+    segments: ['org', 'domain', 'service'],
+    suffix: '--asg',
   },
   launchTemplate: {
     global: false,
@@ -223,6 +231,7 @@ export const RESOURCE_TYPES = {
     global: false,
     segmentDelimiter: '--',
     wordDelimiter: '-',
+    segments: ['org', 'domain', 'service', 'kind', 'az'],
   },
   routeTable: {
     global: false,
@@ -233,6 +242,8 @@ export const RESOURCE_TYPES = {
     global: false,
     segmentDelimiter: '--',
     wordDelimiter: '-',
+    segments: ['org', 'domain', 'service'],
+    suffix: '--nacl',
   },
   alb: {
     global: false,
@@ -243,6 +254,7 @@ export const RESOURCE_TYPES = {
     global: false,
     segmentDelimiter: '--',
     wordDelimiter: '-',
+    segments: ['org', 'domain', 'service', 'purpose'],
   },
 
   // ── Messaging ────────────────────────────────────────────────────────────
@@ -260,11 +272,13 @@ export const RESOURCE_TYPES = {
     global: false,
     segmentDelimiter: '--',
     wordDelimiter: '-',
+    suffix: '.fifo',
   },
   sqsDlq: {
     global: false,
     segmentDelimiter: '--',
     wordDelimiter: '-',
+    suffix: '--dlq',
   },
   kinesisStream: {
     global: false,
@@ -280,6 +294,7 @@ export const RESOURCE_TYPES = {
     global: false,
     segmentDelimiter: '--',
     wordDelimiter: '-',
+    suffix: '-rule',
   },
   kafkaTopic: {
     // native dot-delimited hierarchy: org.domain.service.key
@@ -303,6 +318,7 @@ export const RESOURCE_TYPES = {
     global: false,
     segmentDelimiter: '--',
     wordDelimiter: '-',
+    segments: ['org', 'domain', 'service', 'consumer'],
   },
   appSyncApi: {
     global: false,
@@ -366,11 +382,13 @@ export const RESOURCE_TYPES = {
     global: false,
     segmentDelimiter: '--',
     wordDelimiter: '-',
+    suffix: '-job',
   },
   glueCrawler: {
     global: false,
     segmentDelimiter: '--',
     wordDelimiter: '-',
+    suffix: '-crawler',
   },
   athenaWorkgroup: {
     global: false,
@@ -398,11 +416,13 @@ export const RESOURCE_TYPES = {
     global: false,
     segmentDelimiter: '--',
     wordDelimiter: '-',
+    suffix: '-stack',
   },
   configRule: {
     global: false,
     segmentDelimiter: '--',
     wordDelimiter: '-',
+    suffix: '-rule',
   },
   configAggregator: {
     global: false,
@@ -413,6 +433,8 @@ export const RESOURCE_TYPES = {
     global: false,
     segmentDelimiter: '--',
     wordDelimiter: '-',
+    segments: ['org', 'domain', 'service'],
+    suffix: '--waf',
   },
   backupPlan: {
     global: false,
@@ -433,6 +455,124 @@ export const RESOURCE_TYPES = {
     global: false,
     segmentDelimiter: '--',
     wordDelimiter: '-',
+  },
+
+  // ── AppConfig ─────────────────────────────────────────────────────────────
+  appConfigEnvironment: {
+    // environment name only, e.g. 'prod', 'dev' — maps to the env segment
+    global: false,
+    segmentDelimiter: '--',
+    wordDelimiter: '-',
+    segments: ['env'],
+  },
+  appConfigProfile: {
+    global: false,
+    segmentDelimiter: '--',
+    wordDelimiter: '-',
+    suffix: '-profile',
+  },
+
+  // ── Lambda ────────────────────────────────────────────────────────────────
+  lambdaAlias: {
+    // alias is the env value: 'prod', 'dev', 'staging'
+    global: false,
+    segmentDelimiter: '--',
+    wordDelimiter: '-',
+    segments: ['env'],
+  },
+
+  // ── API Gateway ───────────────────────────────────────────────────────────
+  apiGatewayStage: {
+    // stage maps directly to env: 'prod', 'dev', 'staging'
+    global: false,
+    segmentDelimiter: '--',
+    wordDelimiter: '-',
+    segments: ['env'],
+  },
+
+  // ── Systems Manager ───────────────────────────────────────────────────────
+  ssmDocument: {
+    global: false,
+    segmentDelimiter: '--',
+    wordDelimiter: '-',
+  },
+  ssmMaintenanceWindow: {
+    global: false,
+    segmentDelimiter: '--',
+    wordDelimiter: '-',
+    suffix: '-window',
+  },
+
+  // ── Service Catalog ───────────────────────────────────────────────────────
+  serviceCatalogPortfolio: {
+    // {org}--{domain}--portfolio
+    global: false,
+    segmentDelimiter: '--',
+    wordDelimiter: '-',
+    segments: ['org', 'domain'],
+    suffix: '--portfolio',
+  },
+  serviceCatalogProduct: {
+    global: false,
+    segmentDelimiter: '--',
+    wordDelimiter: '-',
+    suffix: '-product',
+  },
+
+  // ── ElastiCache ───────────────────────────────────────────────────────────
+  elastiCacheParameterGroup: {
+    global: false,
+    segmentDelimiter: '--',
+    wordDelimiter: '-',
+    suffix: '--params',
+  },
+
+  // ── Redshift ──────────────────────────────────────────────────────────────
+  redshiftSubnetGroup: {
+    global: false,
+    segmentDelimiter: '--',
+    wordDelimiter: '-',
+    suffix: '--subnet-group',
+  },
+
+  // ── WAF ───────────────────────────────────────────────────────────────────
+  wafIpSet: {
+    global: false,
+    segmentDelimiter: '--',
+    wordDelimiter: '-',
+    suffix: '--ipset',
+  },
+  wafRuleGroup: {
+    global: false,
+    segmentDelimiter: '--',
+    wordDelimiter: '-',
+  },
+
+  // ── QuickSight ────────────────────────────────────────────────────────────
+  quickSightDataset: {
+    global: false,
+    segmentDelimiter: '--',
+    wordDelimiter: '-',
+    suffix: '--dataset',
+  },
+  quickSightAnalysis: {
+    global: false,
+    segmentDelimiter: '--',
+    wordDelimiter: '-',
+    suffix: '--analysis',
+  },
+  quickSightDashboard: {
+    global: false,
+    segmentDelimiter: '--',
+    wordDelimiter: '-',
+  },
+
+  // ── AppSync ───────────────────────────────────────────────────────────────
+  appSyncDataSource: {
+    global: false,
+    segmentDelimiter: '--',
+    wordDelimiter: '-',
+    segments: ['org', 'domain', 'service', 'target'],
   },
 } satisfies Record<string, ResourceTypeConfig>
 

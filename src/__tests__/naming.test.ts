@@ -226,6 +226,131 @@ describe('DerropsConventions — naming', () => {
     })
   })
 
+  describe('suffix', () => {
+    const c = new DerropsConventions({ org: 'acme', domain: 'payments', service: 'api' })
+
+    it('sqsFifoQueue appends .fifo', () => {
+      expect(c.name({ type: 'sqsFifoQueue', key: 'events' })).toBe(
+        'acme--payments--api--events.fifo',
+      )
+    })
+
+    it('dynamoDbGsi appends --gsi', () => {
+      expect(c.name({ type: 'dynamoDbGsi', key: 'by-user' })).toBe(
+        'acme--payments--api--by-user--gsi',
+      )
+    })
+
+    it('sqsDlq appends --dlq', () => {
+      expect(c.name({ type: 'sqsDlq', key: 'events' })).toBe('acme--payments--api--events--dlq')
+    })
+
+    it('eventBridgeRule appends -rule', () => {
+      expect(c.name({ type: 'eventBridgeRule', key: 'order-created' })).toBe(
+        'acme--payments--api--order-created-rule',
+      )
+    })
+
+    it('glueJob appends -job', () => {
+      expect(c.name({ type: 'glueJob', key: 'transform' })).toBe(
+        'acme--payments--api--transform-job',
+      )
+    })
+
+    it('glueCrawler appends -crawler', () => {
+      expect(c.name({ type: 'glueCrawler', key: 'raw-data' })).toBe(
+        'acme--payments--api--raw-data-crawler',
+      )
+    })
+
+    it('cloudFormationStack appends -stack', () => {
+      expect(c.name({ type: 'cloudFormationStack', key: 'infra' })).toBe(
+        'acme--payments--api--infra-stack',
+      )
+    })
+
+    it('ec2ElasticIp appends --eip and ignores key segment', () => {
+      expect(c.name({ type: 'ec2ElasticIp' })).toBe('acme--payments--api--eip')
+    })
+
+    it('autoScalingGroup appends --asg and ignores key segment', () => {
+      expect(c.name({ type: 'autoScalingGroup' })).toBe('acme--payments--api--asg')
+    })
+
+    it('networkAcl appends --nacl', () => {
+      expect(c.name({ type: 'networkAcl' })).toBe('acme--payments--api--nacl')
+    })
+
+    it('wafWebAcl appends --waf', () => {
+      expect(c.name({ type: 'wafWebAcl' })).toBe('acme--payments--api--waf')
+    })
+
+    it('suffix still appended when leadingDelimiter is set', () => {
+      const withEnv = c.with({ env: 'prod', region: 'ap-southeast-2' })
+      expect(withEnv.name({ type: 'sqsFifoQueue', key: 'jobs' })).toBe(
+        'acme--payments--api--jobs.fifo',
+      )
+    })
+  })
+
+  describe('new segment keys — kind, az, purpose, num, consumer, target, version', () => {
+    const c = new DerropsConventions({ org: 'acme', domain: 'payments', service: 'api' })
+
+    it('subnet uses kind and az segments', () => {
+      expect(c.name({ type: 'subnet', kind: 'private', az: '1a' })).toBe(
+        'acme--payments--api--private--1a',
+      )
+    })
+
+    it('subnet omits az when not supplied', () => {
+      expect(c.name({ type: 'subnet', kind: 'public' })).toBe('acme--payments--api--public')
+    })
+
+    it('ec2Instance uses kind and num segments', () => {
+      expect(c.name({ type: 'ec2Instance', kind: 'web', num: '01' })).toBe(
+        'acme--payments--api--web--01',
+      )
+    })
+
+    it('ec2SecurityGroup uses purpose segment', () => {
+      expect(c.name({ type: 'ec2SecurityGroup', purpose: 'web' })).toBe('acme--payments--api--web')
+    })
+
+    it('targetGroup uses purpose segment', () => {
+      expect(c.name({ type: 'targetGroup', purpose: 'checkout' })).toBe(
+        'acme--payments--api--checkout',
+      )
+    })
+
+    it('apiGatewayKey uses consumer segment', () => {
+      expect(c.name({ type: 'apiGatewayKey', consumer: 'partner-a' })).toBe(
+        'acme--payments--api--partner-a',
+      )
+    })
+
+    it('appSyncDataSource uses target segment', () => {
+      expect(c.name({ type: 'appSyncDataSource', target: 'user-table' })).toBe(
+        'acme--payments--api--user-table',
+      )
+    })
+
+    it('version segment can be used with ecr via segmentOrder', () => {
+      const c2 = new DerropsConventions({
+        org: 'acme',
+        domain: 'payments',
+        service: 'api',
+      }).segmentOrder('org', 'domain', 'service', 'version')
+      expect(c2.name({ type: 'ecr', version: '1.2.3' })).toBe('acme/payments/api/1.2.3')
+    })
+  })
+
+  describe('error path — missing type', () => {
+    it('throws when no type passed and no default set', () => {
+      const c = new DerropsConventions({ org: 'acme' })
+      expect(() => c.name({} as Parameters<typeof c.name>[0])).toThrow('name() requires a "type"')
+    })
+  })
+
   describe('openSearchIndex', () => {
     const c = new DerropsConventions({
       org: 'acme',

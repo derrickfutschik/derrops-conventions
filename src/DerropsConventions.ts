@@ -55,6 +55,13 @@ const DEFAULT_SEGMENT_ORDER: SegmentKey[] = [
   'service',
   'partition',
   'key',
+  'purpose',
+  'kind',
+  'az',
+  'num',
+  'consumer',
+  'target',
+  'version',
 ]
 
 const GLOBAL_ONLY_SEGMENTS: SegmentKey[] = ['region', 'env']
@@ -219,6 +226,55 @@ export class DerropsConventions<
     values: readonly V[],
   ): DerropsConventions<Omit<C, 'key'> & Record<'key', V>, TType> {
     return this.constrain('key', ...values)
+  }
+
+  /** Constrain allowed `purpose` values — functional role of a resource, e.g. `'web'`, `'worker'`, `'db'`. */
+  purpose<V extends string>(
+    values: readonly V[],
+  ): DerropsConventions<Omit<C, 'purpose'> & Record<'purpose', V>, TType> {
+    return this.constrain('purpose', ...values)
+  }
+
+  /** Constrain allowed `kind` values — sub-classification within a type, e.g. `'private'`/`'public'` for subnets. */
+  kind<V extends string>(
+    values: readonly V[],
+  ): DerropsConventions<Omit<C, 'kind'> & Record<'kind', V>, TType> {
+    return this.constrain('kind', ...values)
+  }
+
+  /** Constrain allowed `az` values — availability zone suffix, e.g. `'1a'`, `'1b'`, `'1c'`. */
+  az<V extends string>(
+    values: readonly V[],
+  ): DerropsConventions<Omit<C, 'az'> & Record<'az', V>, TType> {
+    return this.constrain('az', ...values)
+  }
+
+  /** Constrain allowed `num` values — ordinal instance number, e.g. `'01'`, `'02'`, `'03'`. */
+  num<V extends string>(
+    values: readonly V[],
+  ): DerropsConventions<Omit<C, 'num'> & Record<'num', V>, TType> {
+    return this.constrain('num', ...values)
+  }
+
+  /** Constrain allowed `consumer` values — consuming service or principal, e.g. `'partner-a'`. */
+  consumer<V extends string>(
+    values: readonly V[],
+  ): DerropsConventions<Omit<C, 'consumer'> & Record<'consumer', V>, TType> {
+    return this.constrain('consumer', ...values)
+  }
+
+  /** Constrain allowed `target` values — target resource or data source, e.g. `'user-table'`. */
+  target<V extends string>(
+    values: readonly V[],
+  ): DerropsConventions<Omit<C, 'target'> & Record<'target', V>, TType> {
+    return this.constrain('target', ...values)
+  }
+
+  /** Constrain allowed `version` values — version identifier for image tags, e.g. `'1.2.3'`, `'latest'`. */
+  version<V extends string>(
+    values: readonly V[],
+  ): DerropsConventions<Omit<C, 'version'> & Record<'version', V>, TType> {
+    return this.constrain('version', ...values)
   }
 
   // ── Instance derivation ───────────────────────────────────────────────────
@@ -453,7 +509,8 @@ export class DerropsConventions<
     const { type: _type, ...overrides } = options as { type?: ResourceType } & Segments
     const segments = this.buildSegments({ ...this.defaults, ...overrides }, config)
     const joined = segments.join(config.segmentDelimiter)
-    return config.leadingDelimiter ? `${config.segmentDelimiter}${joined}` : joined
+    const base = config.leadingDelimiter ? `${config.segmentDelimiter}${joined}` : joined
+    return config.suffix ? `${base}${config.suffix}` : base
   }
 
   /**
