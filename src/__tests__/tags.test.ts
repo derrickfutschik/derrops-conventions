@@ -405,6 +405,117 @@ describe('DerropsConventions — tags', () => {
     })
   })
 
+  describe('policy()', () => {
+    it('does not throw when the policy passes', () => {
+      const c = new DerropsConventions({ domain: 'payments', service: 'checkout-api' })
+        .policy(tags => 'service' in tags, 'service tag is required')
+
+      expect(() => c.tags()).not.toThrow()
+    })
+
+    it('throws with the provided message when the policy fails', () => {
+      const c = new DerropsConventions({ domain: 'payments', service: 'checkout-api' })
+        .policy(tags => 'cost-center' in tags, 'cost-center tag is required')
+
+      expect(() => c.tags()).toThrow('cost-center tag is required')
+    })
+
+    it('uses a default message when none is provided', () => {
+      const c = new DerropsConventions({ domain: 'payments', service: 'checkout-api' })
+        .policy(tags => 'cost-center' in tags)
+
+      expect(() => c.tags()).toThrow('Policy violation')
+    })
+
+    it('policy receives the final resolved tags including rule-generated keys', () => {
+      const c = new DerropsConventions({ domain: 'payments', service: 'checkout-api' })
+        .tagRule(() => ({ 'cost-center': 'payments-team' }))
+        .policy(tags => 'cost-center' in tags, 'cost-center tag is required')
+
+      expect(() => c.tags()).not.toThrow()
+    })
+
+    it('policy fails when required tag is only added by a missing rule', () => {
+      const c = new DerropsConventions({ domain: 'payments', service: 'checkout-api' })
+        .policy(tags => 'cost-center' in tags, 'cost-center tag is required')
+
+      expect(() => c.tags()).toThrow('cost-center tag is required')
+    })
+
+    it('multiple policies all run — first failure throws', () => {
+      const c = new DerropsConventions({ domain: 'payments', service: 'checkout-api' })
+        .policy(tags => 'service' in tags, 'service required')
+        .policy(tags => 'cost-center' in tags, 'cost-center required')
+        .policy(tags => 'owner' in tags, 'owner required')
+
+      expect(() => c.tags()).toThrow('cost-center required')
+    })
+
+    it('all policies must pass — second failure is still caught', () => {
+      const c = new DerropsConventions({ domain: 'payments', service: 'checkout-api' })
+        .tagRule(() => ({ 'cost-center': 'team' }))
+        .policy(tags => 'cost-center' in tags, 'cost-center required')
+        .policy(tags => 'owner' in tags, 'owner required')
+
+      expect(() => c.tags()).toThrow('owner required')
+    })
+
+    it('policy can inspect tag values, not just key presence', () => {
+      const c = new DerropsConventions({ domain: 'payments', service: 'checkout-api' })
+        .policy(
+          tags => tags['service'] !== 'unknown',
+          'service tag must not be "unknown"',
+        )
+
+      expect(() => c.tags()).not.toThrow()
+    })
+
+    it('call-time segment overrides are visible via resolved tags', () => {
+      const c = new DerropsConventions({ domain: 'payments' })
+        .policy(tags => 'service' in tags, 'service tag is required')
+
+      expect(() => c.tags()).toThrow('service tag is required')
+      expect(() => c.tags({ service: 'checkout-api' })).not.toThrow()
+    })
+
+    it('policies run after limit validation — a limit error takes precedence', () => {
+      const c = new DerropsConventions({ domain: 'payments', service: 'checkout-api' })
+        .maxTags(1)
+        .policy(tags => 'cost-center' in tags, 'cost-center required')
+
+      // maxTags throws before the policy is reached
+      expect(() => c.tags()).toThrow(/maxTags/)
+    })
+
+    it('with() propagates policies to derived instance', () => {
+      const base = new DerropsConventions({ domain: 'payments' })
+        .policy(tags => 'service' in tags, 'service tag is required')
+
+      const derived = base.with({ service: 'checkout-api' })
+      expect(() => derived.tags()).not.toThrow()
+
+      const derivedMissing = base.with({})
+      expect(() => derivedMissing.tags()).toThrow('service tag is required')
+    })
+
+    it('with() does not mutate the parent policies', () => {
+      const base = new DerropsConventions({ domain: 'payments', service: 'api' })
+      const derived = base.with({})
+      derived.policy(tags => 'cost-center' in tags, 'cost-center required')
+
+      expect(() => base.tags()).not.toThrow()
+      expect(() => derived.tags()).toThrow('cost-center required')
+    })
+
+    it('policy added to derived instance does not affect the parent', () => {
+      const base = new DerropsConventions({ domain: 'payments', service: 'api' })
+      const derived = base.with({})
+      derived.policy(() => false, 'always fail')
+
+      expect(() => base.tags()).not.toThrow()
+    })
+  })
+
   describe('tagRule()', () => {
     it('adds extra keys to tags() output', () => {
       const c = new DerropsConventions({ org: 'acme', domain: 'payments', service: 'checkout-api' })

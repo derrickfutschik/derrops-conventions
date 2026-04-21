@@ -128,6 +128,7 @@ export class DerropsConventions<
   private tagKeyMax: number
   private tagValueMax: number
   private tagCountMax: number
+  private tagPolicies: Array<{ fn: (tags: Record<string, string>) => boolean; message: string }>
 
   constructor(
     defaults: ConstrainedSegments<C> = {} as ConstrainedSegments<C>,
@@ -143,6 +144,7 @@ export class DerropsConventions<
     this.tagKeyMax = DEFAULT_TAG_KEY_MAX
     this.tagValueMax = DEFAULT_TAG_VALUE_MAX
     this.tagCountMax = DEFAULT_TAG_COUNT_MAX
+    this.tagPolicies = []
   }
 
   // ── Segment constraint helpers ────────────────────────────────────────────
@@ -346,6 +348,30 @@ export class DerropsConventions<
   }
 
   /**
+   * Register a tag policy — a predicate evaluated against the final resolved tags when `tags()`
+   * is called. If the predicate returns `false`, `tags()` throws with the supplied message.
+   *
+   * Policies run after limit validation (`keyMax`, `valueMax`, `maxTags`) and receive the
+   * complete, already-built tag output so they can assert on real keys and values — including
+   * those produced by `tagRule()` functions.
+   *
+   * Chainable — returns `this`.
+   *
+   * @example
+   * // Require a cost-center tag on every resource
+   * naming
+   *   .tagRule(segments => ({ 'cost-center': costCenterFor(segments.domain) }))
+   *   .policy(tags => 'cost-center' in tags, 'cost-center tag is required')
+   *
+   * // Require service tag to be present
+   * naming.policy(tags => Boolean(tags['service']), 'service tag must not be empty')
+   */
+  policy(fn: (tags: Record<string, string>) => boolean, message = 'Policy violation'): this {
+    this.tagPolicies.push({ fn, message })
+    return this
+  }
+
+  /**
    * Return a new instance with additional defaults merged in.
    * Passing `type` stores it as the default resource type for `name()` calls on the derived instance.
    *
@@ -372,6 +398,7 @@ export class DerropsConventions<
     derived.tagKeyMax = this.tagKeyMax
     derived.tagValueMax = this.tagValueMax
     derived.tagCountMax = this.tagCountMax
+    derived.tagPolicies = [...this.tagPolicies]
     return derived as unknown as DerropsConventions<C, T extends ResourceType ? T : TType>
   }
 
@@ -457,6 +484,12 @@ export class DerropsConventions<
         throw new Error(
           `Tag value for key "${k}" is ${v.length} characters but valueMax is ${this.tagValueMax}`,
         )
+      }
+    }
+
+    for (const { fn, message } of this.tagPolicies) {
+      if (!fn(result)) {
+        throw new Error(message)
       }
     }
 
