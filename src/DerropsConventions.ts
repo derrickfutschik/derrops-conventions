@@ -582,6 +582,24 @@ export class DerropsConventions<
     return result
   }
 
+  /**
+   * Call `fn(key, value)` for every tag produced by `tags()`.
+   *
+   * Avoids a manual loop at the call site — pass any setter that accepts `(key, value)`:
+   *
+   * @example
+   * // AWS CDK
+   * svcConvention.applyTags((k, v) => Tags.of(this).add(k, v))
+   *
+   * // Pulumi
+   * svcConvention.applyTags((k, v) => (resourceTags[k] = v))
+   */
+  applyTags(fn: (key: string, value: string) => void, options?: TagOptions<C>): void {
+    for (const [k, v] of Object.entries(this.tags(options ?? ({} as TagOptions<C>)))) {
+      fn(k, v)
+    }
+  }
+
   // ── Static utilities ──────────────────────────────────────────────────────
 
   /** List all registered resource type keys. */

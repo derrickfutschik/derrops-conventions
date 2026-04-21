@@ -242,6 +242,18 @@ naming.tags({ service: 'auth-service' })
 // → { domain: 'payments', service: 'auth-service' }
 ```
 
+### `.applyTags(fn, overrides?)`
+
+Calls `fn(key, value)` for every tag produced by `tags()`. Use this instead of a manual loop when applying tags through an external API that expects a setter callback.
+
+```typescript
+// AWS CDK — one line instead of a for..of loop
+svcConvention.applyTags((k, v) => Tags.of(this).add(k, v))
+
+// With segment overrides
+svcConvention.applyTags((k, v) => Tags.of(this).add(k, v), { service: 'override' })
+```
+
 ### `.tagKeys(...keys)`
 
 Set which built-in tag keys appear in `tags()` output. Defaults to `['domain', 'service']` — `org` and `environment` are hidden by default because account-segregated deployments already provide that context.
