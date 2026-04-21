@@ -99,7 +99,12 @@ export class StaticPolicyBuilder<C extends SegmentConstraints = {}> {
 
     for (const resource of this.included) {
       const config = getConfig(resource.type)
-      const actions = resolveActions(resource.type, config, resource.permissions, options?.actionsFor)
+      const actions = resolveActions(
+        resource.type,
+        config,
+        resource.permissions,
+        options?.actionsFor,
+      )
       if (!actions || actions.length === 0) continue
 
       const resource_ = resource.arns.length === 1 ? resource.arns[0]! : resource.arns

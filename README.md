@@ -202,7 +202,8 @@ const conventions = new DerropsConventions({ org: 'acme', region: 'us-east-1' })
 Returns a `StaticPolicyBuilder` for declarative IAM policy generation. See [IAM policy generation — static mode](#static-mode).
 
 ```typescript
-const doc = conventions.staticPolicy()
+const doc = conventions
+  .staticPolicy()
   .include('s3Bucket', { key: 'uploads' }, { permissions: 'read' })
   .buildPolicy()
 ```
@@ -436,7 +437,17 @@ Produces a standard AWS IAM policy document:
     },
     {
       "Effect": "Allow",
-      "Action": ["dynamodb:Get*", "dynamodb:BatchGet*", "dynamodb:Query", "dynamodb:Scan", "dynamodb:Describe*", "dynamodb:Put*", "dynamodb:Update*", "dynamodb:Delete*", "dynamodb:BatchWrite*"],
+      "Action": [
+        "dynamodb:Get*",
+        "dynamodb:BatchGet*",
+        "dynamodb:Query",
+        "dynamodb:Scan",
+        "dynamodb:Describe*",
+        "dynamodb:Put*",
+        "dynamodb:Update*",
+        "dynamodb:Delete*",
+        "dynamodb:BatchWrite*"
+      ],
       "Resource": "arn:aws:dynamodb:us-east-1:123456789012:table/acme--payments--checkout-api--transactions"
     },
     {
@@ -498,11 +509,11 @@ Resource types without ARN metadata (sub-resources, naming helpers) are recorded
 
 ### Permission tiers
 
-| Tier        | Intent                              | Wildcard pattern                            |
-| ----------- | ----------------------------------- | ------------------------------------------- |
-| `read`      | Read-only access                    | `Get*`, `List*`, `Describe*`                |
-| `readWrite` | Read + write/mutate                 | `read` actions + `Put*`, `Update*`, `Delete*` |
-| `manage`    | Full control                        | `<service>:*`                               |
+| Tier        | Intent              | Wildcard pattern                              |
+| ----------- | ------------------- | --------------------------------------------- |
+| `read`      | Read-only access    | `Get*`, `List*`, `Describe*`                  |
+| `readWrite` | Read + write/mutate | `read` actions + `Put*`, `Update*`, `Delete*` |
+| `manage`    | Full control        | `<service>:*`                                 |
 
 Some services use explicit actions where wildcards would over-grant (e.g. `lambda:InvokeFunction` in the `readWrite` tier rather than `lambda:Invoke*`).
 
@@ -530,10 +541,12 @@ arn:{partition}:{service}:{region}:{accountId}:{resourcePrefix}{name}{resourceSu
 - `resourcePrefix` — e.g. `'function:'` for Lambda, `'table/'` for DynamoDB; empty for SNS/SQS where the name is appended flat
 
 IAM roles and SSM parameters use a leading `/` in the name (from `leadingDelimiter: true`), so their ARNs are correct without an extra separator:
+
 - `iamRole` → `arn:aws:iam::123:role/acme/payments/checkout-api/lambda-role`
 - `ssmParam` → `arn:aws:ssm:us-east-1:123:parameter/acme/payments/checkout-api/stripe-key`
 
 **S3 dual-ARN:** `s3Bucket` emits two entries in `Resource` — the bucket ARN for bucket-level actions (`s3:ListBucket`, `s3:GetBucketLocation`) and the objects ARN for object-level actions (`s3:GetObject`, `s3:PutObject`). This is handled automatically:
+
 ```json
 "Resource": [
   "arn:aws:s3:::bucket-name",
@@ -542,6 +555,7 @@ IAM roles and SSM parameters use a leading `/` in the name (from `leadingDelimit
 ```
 
 DynamoDB GSIs use `resourceSuffix: '/index/*'` — the policy targets all indexes on the named table:
+
 - `dynamoDbGsi` → `arn:aws:dynamodb:us-east-1:123:table/acme--payments--checkout-api--by-user--gsi/index/*`
 
 Use `buildArn()` directly for custom registered types:
@@ -555,7 +569,11 @@ DerropsConventions.registerResourceType('myQueue', {
   wordDelimiter: '-',
   iamService: 'sqs',
   arn: { service: 'sqs', includeRegion: true, includeAccount: true },
-  permissions: { read: ['sqs:ReceiveMessage'], readWrite: ['sqs:ReceiveMessage', 'sqs:SendMessage'], manage: ['sqs:*'] },
+  permissions: {
+    read: ['sqs:ReceiveMessage'],
+    readWrite: ['sqs:ReceiveMessage', 'sqs:SendMessage'],
+    manage: ['sqs:*'],
+  },
 })
 
 buildArn('acme--platform--my-queue', RESOURCE_TYPES.myQueue.arn!, {

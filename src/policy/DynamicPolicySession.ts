@@ -65,7 +65,12 @@ export class DynamicPolicySession<C extends SegmentConstraints = {}> {
 
     if (arn === null || !this.seenArns.has(arn)) {
       if (arn !== null) this.seenArns.add(arn)
-      this.recorded.push({ type: resolvedType, name: result, arn, permissions: policyOptions?.permissions })
+      this.recorded.push({
+        type: resolvedType,
+        name: result,
+        arn,
+        permissions: policyOptions?.permissions,
+      })
     }
 
     return result
@@ -97,7 +102,12 @@ export class DynamicPolicySession<C extends SegmentConstraints = {}> {
     for (const resource of this.recorded) {
       if (resource.arn === null) continue
       const config = getConfig(resource.type)
-      const actions = resolveActions(resource.type, config, resource.permissions, options?.actionsFor)
+      const actions = resolveActions(
+        resource.type,
+        config,
+        resource.permissions,
+        options?.actionsFor,
+      )
       if (!actions || actions.length === 0) continue
 
       const arns = buildPolicyArns(resource.name, config.arn!, this.context)

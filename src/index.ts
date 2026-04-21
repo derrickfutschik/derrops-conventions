@@ -12,7 +12,12 @@ export type {
   PermissionLevel,
   ResourcePermissions,
 } from './types.js'
-export { StaticPolicyBuilder, DynamicPolicySession, buildArn, buildPolicyArns } from './policy/index.js'
+export {
+  StaticPolicyBuilder,
+  DynamicPolicySession,
+  buildArn,
+  buildPolicyArns,
+} from './policy/index.js'
 export type {
   RecordedResource,
   ArnContext,
