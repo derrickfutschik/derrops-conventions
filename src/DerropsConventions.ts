@@ -125,6 +125,7 @@ export class DerropsConventions<
   private keyPrefix: string
   private keyCasing: TagKeyCasing
   private tagRules: Array<(segments: Segments) => Record<string, string>>
+  private tagAugmentors: Array<(tags: Record<string, string>) => Record<string, string>>
   private tagKeyMax: number
   private tagValueMax: number
   private tagCountMax: number
@@ -141,6 +142,7 @@ export class DerropsConventions<
     this.keyPrefix = ''
     this.keyCasing = DEFAULT_TAG_CASING
     this.tagRules = []
+    this.tagAugmentors = []
     this.tagKeyMax = DEFAULT_TAG_KEY_MAX
     this.tagValueMax = DEFAULT_TAG_VALUE_MAX
     this.tagCountMax = DEFAULT_TAG_COUNT_MAX
@@ -309,6 +311,32 @@ export class DerropsConventions<
   }
 
   /**
+   * Register a tag augmentor — a function called after all `tagRule()` results are merged and
+   * before limit validation and policies. Receives a **snapshot** of the current accumulated tags
+   * and returns additional key-value pairs to merge in.
+   *
+   * Use this for tags that are computed from the already-resolved tag set, or for fully dynamic
+   * values that don't come from segments (e.g. timestamps, UUIDs).
+   *
+   * Augmentors run in registration order; each receives the output of the previous one. Like
+   * `tagRule()`, augmentor output bypasses `tagPrefix()` and `tagKeyCasing()` — the caller
+   * controls the exact key.
+   *
+   * Chainable — returns `this`.
+   *
+   * @example
+   * // Add a timestamp tag every time tags() is called
+   * naming.tagAugment(() => ({ 'updated-at': new Date().toISOString() }))
+   *
+   * // Derive a composite tag from already-resolved tags
+   * naming.tagAugment(tags => ({ 'resource-id': `${tags['domain']}/${tags['service']}` }))
+   */
+  tagAugment(fn: (tags: Record<string, string>) => Record<string, string>): this {
+    this.tagAugmentors.push(fn)
+    return this
+  }
+
+  /**
    * Set the maximum byte length allowed for a single tag key (after prefix and casing are applied).
    * Defaults to 128, matching the AWS limit.
    *
@@ -395,6 +423,7 @@ export class DerropsConventions<
     derived.keyPrefix = this.keyPrefix
     derived.keyCasing = this.keyCasing
     derived.tagRules = [...this.tagRules]
+    derived.tagAugmentors = [...this.tagAugmentors]
     derived.tagKeyMax = this.tagKeyMax
     derived.tagValueMax = this.tagValueMax
     derived.tagCountMax = this.tagCountMax
@@ -466,19 +495,19 @@ export class DerropsConventions<
       Object.assign(result, rule(merged))
     }
 
+    for (const augment of this.tagAugmentors) {
+      Object.assign(result, augment({ ...result }))
+    }
+
     const entries = Object.entries(result)
 
     if (entries.length > this.tagCountMax) {
-      throw new Error(
-        `tags() produced ${entries.length} tags but maxTags is ${this.tagCountMax}`,
-      )
+      throw new Error(`tags() produced ${entries.length} tags but maxTags is ${this.tagCountMax}`)
     }
 
     for (const [k, v] of entries) {
       if (k.length > this.tagKeyMax) {
-        throw new Error(
-          `Tag key "${k}" is ${k.length} characters but keyMax is ${this.tagKeyMax}`,
-        )
+        throw new Error(`Tag key "${k}" is ${k.length} characters but keyMax is ${this.tagKeyMax}`)
       }
       if (v.length > this.tagValueMax) {
         throw new Error(

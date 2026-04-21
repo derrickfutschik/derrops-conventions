@@ -405,24 +405,165 @@ describe('DerropsConventions — tags', () => {
     })
   })
 
+  describe('tagAugment()', () => {
+    it('merges returned tags into the output', () => {
+      const c = new DerropsConventions({ domain: 'payments', service: 'checkout-api' }).tagAugment(
+        () => ({ 'updated-at': '2026-01-01T00:00:00.000Z' }),
+      )
+
+      expect(c.tags()).toEqual({
+        domain: 'payments',
+        service: 'checkout-api',
+        'updated-at': '2026-01-01T00:00:00.000Z',
+      })
+    })
+
+    it('receives a snapshot of the accumulated tags at call time', () => {
+      const received: Record<string, string>[] = []
+      const c = new DerropsConventions({ domain: 'payments', service: 'checkout-api' }).tagAugment(
+        (tags) => {
+          received.push(tags)
+          return {}
+        },
+      )
+
+      c.tags()
+      expect(received[0]).toEqual({ domain: 'payments', service: 'checkout-api' })
+    })
+
+    it('receives tagRule output — runs after tagRule', () => {
+      const c = new DerropsConventions({ domain: 'payments', service: 'checkout-api' })
+        .tagRule(() => ({ 'cost-center': 'payments-team' }))
+        .tagAugment((tags) => ({ 'resource-id': `${tags['domain']}/${tags['service']}` }))
+
+      expect(c.tags()).toMatchObject({ 'resource-id': 'payments/checkout-api' })
+    })
+
+    it('can model an UpdatedAt tag with a dynamic timestamp', () => {
+      const before = Date.now()
+      const c = new DerropsConventions({ domain: 'payments', service: 'api' }).tagAugment(() => ({
+        'updated-at': new Date().toISOString(),
+      }))
+
+      const result = c.tags()
+      const ts = new Date(result['updated-at']!).getTime()
+      expect(ts).toBeGreaterThanOrEqual(before)
+      expect(ts).toBeLessThanOrEqual(Date.now())
+    })
+
+    it('multiple augmentors run in registration order, each receives previous output', () => {
+      const c = new DerropsConventions({ domain: 'payments', service: 'checkout-api' })
+        .tagAugment((tags) => ({ step1: tags['domain'] ?? '' }))
+        .tagAugment((tags) => ({ step2: tags['step1'] + '-done' }))
+
+      expect(c.tags()).toMatchObject({ step1: 'payments', step2: 'payments-done' })
+    })
+
+    it('later augmentor wins when two return the same key', () => {
+      const c = new DerropsConventions({ domain: 'payments', service: 'api' })
+        .tagAugment(() => ({ tier: 'standard' }))
+        .tagAugment(() => ({ tier: 'premium' }))
+
+      expect(c.tags()).toMatchObject({ tier: 'premium' })
+    })
+
+    it('augmentor can override a built-in tag', () => {
+      const c = new DerropsConventions({ domain: 'payments', service: 'api' }).tagAugment(() => ({
+        service: 'overridden',
+      }))
+
+      expect(c.tags()).toMatchObject({ service: 'overridden' })
+    })
+
+    it('snapshot passed to augmentor is a copy — mutating it does not affect the result', () => {
+      const c = new DerropsConventions({ domain: 'payments', service: 'api' }).tagAugment(
+        (tags) => {
+          tags['domain'] = 'mutated'
+          return {}
+        },
+      )
+
+      expect(c.tags()).toMatchObject({ domain: 'payments' })
+    })
+
+    it('augmentor output is NOT subject to tagPrefix', () => {
+      const c = new DerropsConventions({ domain: 'payments', service: 'api' })
+        .tagPrefix('slaops:')
+        .tagAugment(() => ({ 'updated-at': '2026-01-01' }))
+
+      const result = c.tags()
+      expect(result).toHaveProperty('slaops:domain')
+      expect(result).toHaveProperty('updated-at', '2026-01-01')
+      expect(result).not.toHaveProperty('slaops:updated-at')
+    })
+
+    it('augmented tags are visible to policies', () => {
+      const c = new DerropsConventions({ domain: 'payments', service: 'api' })
+        .tagAugment(() => ({ 'updated-at': new Date().toISOString() }))
+        .policy((tags) => 'updated-at' in tags, 'updated-at is required')
+
+      expect(() => c.tags()).not.toThrow()
+    })
+
+    it('missing augmented tag is caught by policy', () => {
+      const c = new DerropsConventions({ domain: 'payments', service: 'api' }).policy(
+        (tags) => 'updated-at' in tags,
+        'updated-at is required',
+      )
+
+      expect(() => c.tags()).toThrow('updated-at is required')
+    })
+
+    it('with() propagates augmentors to derived instance', () => {
+      const base = new DerropsConventions({ domain: 'payments' }).tagAugment(() => ({
+        'updated-at': '2026-01-01',
+      }))
+
+      const derived = base.with({ service: 'checkout-api' })
+      expect(derived.tags()).toMatchObject({ 'updated-at': '2026-01-01' })
+    })
+
+    it('with() does not mutate the parent augmentors', () => {
+      const base = new DerropsConventions({ domain: 'payments', service: 'api' })
+      const derived = base.with({})
+      derived.tagAugment(() => ({ 'updated-at': '2026-01-01' }))
+
+      expect(base.tags()).not.toHaveProperty('updated-at')
+      expect(derived.tags()).toHaveProperty('updated-at')
+    })
+
+    it('augmentor added to derived instance does not affect the parent', () => {
+      const base = new DerropsConventions({ domain: 'payments', service: 'api' })
+      const derived = base.with({})
+      derived.tagAugment(() => ({ tier: 'gold' }))
+
+      expect(base.tags()).not.toHaveProperty('tier')
+    })
+  })
+
   describe('policy()', () => {
     it('does not throw when the policy passes', () => {
-      const c = new DerropsConventions({ domain: 'payments', service: 'checkout-api' })
-        .policy(tags => 'service' in tags, 'service tag is required')
+      const c = new DerropsConventions({ domain: 'payments', service: 'checkout-api' }).policy(
+        (tags) => 'service' in tags,
+        'service tag is required',
+      )
 
       expect(() => c.tags()).not.toThrow()
     })
 
     it('throws with the provided message when the policy fails', () => {
-      const c = new DerropsConventions({ domain: 'payments', service: 'checkout-api' })
-        .policy(tags => 'cost-center' in tags, 'cost-center tag is required')
+      const c = new DerropsConventions({ domain: 'payments', service: 'checkout-api' }).policy(
+        (tags) => 'cost-center' in tags,
+        'cost-center tag is required',
+      )
 
       expect(() => c.tags()).toThrow('cost-center tag is required')
     })
 
     it('uses a default message when none is provided', () => {
-      const c = new DerropsConventions({ domain: 'payments', service: 'checkout-api' })
-        .policy(tags => 'cost-center' in tags)
+      const c = new DerropsConventions({ domain: 'payments', service: 'checkout-api' }).policy(
+        (tags) => 'cost-center' in tags,
+      )
 
       expect(() => c.tags()).toThrow('Policy violation')
     })
@@ -430,23 +571,25 @@ describe('DerropsConventions — tags', () => {
     it('policy receives the final resolved tags including rule-generated keys', () => {
       const c = new DerropsConventions({ domain: 'payments', service: 'checkout-api' })
         .tagRule(() => ({ 'cost-center': 'payments-team' }))
-        .policy(tags => 'cost-center' in tags, 'cost-center tag is required')
+        .policy((tags) => 'cost-center' in tags, 'cost-center tag is required')
 
       expect(() => c.tags()).not.toThrow()
     })
 
     it('policy fails when required tag is only added by a missing rule', () => {
-      const c = new DerropsConventions({ domain: 'payments', service: 'checkout-api' })
-        .policy(tags => 'cost-center' in tags, 'cost-center tag is required')
+      const c = new DerropsConventions({ domain: 'payments', service: 'checkout-api' }).policy(
+        (tags) => 'cost-center' in tags,
+        'cost-center tag is required',
+      )
 
       expect(() => c.tags()).toThrow('cost-center tag is required')
     })
 
     it('multiple policies all run — first failure throws', () => {
       const c = new DerropsConventions({ domain: 'payments', service: 'checkout-api' })
-        .policy(tags => 'service' in tags, 'service required')
-        .policy(tags => 'cost-center' in tags, 'cost-center required')
-        .policy(tags => 'owner' in tags, 'owner required')
+        .policy((tags) => 'service' in tags, 'service required')
+        .policy((tags) => 'cost-center' in tags, 'cost-center required')
+        .policy((tags) => 'owner' in tags, 'owner required')
 
       expect(() => c.tags()).toThrow('cost-center required')
     })
@@ -454,25 +597,26 @@ describe('DerropsConventions — tags', () => {
     it('all policies must pass — second failure is still caught', () => {
       const c = new DerropsConventions({ domain: 'payments', service: 'checkout-api' })
         .tagRule(() => ({ 'cost-center': 'team' }))
-        .policy(tags => 'cost-center' in tags, 'cost-center required')
-        .policy(tags => 'owner' in tags, 'owner required')
+        .policy((tags) => 'cost-center' in tags, 'cost-center required')
+        .policy((tags) => 'owner' in tags, 'owner required')
 
       expect(() => c.tags()).toThrow('owner required')
     })
 
     it('policy can inspect tag values, not just key presence', () => {
-      const c = new DerropsConventions({ domain: 'payments', service: 'checkout-api' })
-        .policy(
-          tags => tags['service'] !== 'unknown',
-          'service tag must not be "unknown"',
-        )
+      const c = new DerropsConventions({ domain: 'payments', service: 'checkout-api' }).policy(
+        (tags) => tags['service'] !== 'unknown',
+        'service tag must not be "unknown"',
+      )
 
       expect(() => c.tags()).not.toThrow()
     })
 
     it('call-time segment overrides are visible via resolved tags', () => {
-      const c = new DerropsConventions({ domain: 'payments' })
-        .policy(tags => 'service' in tags, 'service tag is required')
+      const c = new DerropsConventions({ domain: 'payments' }).policy(
+        (tags) => 'service' in tags,
+        'service tag is required',
+      )
 
       expect(() => c.tags()).toThrow('service tag is required')
       expect(() => c.tags({ service: 'checkout-api' })).not.toThrow()
@@ -481,15 +625,17 @@ describe('DerropsConventions — tags', () => {
     it('policies run after limit validation — a limit error takes precedence', () => {
       const c = new DerropsConventions({ domain: 'payments', service: 'checkout-api' })
         .maxTags(1)
-        .policy(tags => 'cost-center' in tags, 'cost-center required')
+        .policy((tags) => 'cost-center' in tags, 'cost-center required')
 
       // maxTags throws before the policy is reached
       expect(() => c.tags()).toThrow(/maxTags/)
     })
 
     it('with() propagates policies to derived instance', () => {
-      const base = new DerropsConventions({ domain: 'payments' })
-        .policy(tags => 'service' in tags, 'service tag is required')
+      const base = new DerropsConventions({ domain: 'payments' }).policy(
+        (tags) => 'service' in tags,
+        'service tag is required',
+      )
 
       const derived = base.with({ service: 'checkout-api' })
       expect(() => derived.tags()).not.toThrow()
@@ -501,7 +647,7 @@ describe('DerropsConventions — tags', () => {
     it('with() does not mutate the parent policies', () => {
       const base = new DerropsConventions({ domain: 'payments', service: 'api' })
       const derived = base.with({})
-      derived.policy(tags => 'cost-center' in tags, 'cost-center required')
+      derived.policy((tags) => 'cost-center' in tags, 'cost-center required')
 
       expect(() => base.tags()).not.toThrow()
       expect(() => derived.tags()).toThrow('cost-center required')
@@ -518,8 +664,11 @@ describe('DerropsConventions — tags', () => {
 
   describe('tagRule()', () => {
     it('adds extra keys to tags() output', () => {
-      const c = new DerropsConventions({ org: 'acme', domain: 'payments', service: 'checkout-api' })
-        .tagRule(() => ({ 'cost-center': 'payments-team' }))
+      const c = new DerropsConventions({
+        org: 'acme',
+        domain: 'payments',
+        service: 'checkout-api',
+      }).tagRule(() => ({ 'cost-center': 'payments-team' }))
 
       expect(c.tags()).toEqual({
         domain: 'payments',
@@ -534,7 +683,7 @@ describe('DerropsConventions — tags', () => {
         env: 'prod',
         domain: 'auth',
         service: 'token-service',
-      }).tagRule(segments => ({
+      }).tagRule((segments) => ({
         sensitive: String(segments.env === 'prod' && segments.domain === 'auth'),
       }))
 
@@ -551,7 +700,7 @@ describe('DerropsConventions — tags', () => {
         env: 'dev',
         domain: 'auth',
         service: 'token-service',
-      }).tagRule(segments => ({
+      }).tagRule((segments) => ({
         sensitive: String(segments.env === 'prod' && segments.domain === 'auth'),
       }))
 
@@ -564,7 +713,7 @@ describe('DerropsConventions — tags', () => {
         env: 'dev',
         domain: 'auth',
         service: 'token-service',
-      }).tagRule(segments => ({
+      }).tagRule((segments) => ({
         sensitive: String(segments.env === 'prod' && segments.domain === 'auth'),
       }))
 
@@ -617,15 +766,17 @@ describe('DerropsConventions — tags', () => {
     })
 
     it('rule can override a built-in tag value', () => {
-      const c = new DerropsConventions({ org: 'acme', domain: 'payments', service: 'api' })
-        .tagRule(() => ({ service: 'custom-override' }))
+      const c = new DerropsConventions({ org: 'acme', domain: 'payments', service: 'api' }).tagRule(
+        () => ({ service: 'custom-override' }),
+      )
 
       expect(c.tags()).toMatchObject({ service: 'custom-override' })
     })
 
     it('with() propagates tag rules to derived instance', () => {
-      const base = new DerropsConventions({ org: 'acme', domain: 'payments' })
-        .tagRule(() => ({ 'cost-center': 'payments-team' }))
+      const base = new DerropsConventions({ org: 'acme', domain: 'payments' }).tagRule(() => ({
+        'cost-center': 'payments-team',
+      }))
 
       const derived = base.with({ service: 'checkout-api' })
       expect(derived.tags()).toEqual({
@@ -636,8 +787,11 @@ describe('DerropsConventions — tags', () => {
     })
 
     it('with() does not mutate the parent tag rules', () => {
-      const base = new DerropsConventions({ org: 'acme', domain: 'payments', service: 'api' })
-        .tagRule(() => ({ 'cost-center': 'payments-team' }))
+      const base = new DerropsConventions({
+        org: 'acme',
+        domain: 'payments',
+        service: 'api',
+      }).tagRule(() => ({ 'cost-center': 'payments-team' }))
 
       const derived = base.with({})
       derived.tagRule(() => ({ backup: 'true' }))
@@ -655,7 +809,7 @@ describe('DerropsConventions — tags', () => {
     })
 
     it('rule receiving undefined segments handles them gracefully', () => {
-      const c = new DerropsConventions({ domain: 'payments' }).tagRule(segments => ({
+      const c = new DerropsConventions({ domain: 'payments' }).tagRule((segments) => ({
         'has-env': String(segments.env !== undefined),
       }))
 
