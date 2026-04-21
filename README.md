@@ -185,6 +185,38 @@ Override the default segment ordering. Any segment not listed is excluded from g
 naming.segmentOrder('domain', 'org', 'service', 'key')
 ```
 
+### `.arnContext(context)`
+
+Store the AWS account ID (and optional partition) on the instance for ARN construction. Used by `.staticPolicy()` and `.dynamicPolicy()` when no explicit context is passed. Region is sourced from the `region` segment.
+
+Chainable — returns `this`. Propagates to instances derived via `.with()`.
+
+```typescript
+const conventions = new DerropsConventions({ org: 'acme', region: 'us-east-1' })
+  .arnContext({ accountId: '123456789012' })
+  .arnContext({ accountId: '123456789012', partition: 'aws-cn' }) // optional partition override
+```
+
+### `.staticPolicy(context?)`
+
+Returns a `StaticPolicyBuilder` for declarative IAM policy generation. See [IAM policy generation — static mode](#static-mode).
+
+```typescript
+const doc = conventions.staticPolicy()
+  .include('s3Bucket', { key: 'uploads' }, { permissions: 'read' })
+  .buildPolicy()
+```
+
+### `.dynamicPolicy(context?)`
+
+Returns a `DynamicPolicySession` that intercepts `.name()` calls. See [IAM policy generation — dynamic mode](#dynamic-mode).
+
+```typescript
+const session = conventions.dynamicPolicy()
+const bucket = session.name({ type: 's3Bucket', key: 'uploads' }, { permissions: 'read' })
+const doc = session.buildPolicy()
+```
+
 ### `DerropsConventions.resourceTypes()`
 
 Returns a sorted array of all registered resource type keys.
@@ -348,6 +380,198 @@ Set tag size limits. Defaults match AWS constraints:
 // Stricter internal limits
 naming.keyMax(64).valueMax(128).maxTags(20)
 ```
+
+---
+
+## IAM policy generation
+
+The library can generate IAM policy documents directly from your naming conventions. Every resource type that is a direct IAM policy target carries built-in ARN construction metadata and curated action sets for three permission tiers — `read`, `readWrite`, and `manage`.
+
+There are two modes: **static** (you declare which resource types to include) and **dynamic** (the convention intercepts `.name()` calls and records what was named).
+
+### Setup — `.arnContext(context)`
+
+Store the AWS account ID on the instance once. Region is sourced from the `region` segment already set on the instance.
+
+```typescript
+const conventions = new DerropsConventions({
+  org: 'acme',
+  env: 'prod',
+  region: 'us-east-1',
+  domain: 'payments',
+  service: 'checkout-api',
+}).arnContext({ accountId: '123456789012' })
+```
+
+You can also pass the context directly to `.staticPolicy()` / `.dynamicPolicy()` for per-call overrides (e.g. cross-account ARNs).
+
+---
+
+### Static mode
+
+Declare resource types explicitly. ARNs are derived from the convention's segments.
+
+```typescript
+const doc = conventions
+  .staticPolicy()
+  .include('s3Bucket', { key: 'uploads' }, { permissions: 'read' })
+  .include('dynamoDb', { key: 'transactions' }, { permissions: 'readWrite' })
+  .include('ssmParam', { key: 'stripe-webhook-secret' }, { permissions: 'read' })
+  .buildPolicy()
+```
+
+Produces a standard AWS IAM policy document:
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": ["s3:Get*", "s3:List*"],
+      "Resource": [
+        "arn:aws:s3:::prod--acme--payments--checkout-api--uploads",
+        "arn:aws:s3:::prod--acme--payments--checkout-api--uploads/*"
+      ]
+    },
+    {
+      "Effect": "Allow",
+      "Action": ["dynamodb:Get*", "dynamodb:BatchGet*", "dynamodb:Query", "dynamodb:Scan", "dynamodb:Describe*", "dynamodb:Put*", "dynamodb:Update*", "dynamodb:Delete*", "dynamodb:BatchWrite*"],
+      "Resource": "arn:aws:dynamodb:us-east-1:123456789012:table/acme--payments--checkout-api--transactions"
+    },
+    {
+      "Effect": "Allow",
+      "Action": ["ssm:GetParameter*", "ssm:DescribeParameters"],
+      "Resource": "arn:aws:ssm:us-east-1:123456789012:parameter/acme/payments/checkout-api/stripe-webhook-secret"
+    }
+  ]
+}
+```
+
+Use `actionsFor` as a fallback for types without a `permissions` annotation, or to override with custom action lists:
+
+```typescript
+const doc = conventions
+  .staticPolicy()
+  .include('lambdaFunction', { key: 'webhook-handler' }) // no permissions tier
+  .buildPolicy({
+    actionsFor: { lambdaFunction: ['lambda:InvokeFunction'] },
+  })
+```
+
+---
+
+### Dynamic mode
+
+Create a session that intercepts every `.name()` call, records the ARN, and builds a policy from what was actually named. The return value of `.name()` is unchanged — it still returns the name string.
+
+```typescript
+const session = conventions.dynamicPolicy()
+
+// Normal naming calls — each one is intercepted and recorded
+const bucket = session.name({ type: 's3Bucket', key: 'uploads' }, { permissions: 'read' })
+const table = session.name({ type: 'dynamoDb', key: 'transactions' }, { permissions: 'readWrite' })
+const fn = session.name({ type: 'lambdaFunction', key: 'handler' }) // no annotation
+
+console.log(bucket) // 'prod--acme--payments--checkout-api--uploads' (unchanged)
+
+const doc = session.buildPolicy({
+  // fallback actions for resources without a permissions annotation
+  actionsFor: { lambdaFunction: ['lambda:InvokeFunction'] },
+})
+```
+
+Inspect what was recorded at any point:
+
+```typescript
+session.recordedResources()
+// → [
+//     { type: 's3Bucket', name: 'prod--acme--...', arn: 'arn:aws:s3:::...', permissions: 'read' },
+//     { type: 'dynamoDb', name: 'acme--...', arn: 'arn:aws:dynamodb:...', permissions: 'readWrite' },
+//     { type: 'lambdaFunction', name: 'acme--...', arn: 'arn:aws:lambda:...', permissions: undefined },
+//   ]
+```
+
+Resource types without ARN metadata (sub-resources, naming helpers) are recorded with `arn: null` and silently omitted from `buildPolicy()`.
+
+---
+
+### Permission tiers
+
+| Tier        | Intent                              | Wildcard pattern                            |
+| ----------- | ----------------------------------- | ------------------------------------------- |
+| `read`      | Read-only access                    | `Get*`, `List*`, `Describe*`                |
+| `readWrite` | Read + write/mutate                 | `read` actions + `Put*`, `Update*`, `Delete*` |
+| `manage`    | Full control                        | `<service>:*`                               |
+
+Some services use explicit actions where wildcards would over-grant (e.g. `lambda:InvokeFunction` in the `readWrite` tier rather than `lambda:Invoke*`).
+
+Check the built-in action sets for any resource type:
+
+```typescript
+import { RESOURCE_TYPES } from '@derrops-conventions'
+RESOURCE_TYPES.dynamoDb.permissions
+// → { read: [...], readWrite: [...], manage: ['dynamodb:*'] }
+```
+
+---
+
+### ARN construction
+
+ARNs are constructed from:
+
+```
+arn:{partition}:{service}:{region}:{accountId}:{resourcePrefix}{name}{resourceSuffix}
+```
+
+- `partition` — defaults to `'aws'`; override via `.arnContext({ partition: 'aws-cn' })`
+- `region` — sourced from the `region` segment; empty string for global services (IAM, S3 bucket-level, CloudFront)
+- `accountId` — set via `.arnContext()` or passed directly to `.staticPolicy()` / `.dynamicPolicy()`
+- `resourcePrefix` — e.g. `'function:'` for Lambda, `'table/'` for DynamoDB; empty for SNS/SQS where the name is appended flat
+
+IAM roles and SSM parameters use a leading `/` in the name (from `leadingDelimiter: true`), so their ARNs are correct without an extra separator:
+- `iamRole` → `arn:aws:iam::123:role/acme/payments/checkout-api/lambda-role`
+- `ssmParam` → `arn:aws:ssm:us-east-1:123:parameter/acme/payments/checkout-api/stripe-key`
+
+**S3 dual-ARN:** `s3Bucket` emits two entries in `Resource` — the bucket ARN for bucket-level actions (`s3:ListBucket`, `s3:GetBucketLocation`) and the objects ARN for object-level actions (`s3:GetObject`, `s3:PutObject`). This is handled automatically:
+```json
+"Resource": [
+  "arn:aws:s3:::bucket-name",
+  "arn:aws:s3:::bucket-name/*"
+]
+```
+
+DynamoDB GSIs use `resourceSuffix: '/index/*'` — the policy targets all indexes on the named table:
+- `dynamoDbGsi` → `arn:aws:dynamodb:us-east-1:123:table/acme--payments--checkout-api--by-user--gsi/index/*`
+
+Use `buildArn()` directly for custom registered types:
+
+```typescript
+import { buildArn, DerropsConventions } from '@derrops-conventions'
+
+DerropsConventions.registerResourceType('myQueue', {
+  global: false,
+  segmentDelimiter: '--',
+  wordDelimiter: '-',
+  iamService: 'sqs',
+  arn: { service: 'sqs', includeRegion: true, includeAccount: true },
+  permissions: { read: ['sqs:ReceiveMessage'], readWrite: ['sqs:ReceiveMessage', 'sqs:SendMessage'], manage: ['sqs:*'] },
+})
+
+buildArn('acme--platform--my-queue', RESOURCE_TYPES.myQueue.arn!, {
+  accountId: '123456789012',
+  region: 'us-east-1',
+})
+// → 'arn:aws:sqs:us-east-1:123456789012:acme--platform--my-queue'
+```
+
+---
+
+### IAM-targetable resource types
+
+The following types have full ARN + permission tier support. Types not listed (DNS records, naming helpers, sub-resources) do not have ARN metadata and are skipped in policy generation.
+
+S3, CloudWatch Logs, ECR, ECS (cluster / service / task definition), DynamoDB, DynamoDB GSI, RDS (instance / parameter group / subnet group / proxy), Lambda (function / layer), IAM (role / policy / user), SNS, SQS (queue / FIFO / DLQ), Kinesis, EventBridge (bus / rule), API Gateway (REST / HTTP), Step Functions, ElastiCache (cluster / replication group), OpenSearch, SSM Parameter, Secrets Manager, AppConfig Application, Glue (database / job / crawler), Athena Workgroup, CloudFront Distribution, Backup Vault, MSK Cluster, WAF Web ACL.
 
 ---
 

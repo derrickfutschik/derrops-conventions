@@ -7,6 +7,9 @@ import type {
 } from './types.js'
 import { RESOURCE_TYPES } from './resource-types.js'
 import type { ResourceType } from './resource-types.js'
+import { StaticPolicyBuilder } from './policy/StaticPolicyBuilder.js'
+import { DynamicPolicySession } from './policy/DynamicPolicySession.js'
+import type { ArnContext } from './policy/types.js'
 
 /**
  * Options passed to `name()`.
@@ -137,6 +140,7 @@ export class DerropsConventions<
   private tagValueMax: number
   private tagCountMax: number
   private tagPolicies: Array<{ fn: (tags: Record<string, string>) => boolean; message: string }>
+  private storedArnContext: { accountId: string; partition?: string } | undefined
 
   constructor(
     defaults: ConstrainedSegments<C> = {} as ConstrainedSegments<C>,
@@ -154,6 +158,7 @@ export class DerropsConventions<
     this.tagValueMax = DEFAULT_TAG_VALUE_MAX
     this.tagCountMax = DEFAULT_TAG_COUNT_MAX
     this.tagPolicies = []
+    this.storedArnContext = undefined
   }
 
   // ── Segment constraint helpers ────────────────────────────────────────────
@@ -484,6 +489,7 @@ export class DerropsConventions<
     derived.tagValueMax = this.tagValueMax
     derived.tagCountMax = this.tagCountMax
     derived.tagPolicies = [...this.tagPolicies]
+    derived.storedArnContext = this.storedArnContext
     return derived as unknown as DerropsConventions<C, T extends ResourceType ? T : TType>
   }
 
@@ -600,6 +606,63 @@ export class DerropsConventions<
     }
   }
 
+  // ── IAM policy generation ─────────────────────────────────────────────────
+
+  /**
+   * Store the AWS account ID (and optional partition) on this instance for ARN construction.
+   * Used by `.staticPolicy()` and `.dynamicPolicy()` when no explicit context is provided.
+   * Region is sourced from the instance's segment defaults.
+   *
+   * Chainable — returns `this`.
+   *
+   * @example
+   * const conventions = new DerropsConventions({ org: 'acme', region: 'us-east-1' })
+   *   .arnContext({ accountId: '123456789012' })
+   */
+  arnContext(context: { accountId: string; partition?: string }): this {
+    this.storedArnContext = context
+    return this
+  }
+
+  /**
+   * Create a static policy builder that generates an IAM policy document by declaring
+   * which resource types to include. ARNs are derived from the convention's segments.
+   *
+   * Provide `context` to supply or override `accountId`, `region`, or `partition`.
+   * When omitted, values are sourced from `.arnContext()` and the `region` segment default.
+   *
+   * @example
+   * const doc = conventions.staticPolicy()
+   *   .include('s3Bucket', { key: 'uploads' }, { permissions: 'read' })
+   *   .include('dynamoDb', { service: 'users' }, { permissions: 'readWrite' })
+   *   .buildPolicy()
+   */
+  staticPolicy(context?: Partial<ArnContext>): StaticPolicyBuilder<C> {
+    const resolved = this.resolveArnContext(context)
+    return new StaticPolicyBuilder(
+      (type, nameOptions) => this.name(nameOptions as NameOptions<C, TType>),
+      resolved,
+    )
+  }
+
+  /**
+   * Create a dynamic policy session that intercepts every `.name()` call, records the
+   * generated ARNs, and can produce an IAM policy document from all recorded resources.
+   *
+   * @example
+   * const session = conventions.dynamicPolicy()
+   * const bucket = session.name({ type: 's3Bucket', key: 'uploads' }, { permissions: 'read' })
+   * const table  = session.name({ type: 'dynamoDb', service: 'users' }, { permissions: 'readWrite' })
+   * const doc = session.buildPolicy()
+   */
+  dynamicPolicy(context?: Partial<ArnContext>): DynamicPolicySession<C> {
+    const resolved = this.resolveArnContext(context)
+    return new DynamicPolicySession(
+      (options) => this.name(options as NameOptions<C, TType>),
+      resolved,
+    )
+  }
+
   // ── Static utilities ──────────────────────────────────────────────────────
 
   /** List all registered resource type keys. */
@@ -630,5 +693,19 @@ export class DerropsConventions<
 
   private normalize(value: string, wordDelimiter: string): string {
     return value.toLowerCase().replace(/\s+/g, wordDelimiter)
+  }
+
+  private resolveArnContext(override?: Partial<ArnContext>): ArnContext {
+    const accountId = override?.accountId ?? this.storedArnContext?.accountId
+    if (!accountId) {
+      throw new Error(
+        'arnContext.accountId is required. Set it via .arnContext({ accountId }) on the instance or pass it directly to .staticPolicy() / .dynamicPolicy().',
+      )
+    }
+    return {
+      partition: override?.partition ?? this.storedArnContext?.partition,
+      region: override?.region ?? this.defaults.region,
+      accountId,
+    }
   }
 }

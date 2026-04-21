@@ -8,4 +8,14 @@ export type {
   ResourceTypeConfig,
   SegmentConstraints,
   ConstrainedSegments,
+  ArnConfig,
+  PermissionLevel,
+  ResourcePermissions,
 } from './types.js'
+export { StaticPolicyBuilder, DynamicPolicySession, buildArn, buildPolicyArns } from './policy/index.js'
+export type {
+  RecordedResource,
+  ArnContext,
+  PolicyDocument,
+  PolicyStatement,
+} from './policy/index.js'

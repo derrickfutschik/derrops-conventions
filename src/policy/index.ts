@@ -1,0 +1,5 @@
+export { StaticPolicyBuilder } from './StaticPolicyBuilder.js'
+export { DynamicPolicySession } from './DynamicPolicySession.js'
+export type { RecordedResource } from './DynamicPolicySession.js'
+export type { ArnContext, PolicyDocument, PolicyStatement } from './types.js'
+export { buildArn, buildPolicyArns } from './arn.js'

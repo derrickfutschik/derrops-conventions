@@ -53,6 +53,39 @@ export type ConstrainedSegments<C extends SegmentConstraints> = {
   [K in SegmentKey]?: K extends keyof C ? C[K] : string
 }
 
+/** ARN construction metadata for a resource type. */
+export interface ArnConfig {
+  /** IAM/ARN service identifier: `'s3'`, `'lambda'`, `'dynamodb'`, `'iam'`, etc. */
+  service: string
+  /** Whether the ARN includes the region component (false for IAM, S3 bucket-level, CloudFront). */
+  includeRegion: boolean
+  /** Whether the ARN includes the account-id component (false for S3 bucket-level ARNs only). */
+  includeAccount: boolean
+  /** Resource type prefix in the ARN resource component, e.g. `'function:'`, `'table/'`, `'role'`. When undefined the name is appended directly. */
+  resourcePrefix?: string
+  /** Literal suffix appended after the resource name, e.g. `'/index/*'` for GSI wildcard policies. */
+  resourceSuffix?: string
+  /**
+   * When set, policy generation emits TWO ARN entries: the base ARN and the base ARN with this
+   * suffix appended. Used for S3 buckets where bucket-level actions (`s3:ListBucket`) target
+   * `arn:aws:s3:::bucket` and object-level actions (`s3:GetObject`) target `arn:aws:s3:::bucket/*`.
+   */
+  policyResourceSuffix?: string
+}
+
+/** Named permission tiers for IAM policy generation. Actions per tier are defined on each resource type. */
+export type PermissionLevel = 'read' | 'readWrite' | 'manage'
+
+/** Curated IAM action sets for each permission tier. Defined per resource type via `ResourceTypeConfig.permissions`. */
+export interface ResourcePermissions {
+  /** Minimal read-only actions, e.g. `['s3:Get*', 's3:List*']`. */
+  read?: string[]
+  /** Read + write/mutate actions. */
+  readWrite?: string[]
+  /** Full control — always `['<service>:*']`. */
+  manage?: string[]
+}
+
 export interface ResourceTypeConfig {
   /** Whether the resource exists in a global namespace and needs region/env for uniqueness */
   global: boolean
@@ -66,4 +99,10 @@ export interface ResourceTypeConfig {
   leadingDelimiter?: boolean
   /** Literal string appended after all segments are joined, e.g. `'--gsi'`, `'.fifo'`, `'-rule'` */
   suffix?: string
+  /** IAM action prefix for this resource type, e.g. `'s3'`, `'lambda'`. */
+  iamService?: string
+  /** ARN construction metadata. Omit for sub-resources and purely naming helpers. */
+  arn?: ArnConfig
+  /** Curated IAM action sets per permission tier. Defined when `arn` is also set. */
+  permissions?: ResourcePermissions
 }
