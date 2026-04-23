@@ -747,9 +747,47 @@ Private hosted zones use `route53PrivateRecord` / `route53TenantPrivateRecord` i
 
 ---
 
-## Multi-tenancy (silo model)
+## Multi-tenancy
 
-Pass an opaque `tenant` ID to add tenant-scoped prefixes. See [the conventions guide](https://blog.slaops.com/blog/derrops-conventions#multi-tenancy) for the full decision matrix on tenant placement and when to use the silo vs pool model.
+### Naming is organisational. Tags are the security boundary.
+
+A resource name that contains a tenant ID tells you which tenant a resource belongs to. It does **not** prevent a different tenant's IAM principal from accessing it. If a Lambda execution role has `dynamodb:GetItem` on `arn:aws:dynamodb:*:*:table/acme--payments--checkout-api--*`, it can read any tenant's table regardless of whether the name contains `t-a3f8b2` or `t-9c1d44`.
+
+Resource tag conditions on IAM policies are AWS's equivalent of **Row Level Security** in a relational database. In PostgreSQL, RLS filters rows at the engine layer so one user can never return another's rows. In AWS, `aws:ResourceTag/tenant` conditions filter access at the IAM evaluation layer so one tenant's principal can never receive a grant on another tenant's resource, even when the `Resource` ARN is a wildcard.
+
+**The three-step enforcement pattern:**
+
+```typescript
+const tenantConvention = orgConvention
+  .with({ tenant: 't-a3f8b2' })
+  .tagKeys('org', 'domain', 'service', 'tenant')
+  .policy((tags) => Boolean(tags['tenant']), 'tenant tag is required')
+
+// 1 — Name it
+const tableName = tenantConvention.name({ type: 'dynamoDb', key: 'orders' })
+// → 'acme--payments--checkout-api--t-a3f8b2--orders'
+
+// 2 — Tag it atomically at provisioning (CDK example)
+const table = new dynamodb.Table(this, 'OrdersTable', { tableName })
+tenantConvention.applyTags((k, v) => Tags.of(table).add(k, v))
+// Applies: { tenant: 't-a3f8b2', domain: 'payments', service: 'checkout-api', ... }
+
+// 3 — Enforce it via IAM condition
+// tagCondition() + withCondition() generate the StringEquals condition on the resource tag.
+// Without step 3, steps 1 and 2 provide zero cross-tenant protection.
+const policy = tenantConvention
+  .policyBuilder()
+  .allow(withCondition(table.write(), tagCondition('aws:ResourceTag/tenant', 't-a3f8b2')))
+  .build()
+```
+
+Tags must be applied **atomically at provisioning time**. A resource that exists without its `tenant` tag is unprotected — any principal whose policy matches the ARN wildcard can access it. The `.policy()` call above throws at synthesis time if the tag is missing, making this a deploy-time guarantee rather than an operational discipline.
+
+See [Tag-Based Tenant Isolation (ABAC)](https://blog.slaops.com/blog/derrops-conventions#tag-based-tenant-isolation-abac) for the full decision matrix, service compatibility table, and session-tag (dynamic ABAC) pattern.
+
+### Silo model — tenant in resource names
+
+Pass an opaque `tenant` ID to add tenant-scoped prefixes:
 
 ```typescript
 const tenantNaming = naming.with({ tenant: 't-a3f8b2' })
@@ -761,9 +799,7 @@ tenantNaming.name({ type: 's3Bucket', key: 'data' })
 // → 'ap-southeast-2--prod--acme--payments--checkout-api--t-a3f8b2--data'
 ```
 
-Tenant sits after `service` in the default order, not near the left. This follows the stability principle: `org`, `domain`, and `service` are defined at system design time — they are stable, known quantities when you write CDK stacks and IAM policies. `tenant` is provisioned at runtime per customer. Because the namespace of tenant values is volatile, it belongs to the right of the design-time segments.
-
-Per-tenant security boundaries are enforced via tag-based IAM conditions (`aws:ResourceTag/tenant`), not by naming position. This keeps cross-tenant prefix patterns (`/acme/payments/checkout-api/*`) predictable while still allowing scoped access per tenant via ABAC.
+Tenant sits after `service` in the default order (tenant-second-last). This follows the stability principle: `org`, `domain`, and `service` are defined at system design time. `tenant` is provisioned at runtime. Placing it after the design-time segments keeps cross-tenant prefix patterns (`/acme/payments/checkout-api/*`) predictable for billing aggregators and audit tools, while tag conditions provide the per-tenant security boundary.
 
 For the rare case where a resource type requires tenant further left (e.g. S3 buckets in strict silo isolation for global-namespace uniqueness), use `.moveSegment()` on a scoped copy:
 
