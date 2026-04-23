@@ -73,12 +73,28 @@ describe('DerropsConventions — naming', () => {
       expect(c.name({ type: 'cloudwatchMetricNamespace' })).toBe('acme/payments')
     })
 
-    it('route53Record uses reversed DNS hierarchy', () => {
-      expect(c.name({ type: 'route53Record', org: 'acme.com' })).toBe('checkout-api.dev.acme.com')
+    it('route53Record uses reversed DNS hierarchy with apex domain', () => {
+      expect(c.name({ type: 'route53Record', apex: 'acme.com' })).toBe('checkout-api.dev.acme.com')
     })
 
-    it('route53HostedZone uses env + org', () => {
-      expect(c.name({ type: 'route53HostedZone', org: 'acme.com' })).toBe('dev.acme.com')
+    it('route53HostedZone uses env + apex domain', () => {
+      expect(c.name({ type: 'route53HostedZone', apex: 'acme.com' })).toBe('dev.acme.com')
+    })
+
+    it('route53HostedZone from instance apex default', () => {
+      expect(c.with({ apex: 'acme.com' }).name({ type: 'route53HostedZone' })).toBe('dev.acme.com')
+    })
+
+    it('acmCertificate uses service + env + apex', () => {
+      expect(c.with({ apex: 'acme.com' }).name({ type: 'acmCertificate' })).toBe(
+        'checkout-api.dev.acme.com',
+      )
+    })
+
+    it('cloudFrontAlias uses service + env + apex', () => {
+      expect(c.with({ apex: 'acme.com' }).name({ type: 'cloudFrontAlias' })).toBe(
+        'checkout-api.dev.acme.com',
+      )
     })
   })
 

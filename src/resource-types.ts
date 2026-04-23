@@ -413,25 +413,26 @@ export const RESOURCE_TYPES = {
 
   // ── DNS / Route53 / CloudFront / ACM ─────────────────────────────────────
   route53HostedZone: {
-    // env.org.com — reversed hierarchy; env is the subdomain of the apex
+    // env.acme.com — reversed hierarchy; env is the subdomain of the apex domain.
+    // Set apex to the purchased domain (e.g. 'acme.com') on the convention instance.
     global: true,
     segmentDelimiter: '.',
     wordDelimiter: '-',
-    segments: ['env', 'org'],
+    segments: ['env', 'apex'],
   },
   route53Record: {
-    // service.env.org.com — reversed hierarchy
+    // service.env.acme.com — reversed hierarchy
     global: true,
     segmentDelimiter: '.',
     wordDelimiter: '-',
-    segments: ['service', 'env', 'org'],
+    segments: ['service', 'env', 'apex'],
   },
   route53PrivateRecord: {
-    // service.internal.env.org.com
+    // service.env.acme.com — private zone, same reversed hierarchy
     global: true,
     segmentDelimiter: '.',
     wordDelimiter: '-',
-    segments: ['service', 'env', 'org'],
+    segments: ['service', 'env', 'apex'],
   },
   cloudFrontDistribution: {
     global: false,
@@ -457,18 +458,18 @@ export const RESOURCE_TYPES = {
     },
   },
   cloudFrontAlias: {
-    // service.env.org.com — same reversed DNS pattern
+    // service.env.acme.com — same reversed DNS pattern
     global: true,
     segmentDelimiter: '.',
     wordDelimiter: '-',
-    segments: ['service', 'env', 'org'],
+    segments: ['service', 'env', 'apex'],
   },
   acmCertificate: {
-    // service.env.org.com
+    // service.env.acme.com
     global: true,
     segmentDelimiter: '.',
     wordDelimiter: '-',
-    segments: ['service', 'env', 'org'],
+    segments: ['service', 'env', 'apex'],
   },
 
   // ── Networking ───────────────────────────────────────────────────────────

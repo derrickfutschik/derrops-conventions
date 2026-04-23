@@ -2,6 +2,7 @@ export type SegmentKey =
   | 'region'
   | 'env'
   | 'org'
+  | 'apex'
   | 'tenant'
   | 'domain'
   | 'service'
@@ -20,6 +21,13 @@ export interface Segments {
   region?: string
   env?: string
   org?: string
+  /**
+   * The registered DNS domain for the organisation — e.g. `'acme.com'`, `'acme.io'`.
+   * Used in place of `org` for DNS-based resource types (Route53, ACM certificates,
+   * CloudFront aliases) so that generated names are valid FQDNs. Not emitted as a tag
+   * by default; must be added explicitly via `.tagKeys()` if needed.
+   */
+  apex?: string
   tenant?: string
   domain?: string
   service?: string

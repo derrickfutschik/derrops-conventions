@@ -17,6 +17,10 @@ export {
   DynamicPolicySession,
   PolicyBuilder,
   rawGrant,
+  withCondition,
+  tagCondition,
+  sessionTagCondition,
+  s3PrefixCondition,
   buildArn,
   buildPolicyArns,
 } from './policy/index.js'
@@ -26,5 +30,6 @@ export type {
   PolicyDocument,
   PolicyStatement,
   GrantDescriptor,
+  IamCondition,
   Resource,
 } from './policy/index.js'

@@ -1,10 +1,17 @@
+/** IAM condition block — outer key is the condition operator, inner key is the condition key. */
+export type IamCondition = Record<string, Record<string, string | string[]>>
+
 /**
  * A resolved pair of ARNs + actions produced by `Resource.read()`, `.write()`, `.manage()`,
  * or `.raw()`. Passed to `PolicyBuilder.allow()` / `.deny()` for statement construction.
+ *
+ * An optional `condition` restricts when the statement applies. Grants with different conditions
+ * are never merged into the same statement even when actions are identical.
  */
 export interface GrantDescriptor {
   readonly arns: string[]
   readonly actions: string[]
+  readonly condition?: IamCondition
 }
 
 /**

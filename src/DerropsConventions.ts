@@ -57,6 +57,7 @@ const DEFAULT_SEGMENT_ORDER: SegmentKey[] = [
   'region',
   'env',
   'org',
+  'apex',
   'domain',
   'service',
   'tenant',
@@ -216,6 +217,17 @@ export class DerropsConventions<
     values: readonly V[],
   ): DerropsConventions<Omit<C, 'org'> & Record<'org', V>, TType> {
     return this.constrain('org', ...values)
+  }
+
+  /**
+   * Constrain allowed `apex` values — the registered DNS domain for the org, e.g. `'acme.com'`.
+   * Used by DNS resource types (Route53, ACM certificates, CloudFront aliases) in place of `org`
+   * so generated names are valid FQDNs. Not emitted as a tag by default.
+   */
+  apex<V extends string>(
+    values: readonly V[],
+  ): DerropsConventions<Omit<C, 'apex'> & Record<'apex', V>, TType> {
+    return this.constrain('apex', ...values)
   }
 
   /** Constrain allowed `tenant` values. */
