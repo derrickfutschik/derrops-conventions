@@ -1,4 +1,13 @@
 /**
+ * A resolved pair of ARNs + actions produced by `Resource.read()`, `.write()`, `.manage()`,
+ * or `.raw()`. Passed to `PolicyBuilder.allow()` / `.deny()` for statement construction.
+ */
+export interface GrantDescriptor {
+  readonly arns: string[]
+  readonly actions: string[]
+}
+
+/**
  * Context for ARN construction. Set once on a `DerropsConventions` instance via `.arnContext()`
  * and/or provided (or overridden) when calling `.staticPolicy()` / `.dynamicPolicy()`.
  *

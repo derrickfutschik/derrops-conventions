@@ -150,7 +150,7 @@ describe('DerropsConventions — naming', () => {
     it('creates derived instance with merged defaults', () => {
       const tenant = base.with({ tenant: 't-a3f8b2', domain: 'payments', service: 'checkout-api' })
       expect(tenant.name({ type: 'ssmParam', key: 'stripe-key' })).toBe(
-        '/acme/t-a3f8b2/payments/checkout-api/stripe-key',
+        '/acme/payments/checkout-api/t-a3f8b2/stripe-key',
       )
     })
 
@@ -160,7 +160,7 @@ describe('DerropsConventions — naming', () => {
         'acme--platform--billing--invoicer',
       )
       expect(tenant.name({ type: 'lambdaFunction', service: 'billing', key: 'invoicer' })).toBe(
-        'acme--t-a3f8b2--platform--billing--invoicer',
+        'acme--platform--billing--t-a3f8b2--invoicer',
       )
     })
   })
@@ -175,16 +175,22 @@ describe('DerropsConventions — naming', () => {
       service: 'checkout-api',
     })
 
-    it('ssmParam path includes tenant', () => {
+    it('ssmParam path places tenant after service (ABAC default order)', () => {
       expect(c.name({ type: 'ssmParam', key: 'stripe-webhook-secret' })).toBe(
-        '/acme/t-a3f8b2/payments/checkout-api/stripe-webhook-secret',
+        '/acme/payments/checkout-api/t-a3f8b2/stripe-webhook-secret',
       )
     })
 
-    it('s3Bucket with tenant includes all global segments', () => {
+    it('s3Bucket with tenant uses default order (tenant after service)', () => {
       expect(c.name({ type: 's3Bucket', key: 'data' })).toBe(
-        'ap-southeast-2--prod--acme--t-a3f8b2--payments--checkout-api--data',
+        'ap-southeast-2--prod--acme--payments--checkout-api--t-a3f8b2--data',
       )
+    })
+
+    it('moveSegment repositions tenant before domain for S3 silo isolation', () => {
+      expect(
+        c.with({}).moveSegment('tenant', 'domain').name({ type: 's3Bucket', key: 'data' }),
+      ).toBe('ap-southeast-2--prod--acme--t-a3f8b2--payments--checkout-api--data')
     })
   })
 
@@ -371,16 +377,22 @@ describe('DerropsConventions — naming', () => {
       expect(withEnv.name({ type: 'openSearchIndex' })).toBe('acme--payments')
     })
 
-    it('includes tenant between org and domain in silo model', () => {
-      expect(c.with({ tenant: 't-a3f8b2' }).name({ type: 'openSearchIndex' })).toBe(
-        'acme--t-a3f8b2--payments',
-      )
-    })
-
     it('entity segment appended when provided', () => {
       expect(c.name({ type: 'openSearchIndex', entity: 'transactions' })).toBe(
         'acme--payments--transactions',
       )
+    })
+
+    it('tenant appended after entity (entity is design-time, tenant is runtime)', () => {
+      expect(c.with({ tenant: 't-a3f8b2' }).name({ type: 'openSearchIndex' })).toBe(
+        'acme--payments--t-a3f8b2',
+      )
+    })
+
+    it('entity before tenant when both provided', () => {
+      expect(
+        c.with({ tenant: 't-a3f8b2' }).name({ type: 'openSearchIndex', entity: 'transactions' }),
+      ).toBe('acme--payments--transactions--t-a3f8b2')
     })
   })
 })

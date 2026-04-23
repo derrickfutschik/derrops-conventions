@@ -15,6 +15,8 @@ export type {
 export {
   StaticPolicyBuilder,
   DynamicPolicySession,
+  PolicyBuilder,
+  rawGrant,
   buildArn,
   buildPolicyArns,
 } from './policy/index.js'
@@ -23,4 +25,6 @@ export type {
   ArnContext,
   PolicyDocument,
   PolicyStatement,
+  GrantDescriptor,
+  Resource,
 } from './policy/index.js'

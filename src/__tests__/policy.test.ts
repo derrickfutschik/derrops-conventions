@@ -1,5 +1,6 @@
 import { describe, it, expect } from '@jest/globals'
 import { buildArn, buildPolicyArns } from '../policy/arn.js'
+import { PolicyBuilder, rawGrant } from '../policy/PolicyBuilder.js'
 import { DerropsConventions } from '../DerropsConventions.js'
 import type { ArnContext } from '../policy/types.js'
 
@@ -418,5 +419,227 @@ describe('DynamicPolicySession', () => {
     const resource = doc.Statement[0]!.Resource as string[]
     expect(resource[0]).toContain('table/slaops--platform--api--orders/index/*')
     expect(resource[0]).not.toContain('--gsi')
+  })
+})
+
+// ── Resource ──────────────────────────────────────────────────────────────────
+
+describe('DerropsConventions.resource()', () => {
+  const c = new DerropsConventions({
+    org: 'slaops',
+    domain: 'platform',
+    service: 'api',
+    region: 'ap-southeast-2',
+  }).arnContext({ accountId: '123456789012' })
+
+  it('returns name, arn, arns, type, tags', () => {
+    const r = c.resource({ type: 'lambdaFunction', key: 'handler' })
+    expect(r.name).toBe('slaops--platform--api--handler')
+    expect(r.arn).toBe(
+      'arn:aws:lambda:ap-southeast-2:123456789012:function:slaops--platform--api--handler',
+    )
+    expect(r.arns).toHaveLength(1)
+    expect(r.type).toBe('lambdaFunction')
+    expect(r.tags).toBeDefined()
+  })
+
+  it('s3Bucket arns includes bucket and bucket/*', () => {
+    const r = c.resource({ type: 's3Bucket', key: 'uploads' })
+    expect(r.arns).toHaveLength(2)
+    expect(r.arns[0]).toMatch(/:::ap-southeast-2--slaops--/)
+    expect(r.arns[1]).toMatch(/\/\*$/)
+  })
+
+  it('throws when resource type has no ARN config', () => {
+    expect(() => c.resource({ type: 'vpc' })).toThrow(/no ARN configuration/)
+  })
+
+  it('throws when arnContext is not set', () => {
+    const bare = new DerropsConventions({ org: 'slaops', region: 'ap-southeast-2' })
+    expect(() => bare.resource({ type: 'lambdaFunction', key: 'h' })).toThrow(/accountId/)
+  })
+
+  it('honors default type via .with({ type })', () => {
+    const scoped = c.with({ type: 'dynamoDb', key: 'orders' })
+    const r = scoped.resource({})
+    expect(r.type).toBe('dynamoDb')
+    expect(r.name).toContain('orders')
+  })
+
+  describe('.read()', () => {
+    it('returns read actions for the resource type', () => {
+      const r = c.resource({ type: 'dynamoDb', key: 'orders' })
+      const grant = r.read()
+      expect(grant.actions).toContain('dynamodb:Get*')
+      expect(grant.actions).toContain('dynamodb:Query')
+      expect(grant.arns).toEqual(r.arns)
+    })
+  })
+
+  describe('.write()', () => {
+    it('returns readWrite actions for the resource type', () => {
+      const r = c.resource({ type: 'dynamoDb', key: 'orders' })
+      const grant = r.write()
+      expect(grant.actions).toContain('dynamodb:Get*')
+      expect(grant.actions).toContain('dynamodb:Put*')
+    })
+  })
+
+  describe('.manage()', () => {
+    it('returns manage actions', () => {
+      const r = c.resource({ type: 'lambdaFunction', key: 'handler' })
+      const grant = r.manage()
+      expect(grant.actions).toContain('lambda:*')
+    })
+  })
+
+  describe('.raw()', () => {
+    it('returns explicit actions with resource arns', () => {
+      const r = c.resource({ type: 'lambdaFunction', key: 'handler' })
+      const grant = r.raw('lambda:InvokeFunction', 'lambda:GetFunction')
+      expect(grant.actions).toEqual(['lambda:InvokeFunction', 'lambda:GetFunction'])
+      expect(grant.arns).toEqual(r.arns)
+    })
+
+    it('throws when called with no actions', () => {
+      const r = c.resource({ type: 'lambdaFunction', key: 'handler' })
+      expect(() => r.raw()).toThrow(/.raw\(\) requires/)
+    })
+  })
+})
+
+// ── PolicyBuilder ─────────────────────────────────────────────────────────────
+
+describe('PolicyBuilder', () => {
+  const c = new DerropsConventions({
+    org: 'slaops',
+    domain: 'platform',
+    service: 'api',
+    region: 'ap-southeast-2',
+  }).arnContext({ accountId: '123456789012' })
+
+  it('merges two resources with identical action sets into one statement', () => {
+    const table1 = c.resource({ type: 'dynamoDb', key: 'orders' })
+    const table2 = c.resource({ type: 'dynamoDb', key: 'sessions' })
+
+    const doc = new PolicyBuilder().allow(table1.read(), table2.read()).build()
+
+    expect(doc.Statement).toHaveLength(1)
+    expect(doc.Statement[0]!.Effect).toBe('Allow')
+    const resources = doc.Statement[0]!.Resource as string[]
+    expect(resources).toHaveLength(2)
+    expect(resources[0]).toContain('table/slaops--platform--api--orders')
+    expect(resources[1]).toContain('table/slaops--platform--api--sessions')
+  })
+
+  it('does not merge resources with different action sets', () => {
+    const table = c.resource({ type: 'dynamoDb', key: 'orders' })
+    const fn = c.resource({ type: 'lambdaFunction', key: 'handler' })
+
+    const doc = new PolicyBuilder().allow(table.read(), fn.read()).build()
+
+    expect(doc.Statement).toHaveLength(2)
+  })
+
+  it('does not merge Allow and Deny even with the same actions', () => {
+    const table = c.resource({ type: 'dynamoDb', key: 'orders' })
+
+    const doc = new PolicyBuilder().allow(table.manage()).deny(table.manage()).build()
+
+    expect(doc.Statement).toHaveLength(2)
+    expect(doc.Statement[0]!.Effect).toBe('Allow')
+    expect(doc.Statement[1]!.Effect).toBe('Deny')
+  })
+
+  it('merges s3Bucket write() — one statement with bucket + bucket/* as resources', () => {
+    const bucket = c.resource({ type: 's3Bucket', key: 'uploads' })
+
+    const doc = new PolicyBuilder().allow(bucket.write()).build()
+
+    expect(doc.Statement).toHaveLength(1)
+    const resources = doc.Statement[0]!.Resource as string[]
+    expect(resources).toHaveLength(2)
+    expect(resources[1]).toMatch(/\/\*$/)
+  })
+
+  it('dynamoDb table and GSI with write() merge into one statement', () => {
+    const table = c.resource({ type: 'dynamoDb', key: 'orders' })
+    const gsi = c.resource({ type: 'dynamoDbGsi', key: 'orders' })
+
+    const doc = new PolicyBuilder().allow(table.write(), gsi.write()).build()
+
+    // Both dynamoDb and dynamoDbGsi share the same readWrite action list
+    expect(doc.Statement).toHaveLength(1)
+    const resources = doc.Statement[0]!.Resource as string[]
+    // table ARN
+    expect(resources.some((r) => r.endsWith('table/slaops--platform--api--orders'))).toBe(true)
+    // GSI ARN — strips --gsi suffix, appends /index/*
+    expect(resources.some((r) => r.includes('/index/*') && !r.includes('--gsi'))).toBe(true)
+  })
+
+  it('raw() grants merge when action lists are identical', () => {
+    const fn1 = c.resource({ type: 'lambdaFunction', key: 'handler' })
+    const fn2 = c.resource({ type: 'lambdaFunction', key: 'worker' })
+
+    const doc = new PolicyBuilder()
+      .allow(fn1.raw('lambda:InvokeFunction'), fn2.raw('lambda:InvokeFunction'))
+      .build()
+
+    expect(doc.Statement).toHaveLength(1)
+    const resources = doc.Statement[0]!.Resource as string[]
+    expect(resources).toHaveLength(2)
+  })
+
+  it('rawGrant with * resource produces correct statement', () => {
+    const doc = new PolicyBuilder()
+      .allow(rawGrant(['cloudwatch:PutMetricData', 'cloudwatch:PutMetricAlarm'], '*'))
+      .build()
+
+    expect(doc.Statement).toHaveLength(1)
+    expect(doc.Statement[0]!.Resource).toBe('*')
+    const actions = doc.Statement[0]!.Action as string[]
+    expect(actions).toContain('cloudwatch:PutMetricData')
+  })
+
+  it('additionalStatements are appended at the end', () => {
+    const table = c.resource({ type: 'dynamoDb', key: 'orders' })
+    const doc = new PolicyBuilder()
+      .allow(table.read())
+      .build({ additionalStatements: [{ Effect: 'Allow', Action: 's3:*', Resource: '*' }] })
+
+    expect(doc.Statement).toHaveLength(2)
+    expect(doc.Statement[1]!.Action).toBe('s3:*')
+  })
+
+  it('produces a single-string Action when there is only one action', () => {
+    const table = c.resource({ type: 'dynamoDb', key: 'orders' })
+    const doc = new PolicyBuilder().allow(table.raw('dynamodb:GetItem')).build()
+    expect(typeof doc.Statement[0]!.Action).toBe('string')
+  })
+
+  it('deduplicates identical ARNs within one allow() call', () => {
+    const table = c.resource({ type: 'dynamoDb', key: 'orders' })
+    const doc = new PolicyBuilder().allow(table.read(), table.read()).build()
+
+    expect(doc.Statement).toHaveLength(1)
+    const resource = doc.Statement[0]!.Resource
+    // Single ARN string, not duplicated array
+    expect(typeof resource).toBe('string')
+  })
+
+  it('preserves insertion order of statement groups', () => {
+    const fn = c.resource({ type: 'lambdaFunction', key: 'handler' })
+    const table = c.resource({ type: 'dynamoDb', key: 'orders' })
+
+    const doc = new PolicyBuilder().allow(fn.read()).allow(table.read()).build()
+
+    expect((doc.Statement[0]!.Resource as string).includes('function')).toBe(true)
+    expect((doc.Statement[1]!.Resource as string).includes('table')).toBe(true)
+  })
+
+  it('c.policyBuilder() is a convenience alias for new PolicyBuilder()', () => {
+    const table = c.resource({ type: 'dynamoDb', key: 'orders' })
+    const doc = c.policyBuilder().allow(table.read()).build()
+    expect(doc.Version).toBe('2012-10-17')
   })
 })

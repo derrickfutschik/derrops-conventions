@@ -3,30 +3,36 @@ import { DerropsConventions } from '../DerropsConventions.js'
 
 describe('DerropsConventions — tags', () => {
   describe('tags()', () => {
-    it('returns only domain + service by default', () => {
+    it('returns all default segments as tags', () => {
       const c = new DerropsConventions({
         org: 'acme',
         domain: 'payments',
         service: 'checkout-api',
         env: 'prod',
       })
-      expect(c.tags()).toEqual({ domain: 'payments', service: 'checkout-api' })
+      expect(c.tags()).toEqual({
+        org: 'acme',
+        domain: 'payments',
+        service: 'checkout-api',
+        environment: 'prod',
+      })
     })
 
-    it('org and environment are hidden by default even when segments are set', () => {
+    it('org and environment are shown by default when set as constructor defaults', () => {
       const c = new DerropsConventions({
         org: 'acme',
         domain: 'payments',
         service: 'api',
         env: 'prod',
       })
-      expect(c.tags()).not.toHaveProperty('org')
-      expect(c.tags()).not.toHaveProperty('environment')
+      expect(c.tags()).toHaveProperty('org')
+      expect(c.tags()).toHaveProperty('environment')
     })
 
     it('call-time overrides merge with instance defaults', () => {
       const c = new DerropsConventions({ org: 'acme', domain: 'payments', service: 'checkout-api' })
       expect(c.tags({ domain: 'identity', service: 'auth-service' })).toEqual({
+        org: 'acme',
         domain: 'identity',
         service: 'auth-service',
       })
@@ -58,13 +64,18 @@ describe('DerropsConventions — tags', () => {
     it('with() derived instance reflects merged defaults', () => {
       const base = new DerropsConventions({ org: 'acme', domain: 'platform', env: 'dev' })
       const scoped = base.with({ domain: 'payments', service: 'checkout-api' })
-      expect(scoped.tags()).toEqual({ domain: 'payments', service: 'checkout-api' })
+      expect(scoped.tags()).toEqual({
+        org: 'acme',
+        domain: 'payments',
+        service: 'checkout-api',
+        environment: 'dev',
+      })
     })
 
     it('does not mutate instance defaults', () => {
       const c = new DerropsConventions({ org: 'acme', domain: 'payments' })
       c.tags({ service: 'checkout-api' })
-      expect(c.tags()).toEqual({ domain: 'payments' })
+      expect(c.tags()).toEqual({ org: 'acme', domain: 'payments' })
     })
   })
 
@@ -117,7 +128,7 @@ describe('DerropsConventions — tags', () => {
       const base = new DerropsConventions({ org: 'acme', domain: 'payments', service: 'api' })
       const derived = base.with({})
       derived.tagKeys('org', 'domain', 'service', 'environment')
-      expect(base.tags()).toEqual({ domain: 'payments', service: 'api' })
+      expect(base.tags()).toEqual({ org: 'acme', domain: 'payments', service: 'api' })
     })
   })
 
@@ -127,16 +138,20 @@ describe('DerropsConventions — tags', () => {
     it('prepends prefix to default tag keys', () => {
       const c = new DerropsConventions(defaults)
       expect(c.tagPrefix('slaops:').tags()).toEqual({
+        'slaops:org': 'acme',
         'slaops:domain': 'payments',
         'slaops:service': 'checkout-api',
+        'slaops:environment': 'prod',
       })
     })
 
     it('works with slash separator', () => {
       const c = new DerropsConventions(defaults)
       expect(c.tagPrefix('my-app/').tags()).toEqual({
+        'my-app/org': 'acme',
         'my-app/domain': 'payments',
         'my-app/service': 'checkout-api',
+        'my-app/environment': 'prod',
       })
     })
 
@@ -154,13 +169,19 @@ describe('DerropsConventions — tags', () => {
 
     it('empty prefix has no effect', () => {
       const c = new DerropsConventions(defaults)
-      expect(c.tagPrefix('').tags()).toEqual({ domain: 'payments', service: 'checkout-api' })
+      expect(c.tagPrefix('').tags()).toEqual({
+        org: 'acme',
+        domain: 'payments',
+        service: 'checkout-api',
+        environment: 'prod',
+      })
     })
 
     it('with() inherits prefix from parent', () => {
       const base = new DerropsConventions({ org: 'acme', domain: 'payments' }).tagPrefix('slaops:')
       const scoped = base.with({ service: 'checkout-api' })
       expect(scoped.tags()).toEqual({
+        'slaops:org': 'acme',
         'slaops:domain': 'payments',
         'slaops:service': 'checkout-api',
       })
@@ -170,7 +191,7 @@ describe('DerropsConventions — tags', () => {
       const base = new DerropsConventions({ org: 'acme', domain: 'payments', service: 'api' })
       const derived = base.with({})
       derived.tagPrefix('slaops:')
-      expect(base.tags()).toEqual({ domain: 'payments', service: 'api' })
+      expect(base.tags()).toEqual({ org: 'acme', domain: 'payments', service: 'api' })
     })
   })
 
@@ -244,7 +265,7 @@ describe('DerropsConventions — tags', () => {
         'pascal',
       )
       const scoped = base.with({ service: 'checkout-api' })
-      expect(scoped.tags()).toEqual({ Domain: 'payments', Service: 'checkout-api' })
+      expect(scoped.tags()).toEqual({ Org: 'acme', Domain: 'payments', Service: 'checkout-api' })
     })
 
     it('tagKeyCasing on derived instance does not affect parent', () => {
@@ -671,6 +692,7 @@ describe('DerropsConventions — tags', () => {
       }).tagRule(() => ({ 'cost-center': 'payments-team' }))
 
       expect(c.tags()).toEqual({
+        org: 'acme',
         domain: 'payments',
         service: 'checkout-api',
         'cost-center': 'payments-team',
@@ -688,8 +710,10 @@ describe('DerropsConventions — tags', () => {
       }))
 
       expect(c.tags()).toEqual({
+        org: 'acme',
         domain: 'auth',
         service: 'token-service',
+        environment: 'prod',
         sensitive: 'true',
       })
     })
@@ -726,6 +750,7 @@ describe('DerropsConventions — tags', () => {
         .tagRule(() => ({ backup: 'true' }))
 
       expect(c.tags()).toEqual({
+        org: 'acme',
         domain: 'payments',
         service: 'checkout-api',
         'cost-center': 'payments-team',
@@ -780,6 +805,7 @@ describe('DerropsConventions — tags', () => {
 
       const derived = base.with({ service: 'checkout-api' })
       expect(derived.tags()).toEqual({
+        org: 'acme',
         domain: 'payments',
         service: 'checkout-api',
         'cost-center': 'payments-team',

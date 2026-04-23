@@ -9,6 +9,10 @@ import { RESOURCE_TYPES } from './resource-types.js'
 import type { ResourceType } from './resource-types.js'
 import { StaticPolicyBuilder } from './policy/StaticPolicyBuilder.js'
 import { DynamicPolicySession } from './policy/DynamicPolicySession.js'
+import { PolicyBuilder } from './policy/PolicyBuilder.js'
+import { ResourceImpl } from './policy/Resource.js'
+import type { Resource } from './policy/Resource.js'
+import { buildPolicyArns } from './policy/arn.js'
 import type { ArnContext } from './policy/types.js'
 
 /**
@@ -53,9 +57,9 @@ const DEFAULT_SEGMENT_ORDER: SegmentKey[] = [
   'region',
   'env',
   'org',
-  'tenant',
   'domain',
   'service',
+  'tenant',
   'partition',
   'key',
   'purpose',
@@ -71,8 +75,6 @@ const GLOBAL_ONLY_SEGMENTS: SegmentKey[] = ['region', 'env']
 
 /**
  * Maps each tag key to the segment it reads from.
- * `org` and `environment` are hidden by default (account-segregated deployments make them
- * redundant); `domain` and `service` are shown by default.
  */
 const SEGMENT_FOR_TAG: Record<TagKey, keyof Segments> = {
   org: 'org',
@@ -81,6 +83,18 @@ const SEGMENT_FOR_TAG: Record<TagKey, keyof Segments> = {
   environment: 'env',
   tenant: 'tenant',
 }
+
+/** Reverse map: segment key → tag key (for segments that have a corresponding tag). */
+const TAG_FOR_SEGMENT: Partial<Record<keyof Segments, TagKey>> = {
+  org: 'org',
+  domain: 'domain',
+  service: 'service',
+  env: 'environment',
+  tenant: 'tenant',
+}
+
+/** Canonical ordering for tag keys in `visibleTags`. */
+const ALL_TAG_KEYS: TagKey[] = ['org', 'domain', 'service', 'environment', 'tenant']
 
 const DEFAULT_TAG_KEYS: TagKey[] = ['domain', 'service']
 const DEFAULT_TAG_CASING: TagKeyCasing = 'kebab'
@@ -150,7 +164,12 @@ export class DerropsConventions<
     this.defaults = { ...defaults } as Segments
     this.order = [...DEFAULT_SEGMENT_ORDER]
     this.defaultType = defaultType
-    this.visibleTags = [...DEFAULT_TAG_KEYS]
+    const tagKeySet = new Set<TagKey>(DEFAULT_TAG_KEYS)
+    for (const seg of Object.keys(defaults) as (keyof Segments)[]) {
+      const tagKey = TAG_FOR_SEGMENT[seg]
+      if (tagKey !== undefined) tagKeySet.add(tagKey)
+    }
+    this.visibleTags = ALL_TAG_KEYS.filter((k) => tagKeySet.has(k))
     this.keyPrefix = ''
     this.keyCasing = DEFAULT_TAG_CASING
     this.tagRules = []
@@ -318,7 +337,8 @@ export class DerropsConventions<
   moveSegment(segment: SegmentKey, before: SegmentKey): this {
     const order = this.order.filter((s) => s !== segment)
     const idx = order.indexOf(before)
-    if (idx === -1) throw new Error(`moveSegment: segment "${before}" not found in current segment order`)
+    if (idx === -1)
+      throw new Error(`moveSegment: segment "${before}" not found in current segment order`)
     order.splice(idx, 0, segment)
     this.order = order
     return this
@@ -692,6 +712,62 @@ export class DerropsConventions<
       this.defaults,
       () => this.defaultType,
     )
+  }
+
+  /**
+   * Generate a named resource descriptor — the same name as `.name()` plus pre-computed ARNs,
+   * resource type, and tags. Use `.read()`, `.write()`, `.manage()`, or `.raw()` on the result
+   * to produce `GrantDescriptor` objects for `PolicyBuilder.allow()` / `.deny()`.
+   *
+   * Throws if the resource type has no ARN configuration (use `.name()` for naming-only types).
+   * Requires `.arnContext({ accountId })` to be set on the instance.
+   *
+   * @example
+   * const table = c.resource({ type: 'dynamoDb', key: 'orders' })
+   * const bucket = c.resource({ type: 's3Bucket', key: 'uploads' })
+   *
+   * const doc = c.policyBuilder()
+   *   .allow(table.read(), table2.read())  // merged into one statement
+   *   .allow(bucket.write())
+   *   .build()
+   */
+  resource(options: NameOptions<C, TType>): Resource<ResourceType> {
+    const resolvedType =
+      (options as { type?: ResourceType }).type ?? (this.defaultType as ResourceType | undefined)
+    if (!resolvedType) {
+      throw new Error(
+        'resource() requires a "type" — either pass it directly or set a default via .with({ type })',
+      )
+    }
+    const config: ResourceTypeConfig = RESOURCE_TYPES[resolvedType]
+    if (!config.arn) {
+      throw new Error(
+        `Resource type "${resolvedType}" has no ARN configuration. ` +
+          `Use .name() for naming-only resource types.`,
+      )
+    }
+    const arnContext = this.resolveArnContext()
+    const resourceName = this.name(options)
+    const arns = buildPolicyArns(resourceName, config.arn, arnContext)
+    const tags = this.tags()
+    return new ResourceImpl(resourceName, arns, resolvedType, tags, config)
+  }
+
+  /**
+   * Create a `PolicyBuilder` for composing IAM policy documents from `Resource` grant descriptors.
+   *
+   * No `arnContext` is required — ARNs are carried on `Resource` objects produced by `.resource()`.
+   * The method exists on the instance for discoverability; `new PolicyBuilder()` works equally well
+   * for cross-convention scenarios.
+   *
+   * @example
+   * const doc = c.policyBuilder()
+   *   .allow(table.read(), table2.read())
+   *   .deny(adminBucket.manage())
+   *   .build()
+   */
+  policyBuilder(): PolicyBuilder {
+    return new PolicyBuilder()
   }
 
   // ── Static utilities ──────────────────────────────────────────────────────

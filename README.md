@@ -14,7 +14,7 @@ This package encodes those rules into a fluent TypeScript builder so names are g
 Every AWS resource name is built from an ordered set of segments:
 
 ```
-{region} -- {env} -- {org} -- {tenant} -- {domain} -- {service} -- {key}
+{region} -- {env} -- {org} -- {domain} -- {service} -- {tenant} -- {key}
 ```
 
 The delimiter and which segments are included vary by resource type. Globally unique services (S3 buckets) include `region` and `env`; account-scoped services omit them. Services with native hierarchy support (SSM, S3 object keys, IAM) use `/` instead of `--`. DNS records use a reversed hierarchy with `.`.
@@ -85,26 +85,32 @@ naming.name({ type: 'subnet', kind: 'private', az: '1a' })
 
 ## Segment reference
 
-| Segment     | Used in                                 | Example                 | Description                                                         |
-| ----------- | --------------------------------------- | ----------------------- | ------------------------------------------------------------------- |
-| `region`    | Globally unique resources (S3)          | `ap-southeast-2`        | AWS region code                                                     |
-| `env`       | Globally unique resources + DNS         | `prod`, `dev`           | Deployment environment; omit if account-segregated                  |
-| `org`       | All resources                           | `acme`                  | Top-level organisational boundary                                   |
-| `tenant`    | Silo multi-tenancy only                 | `t-a3f8b2`              | Opaque tenant ID — never a human-readable name                      |
-| `domain`    | All resources                           | `payments`              | Bounded business capability                                         |
-| `service`   | Most resources                          | `checkout-api`          | Deployable service unit                                             |
-| `entity`    | OpenSearch indexes                      | `transactions`          | Data entity within a domain                                         |
-| `partition` | Time-series S3 data                     | `2024/01/15/14`         | Date/time partition path (only segment that may contain `/`)        |
-| `key`       | Most resources                          | `stripe-webhook-secret` | Specific resource, config value, or filename                        |
-| `purpose`   | Security groups, volumes, target groups | `web`, `db`             | Functional role of a resource within its service                    |
-| `kind`      | Subnets, EC2 instances                  | `private`, `public`     | Sub-classification — e.g. subnet visibility, EC2 instance role      |
-| `az`        | Subnets                                 | `1a`, `1b`, `1c`        | Availability zone suffix for per-AZ resources                       |
-| `num`       | EC2 instances                           | `01`, `02`, `03`        | Ordinal instance number when multiple instances share the same role |
-| `consumer`  | API Gateway keys                        | `partner-a`             | Consuming service or external principal                             |
-| `target`    | AppSync data sources                    | `user-table`            | Target resource or data source                                      |
-| `version`   | ECR image tags                          | `1.2.3`, `latest`       | Version identifier — use with a custom `segmentOrder` for ECR       |
+| Segment     | Used in                                 | Example                 | Description                                                            |
+| ----------- | --------------------------------------- | ----------------------- | ---------------------------------------------------------------------- |
+| `region`    | Globally unique resources (S3)          | `ap-southeast-2`        | AWS region code                                                        |
+| `env`       | Globally unique resources + DNS         | `prod`, `dev`           | Deployment environment; omit if account-segregated                     |
+| `org`       | All resources                           | `acme`                  | Top-level organisational boundary                                      |
+| `domain`    | All resources                           | `payments`              | Bounded business capability                                            |
+| `service`   | Most resources                          | `checkout-api`          | Deployable service unit                                                |
+| `tenant`    | Silo multi-tenancy only                 | `t-a3f8b2`              | Opaque tenant ID — provisioned at runtime; never a human-readable name |
+| `entity`    | OpenSearch indexes                      | `transactions`          | Data entity within a domain                                            |
+| `partition` | Time-series S3 data                     | `2024/01/15/14`         | Date/time partition path (only segment that may contain `/`)           |
+| `key`       | Most resources                          | `stripe-webhook-secret` | Specific resource, config value, or filename                           |
+| `purpose`   | Security groups, volumes, target groups | `web`, `db`             | Functional role of a resource within its service                       |
+| `kind`      | Subnets, EC2 instances                  | `private`, `public`     | Sub-classification — e.g. subnet visibility, EC2 instance role         |
+| `az`        | Subnets                                 | `1a`, `1b`, `1c`        | Availability zone suffix for per-AZ resources                          |
+| `num`       | EC2 instances                           | `01`, `02`, `03`        | Ordinal instance number when multiple instances share the same role    |
+| `consumer`  | API Gateway keys                        | `partner-a`             | Consuming service or external principal                                |
+| `target`    | AppSync data sources                    | `user-table`            | Target resource or data source                                         |
+| `version`   | ECR image tags                          | `1.2.3`, `latest`       | Version identifier — use with a custom `segmentOrder` for ECR          |
 
-Stability decreases left to right — `org` and `domain` change almost never; `key` changes frequently. See the [conventions guide](https://blog.slaops.com/blog/derrops-conventions#segment-stability) for the full stability matrix.
+Stability decreases left to right — `org` and `domain` change almost never; `key` changes frequently.
+
+`tenant` sits between `service` and `key` in the default order, not near the left. The key distinction: `org`, `domain`, and `service` are all known at system design time — they are defined when you write your CDK stacks and IAM policies. `tenant` is provisioned at runtime, per customer. The namespace of possible tenant values is volatile in a way that no other segment is. Placing runtime-provisioned segments to the right of design-time segments follows the stability principle and keeps prefix patterns predictable for cross-tenant access patterns (e.g. SSM prefix queries scoped to `/acme/payments/checkout-api/*`).
+
+Tenant isolation is enforced via tag-based IAM conditions (`aws:ResourceTag/tenant`) rather than naming position — see [Tag-Based Tenant Isolation (ABAC)](https://blog.slaops.com/blog/derrops-conventions#tag-based-tenant-isolation-abac) for the full pattern.
+
+See the [conventions guide](https://blog.slaops.com/blog/derrops-conventions#segment-stability) for the full stability matrix.
 
 ---
 
@@ -601,9 +607,20 @@ Pass an opaque `tenant` ID to add tenant-scoped prefixes. See [the conventions g
 const tenantNaming = naming.with({ tenant: 't-a3f8b2' })
 
 tenantNaming.name({ type: 'ssmParam', key: 'stripe-key' })
-// → '/acme/t-a3f8b2/payments/checkout-api/stripe-key'
+// → '/acme/payments/checkout-api/t-a3f8b2/stripe-key'
 
 tenantNaming.name({ type: 's3Bucket', key: 'data' })
+// → 'ap-southeast-2--prod--acme--payments--checkout-api--t-a3f8b2--data'
+```
+
+Tenant sits after `service` in the default order, not near the left. This follows the stability principle: `org`, `domain`, and `service` are defined at system design time — they are stable, known quantities when you write CDK stacks and IAM policies. `tenant` is provisioned at runtime per customer. Because the namespace of tenant values is volatile, it belongs to the right of the design-time segments.
+
+Per-tenant security boundaries are enforced via tag-based IAM conditions (`aws:ResourceTag/tenant`), not by naming position. This keeps cross-tenant prefix patterns (`/acme/payments/checkout-api/*`) predictable while still allowing scoped access per tenant via ABAC.
+
+For the rare case where a resource type requires tenant further left (e.g. S3 buckets in strict silo isolation for global-namespace uniqueness), use `.moveSegment()` on a scoped copy:
+
+```typescript
+tenantNaming.with({}).moveSegment('tenant', 'domain').name({ type: 's3Bucket', key: 'data' })
 // → 'ap-southeast-2--prod--acme--t-a3f8b2--payments--checkout-api--data'
 ```
 
