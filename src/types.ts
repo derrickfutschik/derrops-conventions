@@ -23,9 +23,14 @@ export interface Segments {
   org?: string
   /**
    * The registered DNS domain for the organisation — e.g. `'acme.com'`, `'acme.io'`.
-   * Used in place of `org` for DNS-based resource types (Route53, ACM certificates,
-   * CloudFront aliases) so that generated names are valid FQDNs. Not emitted as a tag
-   * by default; must be added explicitly via `.tagKeys()` if needed.
+   * Used as the root zone by DNS resource types (`route53HostedZone`, `route53Record`,
+   * `route53PrivateRecord`, `cloudFrontAlias`, `acmCertificate`).
+   *
+   * Use `.apexMapping()` on the convention instance to derive the effective zone per
+   * environment (e.g. prepend `dev.` for non-prod, omit for prod). When no mapping
+   * is set, `apex` is used verbatim.
+   *
+   * Not emitted as a tag by default — it is a naming-only segment.
    */
   apex?: string
   tenant?: string

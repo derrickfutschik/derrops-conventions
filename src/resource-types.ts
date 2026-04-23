@@ -412,27 +412,26 @@ export const RESOURCE_TYPES = {
   },
 
   // ── DNS / Route53 / CloudFront / ACM ─────────────────────────────────────
+  // apex encodes the effective zone for this deployment (e.g. 'dev.acme.com' or 'acme.com').
+  // Use .apexMapping() on the convention instance to derive it from env at naming time.
   route53HostedZone: {
-    // env.acme.com — reversed hierarchy; env is the subdomain of the apex domain.
-    // Set apex to the purchased domain (e.g. 'acme.com') on the convention instance.
-    global: true,
+    global: false,
     segmentDelimiter: '.',
     wordDelimiter: '-',
-    segments: ['env', 'apex'],
+    segments: ['apex'],
   },
   route53Record: {
-    // service.env.acme.com — reversed hierarchy
-    global: true,
+    // service.{effective-apex} — e.g. checkout-api.dev.acme.com or checkout-api.acme.com
+    global: false,
     segmentDelimiter: '.',
     wordDelimiter: '-',
-    segments: ['service', 'env', 'apex'],
+    segments: ['service', 'apex'],
   },
   route53PrivateRecord: {
-    // service.env.acme.com — private zone, same reversed hierarchy
-    global: true,
+    global: false,
     segmentDelimiter: '.',
     wordDelimiter: '-',
-    segments: ['service', 'env', 'apex'],
+    segments: ['service', 'apex'],
   },
   cloudFrontDistribution: {
     global: false,
@@ -458,18 +457,16 @@ export const RESOURCE_TYPES = {
     },
   },
   cloudFrontAlias: {
-    // service.env.acme.com — same reversed DNS pattern
-    global: true,
+    global: false,
     segmentDelimiter: '.',
     wordDelimiter: '-',
-    segments: ['service', 'env', 'apex'],
+    segments: ['service', 'apex'],
   },
   acmCertificate: {
-    // service.env.acme.com
-    global: true,
+    global: false,
     segmentDelimiter: '.',
     wordDelimiter: '-',
-    segments: ['service', 'env', 'apex'],
+    segments: ['service', 'apex'],
   },
 
   // ── Networking ───────────────────────────────────────────────────────────

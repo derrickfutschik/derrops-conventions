@@ -73,26 +73,30 @@ describe('DerropsConventions — naming', () => {
       expect(c.name({ type: 'cloudwatchMetricNamespace' })).toBe('acme/payments')
     })
 
-    it('route53Record uses reversed DNS hierarchy with apex domain', () => {
-      expect(c.name({ type: 'route53Record', apex: 'acme.com' })).toBe('checkout-api.dev.acme.com')
-    })
-
-    it('route53HostedZone uses env + apex domain', () => {
-      expect(c.name({ type: 'route53HostedZone', apex: 'acme.com' })).toBe('dev.acme.com')
-    })
-
-    it('route53HostedZone from instance apex default', () => {
-      expect(c.with({ apex: 'acme.com' }).name({ type: 'route53HostedZone' })).toBe('dev.acme.com')
-    })
-
-    it('acmCertificate uses service + env + apex', () => {
-      expect(c.with({ apex: 'acme.com' }).name({ type: 'acmCertificate' })).toBe(
+    it('route53Record uses service + apex zone', () => {
+      expect(c.name({ type: 'route53Record', apex: 'dev.acme.com' })).toBe(
         'checkout-api.dev.acme.com',
       )
     })
 
-    it('cloudFrontAlias uses service + env + apex', () => {
-      expect(c.with({ apex: 'acme.com' }).name({ type: 'cloudFrontAlias' })).toBe(
+    it('route53HostedZone is the apex zone verbatim', () => {
+      expect(c.name({ type: 'route53HostedZone', apex: 'dev.acme.com' })).toBe('dev.acme.com')
+    })
+
+    it('route53HostedZone from instance apex default', () => {
+      expect(c.with({ apex: 'dev.acme.com' }).name({ type: 'route53HostedZone' })).toBe(
+        'dev.acme.com',
+      )
+    })
+
+    it('acmCertificate uses service + apex zone', () => {
+      expect(c.with({ apex: 'dev.acme.com' }).name({ type: 'acmCertificate' })).toBe(
+        'checkout-api.dev.acme.com',
+      )
+    })
+
+    it('cloudFrontAlias uses service + apex zone', () => {
+      expect(c.with({ apex: 'dev.acme.com' }).name({ type: 'cloudFrontAlias' })).toBe(
         'checkout-api.dev.acme.com',
       )
     })

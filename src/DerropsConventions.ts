@@ -57,7 +57,6 @@ const DEFAULT_SEGMENT_ORDER: SegmentKey[] = [
   'region',
   'env',
   'org',
-  'apex',
   'domain',
   'service',
   'tenant',
@@ -70,6 +69,9 @@ const DEFAULT_SEGMENT_ORDER: SegmentKey[] = [
   'consumer',
   'target',
   'version',
+  // 'apex' is intentionally absent — it only participates in resource types that
+  // declare it explicitly in their segments list (DNS types). Including it in the
+  // default order would pollute names for all other resource types.
 ]
 
 const GLOBAL_ONLY_SEGMENTS: SegmentKey[] = ['region', 'env']
@@ -157,6 +159,7 @@ export class DerropsConventions<
   private tagCountMax: number
   private tagPolicies: Array<{ fn: (tags: Record<string, string>) => boolean; message: string }>
   private storedArnContext: { accountId: string; partition?: string } | undefined
+  private apexMapFn: ((segments: Segments) => string) | undefined
 
   constructor(
     defaults: ConstrainedSegments<C> = {} as ConstrainedSegments<C>,
@@ -180,6 +183,7 @@ export class DerropsConventions<
     this.tagCountMax = DEFAULT_TAG_COUNT_MAX
     this.tagPolicies = []
     this.storedArnContext = undefined
+    this.apexMapFn = undefined
   }
 
   // ── Segment constraint helpers ────────────────────────────────────────────
@@ -221,13 +225,35 @@ export class DerropsConventions<
 
   /**
    * Constrain allowed `apex` values — the registered DNS domain for the org, e.g. `'acme.com'`.
-   * Used by DNS resource types (Route53, ACM certificates, CloudFront aliases) in place of `org`
-   * so generated names are valid FQDNs. Not emitted as a tag by default.
+   * Used by DNS resource types (Route53, ACM certificates, CloudFront aliases) as the root zone.
+   * Pair with `.apexMapping()` to derive the effective zone per environment. Not emitted as a tag by default.
    */
   apex<V extends string>(
     values: readonly V[],
   ): DerropsConventions<Omit<C, 'apex'> & Record<'apex', V>, TType> {
     return this.constrain('apex', ...values)
+  }
+
+  /**
+   * Register a function that derives the effective DNS zone from the resolved segments.
+   * Called at `name()` time whenever `apex` appears in a resource type's segment list.
+   * The return value replaces the raw `apex` segment value for that call only.
+   *
+   * Use this to handle environment-specific zone patterns — e.g. prepend the env for
+   * non-prod but omit it for prod, or use a custom subdomain scheme:
+   *
+   * @example
+   * // prod → 'acme.com', others → 'dev.acme.com' / 'staging.acme.com'
+   * conventions.apexMapping(s => s.env === 'prod' ? s.apex! : `${s.env}.${s.apex}`)
+   *
+   * // custom subdomain per env: prod → 'app.acme.com', others → 'app-dev.acme.com'
+   * conventions.apexMapping(s => s.env === 'prod' ? `app.${s.apex}` : `app-${s.env}.${s.apex}`)
+   *
+   * Chainable — returns `this`.
+   */
+  apexMapping(fn: (segments: Segments) => string): this {
+    this.apexMapFn = fn
+    return this
   }
 
   /** Constrain allowed `tenant` values. */
@@ -550,6 +576,7 @@ export class DerropsConventions<
     derived.tagCountMax = this.tagCountMax
     derived.tagPolicies = [...this.tagPolicies]
     derived.storedArnContext = this.storedArnContext
+    derived.apexMapFn = this.apexMapFn
     return derived as unknown as DerropsConventions<C, T extends ResourceType ? T : TType>
   }
 
@@ -799,8 +826,13 @@ export class DerropsConventions<
   private buildSegments(merged: Segments, config: ResourceTypeConfig): string[] {
     const activeOrder = config.segments ?? this.effectiveOrder(config)
 
+    const effective =
+      this.apexMapFn !== undefined && activeOrder.includes('apex')
+        ? { ...merged, apex: this.apexMapFn(merged) }
+        : merged
+
     return activeOrder
-      .map((key) => merged[key])
+      .map((key) => effective[key])
       .filter((v): v is string => v !== undefined && v.length > 0)
       .map((v) => this.normalize(v, config.wordDelimiter))
   }
