@@ -155,4 +155,195 @@ describe('DerropsConventions — apex and apexMapping', () => {
       expect('apex' in tags).toBe(false)
     })
   })
+
+  describe('tenant-specific subdomains', () => {
+    // Pattern: {tenant}.{env}.{apex} — each tenant gets its own subdomain zone
+    const tenantZone = (s: { env?: string; apex?: string; tenant?: string }) =>
+      `${s.tenant}.${s.env}.${s.apex}`
+
+    it('hosted zone is scoped to the tenant', () => {
+      expect(
+        makeBase()
+          .with({ tenant: 'acme-corp' })
+          .apexMapping(tenantZone)
+          .name({ type: 'route53HostedZone' }),
+      ).toBe('acme-corp.dev.acme.com')
+    })
+
+    it('record prepends service to the tenant zone', () => {
+      expect(
+        makeBase()
+          .with({ tenant: 'acme-corp' })
+          .apexMapping(tenantZone)
+          .name({ type: 'route53Record' }),
+      ).toBe('checkout-api.acme-corp.dev.acme.com')
+    })
+
+    it('privateRecord prepends service to the tenant zone', () => {
+      expect(
+        makeBase()
+          .with({ tenant: 'acme-corp' })
+          .apexMapping(tenantZone)
+          .name({ type: 'route53PrivateRecord' }),
+      ).toBe('checkout-api.acme-corp.dev.acme.com')
+    })
+
+    it('acmCertificate uses tenant zone', () => {
+      expect(
+        makeBase()
+          .with({ tenant: 'acme-corp' })
+          .apexMapping(tenantZone)
+          .name({ type: 'acmCertificate' }),
+      ).toBe('checkout-api.acme-corp.dev.acme.com')
+    })
+
+    it('cloudFrontAlias uses tenant zone', () => {
+      expect(
+        makeBase()
+          .with({ tenant: 'acme-corp' })
+          .apexMapping(tenantZone)
+          .name({ type: 'cloudFrontAlias' }),
+      ).toBe('checkout-api.acme-corp.dev.acme.com')
+    })
+
+    it('different tenants produce different zones', () => {
+      const base = makeBase().apexMapping(tenantZone)
+      expect(base.with({ tenant: 'acme-corp' }).name({ type: 'route53HostedZone' })).toBe(
+        'acme-corp.dev.acme.com',
+      )
+      expect(base.with({ tenant: 'globex' }).name({ type: 'route53HostedZone' })).toBe(
+        'globex.dev.acme.com',
+      )
+    })
+
+    it('tenant mapping propagates through with()', () => {
+      const parent = makeBase().with({ tenant: 'acme-corp' }).apexMapping(tenantZone)
+      const child = parent.with({ service: 'auth-service' })
+      expect(child.name({ type: 'route53Record' })).toBe('auth-service.acme-corp.dev.acme.com')
+    })
+
+    it('tenant zone does not affect non-DNS resource names', () => {
+      const tenanted = makeBase().with({ tenant: 'acme-corp' }).apexMapping(tenantZone)
+      expect(tenanted.name({ type: 'lambdaFunction', key: 'handler' })).toBe(
+        'acme--payments--checkout-api--acme-corp--handler',
+      )
+      expect(tenanted.name({ type: 's3Bucket', key: 'data' })).toBe(
+        'ap-southeast-2--dev--acme--payments--checkout-api--acme-corp--data',
+      )
+    })
+  })
+
+  describe('apexZones — Mode A: one purchased domain per locale', () => {
+    // acme.com for US/EU, acme.com.au for AU
+    const makeZoned = () =>
+      new DerropsConventions({
+        org: 'acme',
+        env: 'prod',
+        domain: 'payments',
+        service: 'checkout-api',
+      }).apexZones({
+        'acme.com': ['us-east-1', 'us-west-2', 'eu-west-1'],
+        'acme.com.au': ['ap-southeast-2'],
+      })
+
+    it('us-east-1 prod → acme.com', () => {
+      expect(makeZoned().with({ region: 'us-east-1' }).name({ type: 'route53HostedZone' })).toBe(
+        'acme.com',
+      )
+    })
+
+    it('ap-southeast-2 prod → acme.com.au', () => {
+      expect(
+        makeZoned().with({ region: 'ap-southeast-2' }).name({ type: 'route53HostedZone' }),
+      ).toBe('acme.com.au')
+    })
+
+    it('record in ap-southeast-2 uses acme.com.au', () => {
+      expect(makeZoned().with({ region: 'ap-southeast-2' }).name({ type: 'route53Record' })).toBe(
+        'checkout-api.acme.com.au',
+      )
+    })
+
+    it('apexMapping env qualification composes on top of zone lookup', () => {
+      const c = makeZoned().apexMapping((s) => (s.env === 'prod' ? s.apex! : `${s.env}.${s.apex}`))
+      expect(c.with({ region: 'us-east-1', env: 'prod' }).name({ type: 'route53HostedZone' })).toBe(
+        'acme.com',
+      )
+      expect(c.with({ region: 'us-east-1', env: 'dev' }).name({ type: 'route53HostedZone' })).toBe(
+        'dev.acme.com',
+      )
+      expect(
+        c.with({ region: 'ap-southeast-2', env: 'prod' }).name({ type: 'route53HostedZone' }),
+      ).toBe('acme.com.au')
+      expect(
+        c.with({ region: 'ap-southeast-2', env: 'dev' }).name({ type: 'route53HostedZone' }),
+      ).toBe('dev.acme.com.au')
+    })
+
+    it('falls back to raw apex when region is not in the zone map', () => {
+      expect(
+        makeZoned()
+          .with({ region: 'sa-east-1', apex: 'acme.com' })
+          .name({ type: 'route53HostedZone' }),
+      ).toBe('acme.com')
+    })
+
+    it('non-DNS resource types are unaffected', () => {
+      expect(
+        makeZoned()
+          .with({ region: 'ap-southeast-2' })
+          .name({ type: 'lambdaFunction', key: 'handler' }),
+      ).toBe('acme--payments--checkout-api--handler')
+    })
+
+    it('zone map propagates through with()', () => {
+      const parent = makeZoned()
+      const child = parent.with({ service: 'auth-service' })
+      expect(child.with({ region: 'ap-southeast-2' }).name({ type: 'route53HostedZone' })).toBe(
+        'acme.com.au',
+      )
+    })
+  })
+
+  describe('apexZones — Mode B: single domain, region as subdomain', () => {
+    // Only acme.com purchased — AU traffic goes to au.acme.com
+    const makeZoned = () =>
+      new DerropsConventions({
+        org: 'acme',
+        env: 'prod',
+        domain: 'payments',
+        service: 'checkout-api',
+      }).apexZones({
+        'acme.com': ['us-east-1', 'us-west-2', 'eu-west-1'],
+        'au.acme.com': ['ap-southeast-2'],
+      })
+
+    it('us-east-1 prod → acme.com', () => {
+      expect(makeZoned().with({ region: 'us-east-1' }).name({ type: 'route53HostedZone' })).toBe(
+        'acme.com',
+      )
+    })
+
+    it('ap-southeast-2 prod → au.acme.com', () => {
+      expect(
+        makeZoned().with({ region: 'ap-southeast-2' }).name({ type: 'route53HostedZone' }),
+      ).toBe('au.acme.com')
+    })
+
+    it('record in ap-southeast-2 uses au.acme.com zone', () => {
+      expect(makeZoned().with({ region: 'ap-southeast-2' }).name({ type: 'route53Record' })).toBe(
+        'checkout-api.au.acme.com',
+      )
+    })
+
+    it('apexMapping env qualification composes on top of subdomain zone', () => {
+      const c = makeZoned().apexMapping((s) => (s.env === 'prod' ? s.apex! : `${s.env}.${s.apex}`))
+      expect(
+        c.with({ region: 'ap-southeast-2', env: 'dev' }).name({ type: 'route53HostedZone' }),
+      ).toBe('dev.au.acme.com')
+      expect(
+        c.with({ region: 'ap-southeast-2', env: 'prod' }).name({ type: 'route53Record' }),
+      ).toBe('checkout-api.au.acme.com')
+    })
+  })
 })

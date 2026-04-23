@@ -53,6 +53,21 @@ export type TagKey = 'org' | 'domain' | 'service' | 'environment' | 'tenant'
  */
 export type TagKeyCasing = 'kebab' | 'camel' | 'snake' | 'pascal'
 
+const REGION_DIRECTION_CODES: Record<string, string> = {
+  north: 'n',
+  south: 's',
+  east: 'e',
+  west: 'w',
+  northeast: 'ne',
+  northwest: 'nw',
+  southeast: 'se',
+  southwest: 'sw',
+  central: 'c',
+  local: 'l',
+  'gov-east': 'ge',
+  'gov-west': 'gw',
+}
+
 const DEFAULT_SEGMENT_ORDER: SegmentKey[] = [
   'region',
   'env',
@@ -160,6 +175,7 @@ export class DerropsConventions<
   private tagPolicies: Array<{ fn: (tags: Record<string, string>) => boolean; message: string }>
   private storedArnContext: { accountId: string; partition?: string } | undefined
   private apexMapFn: ((segments: Segments) => string) | undefined
+  private apexZoneMap: Record<string, string> | undefined
 
   constructor(
     defaults: ConstrainedSegments<C> = {} as ConstrainedSegments<C>,
@@ -184,6 +200,7 @@ export class DerropsConventions<
     this.tagPolicies = []
     this.storedArnContext = undefined
     this.apexMapFn = undefined
+    this.apexZoneMap = undefined
   }
 
   // ── Segment constraint helpers ────────────────────────────────────────────
@@ -253,6 +270,53 @@ export class DerropsConventions<
    */
   apexMapping(fn: (segments: Segments) => string): this {
     this.apexMapFn = fn
+    return this
+  }
+
+  /**
+   * Define which DNS zones belong to which regions using a domain-keyed lookup table.
+   *
+   * Pass an object mapping each purchased domain (or base zone) to the list of AWS regions
+   * that use it. At naming time the instance's `region` segment is looked up and the
+   * corresponding domain becomes the effective `apex` for that call.
+   *
+   * If no entry matches the current region the raw `apex` value is used as fallback.
+   *
+   * Composes with `.apexMapping()`: zone resolution happens first, then the mapping function
+   * receives the resolved base domain as `s.apex` and can apply env qualification on top.
+   *
+   * **Mode A — one purchased domain per locale:**
+   * @example
+   * conventions
+   *   .apexZones({
+   *     'acme.com':    ['us-east-1', 'us-west-2', 'eu-west-1'],
+   *     'acme.com.au': ['ap-southeast-2'],
+   *   })
+   *   .apexMapping(s => s.env === 'prod' ? s.apex! : `${s.env}.${s.apex}`)
+   * // us-east-1  prod → 'acme.com'       dev → 'dev.acme.com'
+   * // ap-se-2    prod → 'acme.com.au'    dev → 'dev.acme.com.au'
+   *
+   * **Mode B — single domain, region as subdomain:**
+   * @example
+   * conventions
+   *   .apexZones({
+   *     'acme.com':    ['us-east-1', 'us-west-2', 'eu-west-1'],
+   *     'au.acme.com': ['ap-southeast-2'],
+   *   })
+   *   .apexMapping(s => s.env === 'prod' ? s.apex! : `${s.env}.${s.apex}`)
+   * // us-east-1  prod → 'acme.com'       dev → 'dev.acme.com'
+   * // ap-se-2    prod → 'au.acme.com'    dev → 'dev.au.acme.com'
+   *
+   * Chainable — returns `this`.
+   */
+  apexZones(zones: Record<string, string[]>): this {
+    const regionToZone: Record<string, string> = {}
+    for (const [domain, regions] of Object.entries(zones)) {
+      for (const region of regions) {
+        regionToZone[region] = domain
+      }
+    }
+    this.apexZoneMap = regionToZone
     return this
   }
 
@@ -577,6 +641,7 @@ export class DerropsConventions<
     derived.tagPolicies = [...this.tagPolicies]
     derived.storedArnContext = this.storedArnContext
     derived.apexMapFn = this.apexMapFn
+    derived.apexZoneMap = this.apexZoneMap
     return derived as unknown as DerropsConventions<C, T extends ResourceType ? T : TType>
   }
 
@@ -821,15 +886,61 @@ export class DerropsConventions<
     ;(RESOURCE_TYPES as Record<string, ResourceTypeConfig>)[name] = config
   }
 
+  /**
+   * Convert an AWS region name to a compact alphabetic code suitable for DNS labels and resource names.
+   *
+   * | Region            | Code    |
+   * | ----------------- | ------- |
+   * | `us-east-1`       | `use1`  |
+   * | `us-west-2`       | `usw2`  |
+   * | `ap-southeast-2`  | `apse2` |
+   * | `ap-northeast-1`  | `apne1` |
+   * | `eu-central-1`    | `euc1`  |
+   * | `eu-west-1`       | `euw1`  |
+   * | `ca-central-1`    | `cac1`  |
+   * | `sa-east-1`       | `sae1`  |
+   * | `us-gov-east-1`   | `usge1` |
+   *
+   * Primarily used inside `.apexMapping()` when embedding region in a DNS zone name:
+   * @example
+   * conventions.apexMapping(s => {
+   *   const rc = DerropsConventions.regionCode(s.region!)
+   *   return s.env === 'prod' ? `${rc}.${s.apex}` : `${s.env}.${rc}.${s.apex}`
+   * })
+   */
+  static regionCode(region: string): string {
+    const parts = region.split('-')
+    if (parts.length < 2) return region
+    const location = parts[0]!
+    const num = parts[parts.length - 1]!
+    const direction = parts.slice(1, -1).join('-')
+    const abbrev = REGION_DIRECTION_CODES[direction] ?? direction.slice(0, 2)
+    return `${location}${abbrev}${num}`
+  }
+
   // ── Private ───────────────────────────────────────────────────────────────
 
   private buildSegments(merged: Segments, config: ResourceTypeConfig): string[] {
     const activeOrder = config.segments ?? this.effectiveOrder(config)
 
-    const effective =
-      this.apexMapFn !== undefined && activeOrder.includes('apex')
-        ? { ...merged, apex: this.apexMapFn(merged) }
-        : merged
+    if (!activeOrder.includes('apex')) {
+      return activeOrder
+        .map((key) => merged[key])
+        .filter((v): v is string => v !== undefined && v.length > 0)
+        .map((v) => this.normalize(v, config.wordDelimiter))
+    }
+
+    // Step 1: zone lookup — resolve base domain from region
+    let effective: Segments = merged
+    if (this.apexZoneMap !== undefined && merged.region !== undefined) {
+      const zone = this.apexZoneMap[merged.region]
+      if (zone !== undefined) effective = { ...merged, apex: zone }
+    }
+
+    // Step 2: apex mapping — env qualification or other derivation on top of resolved zone
+    if (this.apexMapFn !== undefined) {
+      effective = { ...effective, apex: this.apexMapFn(effective) }
+    }
 
     return activeOrder
       .map((key) => effective[key])
