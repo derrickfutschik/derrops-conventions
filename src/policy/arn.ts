@@ -12,7 +12,11 @@ export function buildArn(resourceName: string, arnConfig: ArnConfig, context: Ar
   const partition = context.partition ?? 'aws'
   const region = arnConfig.includeRegion ? (context.region ?? '') : ''
   const account = arnConfig.includeAccount ? (context.accountId ?? '') : ''
-  const resource = `${arnConfig.resourcePrefix ?? ''}${resourceName}${arnConfig.resourceSuffix ?? ''}`
+  const effectiveName =
+    arnConfig.stripSuffix && resourceName.endsWith(arnConfig.stripSuffix)
+      ? resourceName.slice(0, -arnConfig.stripSuffix.length)
+      : resourceName
+  const resource = `${arnConfig.resourcePrefix ?? ''}${effectiveName}${arnConfig.resourceSuffix ?? ''}`
   return `arn:${partition}:${arnConfig.service}:${region}:${account}:${resource}`
 }
 

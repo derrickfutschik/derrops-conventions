@@ -31,8 +31,8 @@ export type NameOptions<
  */
 export type TagOptions<C extends SegmentConstraints = {}> = ConstrainedSegments<C>
 
-/** The four conventional AWS resource tag keys produced by `tags()`. */
-export type TagKey = 'org' | 'domain' | 'service' | 'environment'
+/** The conventional AWS resource tag keys produced by `tags()`. */
+export type TagKey = 'org' | 'domain' | 'service' | 'environment' | 'tenant'
 
 /**
  * Casing applied to tag keys before they are written to the output dict.
@@ -79,6 +79,7 @@ const SEGMENT_FOR_TAG: Record<TagKey, keyof Segments> = {
   domain: 'domain',
   service: 'service',
   environment: 'env',
+  tenant: 'tenant',
 }
 
 const DEFAULT_TAG_KEYS: TagKey[] = ['domain', 'service']
@@ -293,6 +294,33 @@ export class DerropsConventions<
    */
   segmentOrder(...segments: SegmentKey[]): this {
     this.order = segments
+    return this
+  }
+
+  /**
+   * Move a segment to immediately before another segment in the current naming order.
+   *
+   * Use via `.with({})` to create a scoped override without mutating the shared parent
+   * instance. Primary use case: exception resource types (e.g. S3 buckets) that require
+   * `tenant` before `domain` for global-namespace uniqueness when the default convention
+   * uses ABAC positioning (tenant after service).
+   *
+   * Chainable — returns `this`.
+   *
+   * @example
+   * // ABAC convention: tenant second-last
+   * const svc = org.with({ domain: 'payments', service: 'checkout', tenant: 't-a3f8b2' })
+   *
+   * // S3 exception: tenant before domain for global uniqueness
+   * svc.with({}).moveSegment('tenant', 'domain').name({ type: 's3Bucket', key: 'data' })
+   * // → 'ap-southeast-2--prod--acme--t-a3f8b2--payments--checkout--data'
+   */
+  moveSegment(segment: SegmentKey, before: SegmentKey): this {
+    const order = this.order.filter((s) => s !== segment)
+    const idx = order.indexOf(before)
+    if (idx === -1) throw new Error(`moveSegment: segment "${before}" not found in current segment order`)
+    order.splice(idx, 0, segment)
+    this.order = order
     return this
   }
 
@@ -642,6 +670,7 @@ export class DerropsConventions<
     return new StaticPolicyBuilder(
       (type, nameOptions) => this.name(nameOptions as NameOptions<C, TType>),
       resolved,
+      this.defaults,
     )
   }
 
@@ -660,6 +689,8 @@ export class DerropsConventions<
     return new DynamicPolicySession(
       (options) => this.name(options as NameOptions<C, TType>),
       resolved,
+      this.defaults,
+      () => this.defaultType,
     )
   }
 

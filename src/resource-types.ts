@@ -208,13 +208,15 @@ export const RESOURCE_TYPES = {
     wordDelimiter: '-',
     suffix: '--gsi',
     iamService: 'dynamodb',
-    // resourceSuffix '/index/*' grants access to all indexes on the named table
+    // stripSuffix removes '--gsi' before ARN construction so the ARN targets the parent table.
+    // resourceSuffix '/index/*' grants access to all indexes on that table.
     arn: {
       service: 'dynamodb',
       includeRegion: true,
       includeAccount: true,
       resourcePrefix: 'table/',
       resourceSuffix: '/index/*',
+      stripSuffix: '--gsi',
     },
     permissions: {
       read: [
@@ -639,29 +641,17 @@ export const RESOURCE_TYPES = {
   },
 
   // ── Integration / API ────────────────────────────────────────────────────
+  // execute-api ARNs encode the auto-generated API ID, not the API name — no arn/permissions here.
+  // Use additionalStatements with resource '*' or the CDK-provided ARN for invoke grants.
   apiGatewayRestApi: {
     global: false,
     segmentDelimiter: '--',
     wordDelimiter: '-',
-    iamService: 'execute-api',
-    arn: { service: 'execute-api', includeRegion: true, includeAccount: true },
-    permissions: {
-      read: ['execute-api:Invoke'],
-      readWrite: ['execute-api:Invoke', 'execute-api:ManageConnections'],
-      manage: ['execute-api:*'],
-    },
   },
   apiGatewayHttpApi: {
     global: false,
     segmentDelimiter: '--',
     wordDelimiter: '-',
-    iamService: 'execute-api',
-    arn: { service: 'execute-api', includeRegion: true, includeAccount: true },
-    permissions: {
-      read: ['execute-api:Invoke'],
-      readWrite: ['execute-api:Invoke', 'execute-api:ManageConnections'],
-      manage: ['execute-api:*'],
-    },
   },
   apiGatewayKey: {
     global: false,
@@ -741,7 +731,14 @@ export const RESOURCE_TYPES = {
     segmentDelimiter: '--',
     wordDelimiter: '-',
     iamService: 'es',
-    arn: { service: 'es', includeRegion: true, includeAccount: true, resourcePrefix: 'domain/' },
+    // policyResourceSuffix emits both domain ARN and domain/* so HTTP index actions are covered.
+    arn: {
+      service: 'es',
+      includeRegion: true,
+      includeAccount: true,
+      resourcePrefix: 'domain/',
+      policyResourceSuffix: '/*',
+    },
     permissions: {
       read: ['es:Describe*', 'es:List*', 'es:ESHttpGet', 'es:ESHttpHead'],
       readWrite: ['es:Describe*', 'es:List*', 'es:ESHttp*'],
@@ -899,6 +896,26 @@ export const RESOURCE_TYPES = {
     global: false,
     segmentDelimiter: '--',
     wordDelimiter: '-',
+    iamService: 'redshift',
+    arn: {
+      service: 'redshift',
+      includeRegion: true,
+      includeAccount: true,
+      resourcePrefix: 'cluster:',
+    },
+    permissions: {
+      read: ['redshift:Describe*', 'redshift:List*', 'redshift:GetClusterCredentials'],
+      readWrite: [
+        'redshift:Describe*',
+        'redshift:List*',
+        'redshift:GetClusterCredentials',
+        'redshift-data:ExecuteStatement',
+        'redshift-data:BatchExecuteStatement',
+        'redshift-data:DescribeStatement',
+        'redshift-data:GetStatementResult',
+      ],
+      manage: ['redshift:*', 'redshift-data:*'],
+    },
   },
   redshiftDatabase: {
     global: false,
@@ -918,7 +935,18 @@ export const RESOURCE_TYPES = {
     },
     permissions: {
       read: ['kafka:Describe*', 'kafka:List*', 'kafka:Get*'],
-      readWrite: ['kafka:Describe*', 'kafka:List*', 'kafka:Get*', 'kafka:Update*'],
+      // kafka-cluster:* covers data-plane produce/consume (Connect, ReadData, WriteData, etc.)
+      readWrite: [
+        'kafka:Describe*',
+        'kafka:List*',
+        'kafka:Get*',
+        'kafka:Update*',
+        'kafka-cluster:Connect',
+        'kafka-cluster:DescribeCluster',
+        'kafka-cluster:ReadData',
+        'kafka-cluster:WriteData',
+        'kafka-cluster:AlterCluster',
+      ],
       manage: ['kafka:*', 'kafka-cluster:*'],
     },
   },
@@ -929,12 +957,55 @@ export const RESOURCE_TYPES = {
     segmentDelimiter: '--',
     wordDelimiter: '-',
     suffix: '-stack',
+    iamService: 'cloudformation',
+    // resourceSuffix '/*' matches all stack instances (stack ARNs include a generated UUID).
+    arn: {
+      service: 'cloudformation',
+      includeRegion: true,
+      includeAccount: true,
+      resourcePrefix: 'stack/',
+      resourceSuffix: '/*',
+    },
+    permissions: {
+      read: ['cloudformation:Describe*', 'cloudformation:Get*', 'cloudformation:List*'],
+      readWrite: [
+        'cloudformation:Describe*',
+        'cloudformation:Get*',
+        'cloudformation:List*',
+        'cloudformation:CreateStack',
+        'cloudformation:UpdateStack',
+        'cloudformation:DeleteStack',
+        'cloudformation:ExecuteChangeSet',
+        'cloudformation:CreateChangeSet',
+        'cloudformation:DeleteChangeSet',
+      ],
+      manage: ['cloudformation:*'],
+    },
   },
   configRule: {
     global: false,
     segmentDelimiter: '--',
     wordDelimiter: '-',
     suffix: '-rule',
+    iamService: 'config',
+    arn: {
+      service: 'config',
+      includeRegion: true,
+      includeAccount: true,
+      resourcePrefix: 'config-rule/',
+    },
+    permissions: {
+      read: ['config:Describe*', 'config:Get*', 'config:List*'],
+      readWrite: [
+        'config:Describe*',
+        'config:Get*',
+        'config:List*',
+        'config:PutConfigRule',
+        'config:DeleteConfigRule',
+        'config:StartConfigRulesEvaluation',
+      ],
+      manage: ['config:*'],
+    },
   },
   configAggregator: {
     global: false,
@@ -995,6 +1066,27 @@ export const RESOURCE_TYPES = {
     global: false,
     segmentDelimiter: '--',
     wordDelimiter: '-',
+    iamService: 'xray',
+    arn: {
+      service: 'xray',
+      includeRegion: true,
+      includeAccount: true,
+      resourcePrefix: 'sampling-rule/',
+    },
+    permissions: {
+      read: [
+        'xray:GetSamplingRules',
+        'xray:GetSamplingStatisticSummaries',
+        'xray:GetSamplingTargets',
+      ],
+      readWrite: [
+        'xray:GetSamplingRules',
+        'xray:GetSamplingStatisticSummaries',
+        'xray:GetSamplingTargets',
+        'xray:UpdateSamplingRule',
+      ],
+      manage: ['xray:*'],
+    },
   },
   securityHubInsight: {
     global: false,
@@ -1040,6 +1132,19 @@ export const RESOURCE_TYPES = {
     global: false,
     segmentDelimiter: '--',
     wordDelimiter: '-',
+    iamService: 'ssm',
+    arn: { service: 'ssm', includeRegion: true, includeAccount: true, resourcePrefix: 'document/' },
+    permissions: {
+      read: ['ssm:GetDocument', 'ssm:DescribeDocument', 'ssm:ListDocuments'],
+      readWrite: [
+        'ssm:GetDocument',
+        'ssm:DescribeDocument',
+        'ssm:ListDocuments',
+        'ssm:UpdateDocument',
+        'ssm:SendCommand',
+      ],
+      manage: ['ssm:*'],
+    },
   },
   ssmMaintenanceWindow: {
     global: false,

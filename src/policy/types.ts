@@ -16,8 +16,13 @@ export interface ArnContext {
 
 export interface PolicyStatement {
   Effect: 'Allow' | 'Deny'
-  Action: string | string[]
-  Resource: string | string[]
+  Action?: string | string[]
+  NotAction?: string | string[]
+  Resource?: string | string[]
+  NotResource?: string | string[]
+  Principal?: string | string[] | Record<string, string | string[]>
+  NotPrincipal?: string | string[] | Record<string, string | string[]>
+  Condition?: Record<string, Record<string, string | string[]>>
   Sid?: string
 }
 

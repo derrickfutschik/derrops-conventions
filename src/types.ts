@@ -71,6 +71,11 @@ export interface ArnConfig {
    * `arn:aws:s3:::bucket` and object-level actions (`s3:GetObject`) target `arn:aws:s3:::bucket/*`.
    */
   policyResourceSuffix?: string
+  /**
+   * When set, this string is stripped from the end of the resource name before ARN construction.
+   * Used for `dynamoDbGsi` where the `--gsi` naming suffix must not appear in the table ARN.
+   */
+  stripSuffix?: string
 }
 
 /** Named permission tiers for IAM policy generation. Actions per tier are defined on each resource type. */

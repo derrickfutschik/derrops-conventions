@@ -1,4 +1,4 @@
-import type { PermissionLevel, ResourceTypeConfig, SegmentConstraints } from '../types.js'
+import type { PermissionLevel, ResourceTypeConfig, SegmentConstraints, Segments } from '../types.js'
 import { RESOURCE_TYPES } from '../resource-types.js'
 import type { ResourceType } from '../resource-types.js'
 
@@ -37,12 +37,51 @@ function resolveActions(
 export class DynamicPolicySession<C extends SegmentConstraints = {}> {
   private readonly callName: (options: Record<string, unknown>) => string
   private readonly context: ArnContext
+  private readonly defaults: Segments
+  private readonly getDefaultType: (() => ResourceType | undefined) | undefined
   private readonly recorded: RecordedResource[] = []
   private readonly seenArns = new Set<string>()
+  private conditions: Record<string, Record<string, string | string[]>> = {}
 
-  constructor(callName: (options: Record<string, unknown>) => string, context: ArnContext) {
+  constructor(
+    callName: (options: Record<string, unknown>) => string,
+    context: ArnContext,
+    defaults: Segments = {},
+    getDefaultType?: () => ResourceType | undefined,
+  ) {
     this.callName = callName
     this.context = context
+    this.defaults = defaults
+    this.getDefaultType = getDefaultType
+  }
+
+  /**
+   * Add a condition block applied to every statement in the generated policy.
+   * Multiple calls are merged — later calls win on key conflicts within the same operator.
+   */
+  withCondition(condition: Record<string, Record<string, string | string[]>>): this {
+    for (const [op, kvs] of Object.entries(condition)) {
+      this.conditions[op] = { ...(this.conditions[op] ?? {}), ...kvs }
+    }
+    return this
+  }
+
+  /**
+   * Scope all policy statements to resources tagged with the tenant ID already set on the
+   * convention instance. Pass an explicit `tenantId` only to override.
+   *
+   * Reads `tenant` from the convention's segment defaults so the value never needs to be
+   * repeated at the call site. Throws if no tenant is resolvable.
+   *
+   * Requires that every resource is tagged with `tenant: {tenantId}` at provisioning time.
+   */
+  withTenantAbac(tenantId?: string): this {
+    const id = tenantId ?? this.defaults.tenant
+    if (!id)
+      throw new Error(
+        'withTenantAbac: no tenant value found — set one via .with({ tenant }) or pass it explicitly',
+      )
+    return this.withCondition({ StringEquals: { 'aws:ResourceTag/tenant': id } })
   }
 
   /**
@@ -52,14 +91,20 @@ export class DynamicPolicySession<C extends SegmentConstraints = {}> {
    * If `policyOptions.permissions` is provided, that tier's curated action set is used when
    * building the policy. Otherwise, fall back to `actionsFor` in `buildPolicy()`.
    *
+   * `type` may be omitted when the parent `DerropsConventions` instance has a default type
+   * set via `.with({ type })`.
+   *
    * Duplicate ARNs (same type + same resolved name) are silently deduplicated.
    */
   name(
-    options: { type: ResourceType } & Record<string, unknown>,
+    options: Record<string, unknown>,
     policyOptions?: { permissions?: PermissionLevel },
   ): string {
     const result = this.callName(options)
-    const resolvedType = options.type
+    const resolvedType = ((options as { type?: ResourceType }).type ?? this.getDefaultType?.()) as
+      | ResourceType
+      | undefined
+    if (!resolvedType) return result
     const config = getConfig(resolvedType)
     const arn = config.arn ? buildArn(result, config.arn, this.context) : null
 
@@ -112,11 +157,15 @@ export class DynamicPolicySession<C extends SegmentConstraints = {}> {
 
       const arns = buildPolicyArns(resource.name, config.arn!, this.context)
       const resourceField = arns.length === 1 ? arns[0]! : arns
-      statements.push({
+      const stmt: PolicyStatement = {
         Effect: effect,
         Action: actions.length === 1 ? actions[0]! : actions,
         Resource: resourceField,
-      })
+      }
+      if (Object.keys(this.conditions).length > 0) {
+        stmt.Condition = { ...this.conditions }
+      }
+      statements.push(stmt)
     }
 
     if (options?.additionalStatements) {
