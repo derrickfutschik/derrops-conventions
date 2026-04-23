@@ -1,4 +1,6 @@
 export { DerropsConventions } from './DerropsConventions.js'
+export { buildConsoleUrl } from './console.js'
+export type { ConsoleUrlContext } from './console.js'
 export type { NameOptions, TagOptions, TagKey, TagKeyCasing } from './DerropsConventions.js'
 export { RESOURCE_TYPES } from './resource-types.js'
 export type { ResourceType } from './resource-types.js'

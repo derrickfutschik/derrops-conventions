@@ -123,4 +123,11 @@ export interface ResourceTypeConfig {
   arn?: ArnConfig
   /** Curated IAM action sets per permission tier. Defined when `arn` is also set. */
   permissions?: ResourcePermissions
+  /**
+   * AWS Console product label for this resource type — used as the type discriminator in the
+   * `dns` field returned by `DerropsConventions.resource()`. Follows the AWS Console name
+   * (e.g. `'dynamodb'`, `'lambda'`, `'ecs-cluster'`, `'cloudwatch-logs'`).
+   * Set on types that have `arn` defined; omit for naming helpers and sub-resources.
+   */
+  consoleLabel?: string
 }

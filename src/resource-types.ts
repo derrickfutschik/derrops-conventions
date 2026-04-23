@@ -20,6 +20,7 @@ export const RESOURCE_TYPES = {
     segmentDelimiter: '--',
     wordDelimiter: '-',
     iamService: 's3',
+    consoleLabel: 's3',
     // policyResourceSuffix emits both bucket ARN and objects ARN in policy statements
     arn: { service: 's3', includeRegion: false, includeAccount: false, policyResourceSuffix: '/*' },
     permissions: {
@@ -47,6 +48,7 @@ export const RESOURCE_TYPES = {
     wordDelimiter: '-',
     leadingDelimiter: true,
     iamService: 'logs',
+    consoleLabel: 'cloudwatch-logs',
     arn: {
       service: 'logs',
       includeRegion: true,
@@ -92,6 +94,7 @@ export const RESOURCE_TYPES = {
     segmentDelimiter: '/',
     wordDelimiter: '-',
     iamService: 'ecr',
+    consoleLabel: 'ecr',
     arn: {
       service: 'ecr',
       includeRegion: true,
@@ -119,6 +122,7 @@ export const RESOURCE_TYPES = {
     segmentDelimiter: '--',
     wordDelimiter: '-',
     iamService: 'ecs',
+    consoleLabel: 'ecs-cluster',
     arn: { service: 'ecs', includeRegion: true, includeAccount: true, resourcePrefix: 'cluster/' },
     permissions: {
       read: ['ecs:Describe*', 'ecs:List*'],
@@ -138,6 +142,7 @@ export const RESOURCE_TYPES = {
     segmentDelimiter: '--',
     wordDelimiter: '-',
     iamService: 'ecs',
+    consoleLabel: 'ecs-service',
     arn: { service: 'ecs', includeRegion: true, includeAccount: true, resourcePrefix: 'service/' },
     permissions: {
       read: ['ecs:Describe*', 'ecs:List*'],
@@ -150,6 +155,7 @@ export const RESOURCE_TYPES = {
     segmentDelimiter: '--',
     wordDelimiter: '-',
     iamService: 'ecs',
+    consoleLabel: 'ecs-task',
     arn: {
       service: 'ecs',
       includeRegion: true,
@@ -174,6 +180,7 @@ export const RESOURCE_TYPES = {
     segmentDelimiter: '--',
     wordDelimiter: '-',
     iamService: 'dynamodb',
+    consoleLabel: 'dynamodb',
     arn: {
       service: 'dynamodb',
       includeRegion: true,
@@ -208,6 +215,7 @@ export const RESOURCE_TYPES = {
     wordDelimiter: '-',
     suffix: '--gsi',
     iamService: 'dynamodb',
+    consoleLabel: 'dynamodb-gsi',
     // stripSuffix removes '--gsi' before ARN construction so the ARN targets the parent table.
     // resourceSuffix '/index/*' grants access to all indexes on that table.
     arn: {
@@ -245,6 +253,7 @@ export const RESOURCE_TYPES = {
     segmentDelimiter: '--',
     wordDelimiter: '-',
     iamService: 'rds',
+    consoleLabel: 'rds',
     arn: { service: 'rds', includeRegion: true, includeAccount: true, resourcePrefix: 'db:' },
     permissions: {
       read: ['rds:Describe*', 'rds:List*'],
@@ -263,6 +272,7 @@ export const RESOURCE_TYPES = {
     segmentDelimiter: '--',
     wordDelimiter: '-',
     iamService: 'rds',
+    consoleLabel: 'rds-param-group',
     arn: { service: 'rds', includeRegion: true, includeAccount: true, resourcePrefix: 'pg:' },
     permissions: {
       read: ['rds:Describe*'],
@@ -275,6 +285,7 @@ export const RESOURCE_TYPES = {
     segmentDelimiter: '--',
     wordDelimiter: '-',
     iamService: 'rds',
+    consoleLabel: 'rds-subnet-group',
     arn: { service: 'rds', includeRegion: true, includeAccount: true, resourcePrefix: 'subgrp:' },
     permissions: {
       read: ['rds:Describe*'],
@@ -287,6 +298,7 @@ export const RESOURCE_TYPES = {
     segmentDelimiter: '--',
     wordDelimiter: '-',
     iamService: 'rds',
+    consoleLabel: 'rds-proxy',
     arn: { service: 'rds', includeRegion: true, includeAccount: true, resourcePrefix: 'db-proxy:' },
     permissions: {
       read: ['rds:Describe*'],
@@ -326,6 +338,7 @@ export const RESOURCE_TYPES = {
     segmentDelimiter: '--',
     wordDelimiter: '-',
     iamService: 'lambda',
+    consoleLabel: 'lambda',
     arn: {
       service: 'lambda',
       includeRegion: true,
@@ -343,6 +356,7 @@ export const RESOURCE_TYPES = {
     segmentDelimiter: '--',
     wordDelimiter: '-',
     iamService: 'lambda',
+    consoleLabel: 'lambda-layer',
     arn: { service: 'lambda', includeRegion: true, includeAccount: true, resourcePrefix: 'layer:' },
     permissions: {
       read: ['lambda:Get*', 'lambda:List*'],
@@ -372,6 +386,7 @@ export const RESOURCE_TYPES = {
     wordDelimiter: '-',
     leadingDelimiter: true,
     iamService: 'iam',
+    consoleLabel: 'iam-role',
     arn: { service: 'iam', includeRegion: false, includeAccount: true, resourcePrefix: 'role' },
     permissions: {
       read: ['iam:Get*', 'iam:List*'],
@@ -384,6 +399,7 @@ export const RESOURCE_TYPES = {
     segmentDelimiter: '--',
     wordDelimiter: '-',
     iamService: 'iam',
+    consoleLabel: 'iam-policy',
     arn: { service: 'iam', includeRegion: false, includeAccount: true, resourcePrefix: 'policy/' },
     permissions: {
       read: ['iam:Get*', 'iam:List*'],
@@ -396,6 +412,7 @@ export const RESOURCE_TYPES = {
     segmentDelimiter: '--',
     wordDelimiter: '-',
     iamService: 'iam',
+    consoleLabel: 'iam-user',
     arn: { service: 'iam', includeRegion: false, includeAccount: true, resourcePrefix: 'user/' },
     permissions: {
       read: ['iam:Get*', 'iam:List*'],
@@ -438,6 +455,7 @@ export const RESOURCE_TYPES = {
     segmentDelimiter: '--',
     wordDelimiter: '-',
     iamService: 'cloudfront',
+    consoleLabel: 'cloudfront',
     arn: {
       service: 'cloudfront',
       includeRegion: false,
@@ -511,6 +529,7 @@ export const RESOURCE_TYPES = {
     segmentDelimiter: '--',
     wordDelimiter: '-',
     iamService: 'sns',
+    consoleLabel: 'sns',
     arn: { service: 'sns', includeRegion: true, includeAccount: true },
     permissions: {
       read: ['sns:Get*', 'sns:List*'],
@@ -523,6 +542,7 @@ export const RESOURCE_TYPES = {
     segmentDelimiter: '--',
     wordDelimiter: '-',
     iamService: 'sqs',
+    consoleLabel: 'sqs',
     arn: { service: 'sqs', includeRegion: true, includeAccount: true },
     permissions: {
       read: ['sqs:Get*', 'sqs:List*', 'sqs:ReceiveMessage'],
@@ -543,6 +563,7 @@ export const RESOURCE_TYPES = {
     wordDelimiter: '-',
     suffix: '.fifo',
     iamService: 'sqs',
+    consoleLabel: 'sqs-fifo',
     arn: { service: 'sqs', includeRegion: true, includeAccount: true },
     permissions: {
       read: ['sqs:Get*', 'sqs:List*', 'sqs:ReceiveMessage'],
@@ -563,6 +584,7 @@ export const RESOURCE_TYPES = {
     wordDelimiter: '-',
     suffix: '--dlq',
     iamService: 'sqs',
+    consoleLabel: 'sqs-dlq',
     arn: { service: 'sqs', includeRegion: true, includeAccount: true },
     permissions: {
       read: ['sqs:Get*', 'sqs:List*', 'sqs:ReceiveMessage'],
@@ -582,6 +604,7 @@ export const RESOURCE_TYPES = {
     segmentDelimiter: '--',
     wordDelimiter: '-',
     iamService: 'kinesis',
+    consoleLabel: 'kinesis',
     arn: {
       service: 'kinesis',
       includeRegion: true,
@@ -599,6 +622,7 @@ export const RESOURCE_TYPES = {
     segmentDelimiter: '--',
     wordDelimiter: '-',
     iamService: 'events',
+    consoleLabel: 'eventbridge',
     arn: {
       service: 'events',
       includeRegion: true,
@@ -617,6 +641,7 @@ export const RESOURCE_TYPES = {
     wordDelimiter: '-',
     suffix: '-rule',
     iamService: 'events',
+    consoleLabel: 'eventbridge-rule',
     arn: { service: 'events', includeRegion: true, includeAccount: true, resourcePrefix: 'rule/' },
     permissions: {
       read: ['events:Describe*', 'events:List*'],
@@ -667,6 +692,7 @@ export const RESOURCE_TYPES = {
     segmentDelimiter: '--',
     wordDelimiter: '-',
     iamService: 'states',
+    consoleLabel: 'sfn',
     arn: {
       service: 'states',
       includeRegion: true,
@@ -695,6 +721,7 @@ export const RESOURCE_TYPES = {
     segmentDelimiter: '--',
     wordDelimiter: '-',
     iamService: 'elasticache',
+    consoleLabel: 'elasticache',
     arn: {
       service: 'elasticache',
       includeRegion: true,
@@ -712,6 +739,7 @@ export const RESOURCE_TYPES = {
     segmentDelimiter: '--',
     wordDelimiter: '-',
     iamService: 'elasticache',
+    consoleLabel: 'elasticache-rg',
     arn: {
       service: 'elasticache',
       includeRegion: true,
@@ -729,6 +757,7 @@ export const RESOURCE_TYPES = {
     segmentDelimiter: '--',
     wordDelimiter: '-',
     iamService: 'es',
+    consoleLabel: 'opensearch',
     // policyResourceSuffix emits both domain ARN and domain/* so HTTP index actions are covered.
     arn: {
       service: 'es',
@@ -758,6 +787,7 @@ export const RESOURCE_TYPES = {
     wordDelimiter: '-',
     leadingDelimiter: true,
     iamService: 'ssm',
+    consoleLabel: 'ssm',
     arn: { service: 'ssm', includeRegion: true, includeAccount: true, resourcePrefix: 'parameter' },
     permissions: {
       read: ['ssm:GetParameter*', 'ssm:DescribeParameters'],
@@ -775,6 +805,7 @@ export const RESOURCE_TYPES = {
     segmentDelimiter: '/',
     wordDelimiter: '-',
     iamService: 'secretsmanager',
+    consoleLabel: 'secretsmanager',
     arn: {
       service: 'secretsmanager',
       includeRegion: true,
@@ -798,6 +829,7 @@ export const RESOURCE_TYPES = {
     segmentDelimiter: '--',
     wordDelimiter: '-',
     iamService: 'appconfig',
+    consoleLabel: 'appconfig',
     arn: {
       service: 'appconfig',
       includeRegion: true,
@@ -823,6 +855,7 @@ export const RESOURCE_TYPES = {
     segmentDelimiter: '_',
     wordDelimiter: '_',
     iamService: 'glue',
+    consoleLabel: 'glue',
     arn: {
       service: 'glue',
       includeRegion: true,
@@ -841,6 +874,7 @@ export const RESOURCE_TYPES = {
     wordDelimiter: '-',
     suffix: '-job',
     iamService: 'glue',
+    consoleLabel: 'glue-job',
     arn: { service: 'glue', includeRegion: true, includeAccount: true, resourcePrefix: 'job/' },
     permissions: {
       read: ['glue:Get*', 'glue:List*'],
@@ -854,6 +888,7 @@ export const RESOURCE_TYPES = {
     wordDelimiter: '-',
     suffix: '-crawler',
     iamService: 'glue',
+    consoleLabel: 'glue-crawler',
     arn: { service: 'glue', includeRegion: true, includeAccount: true, resourcePrefix: 'crawler/' },
     permissions: {
       read: ['glue:Get*', 'glue:List*'],
@@ -872,6 +907,7 @@ export const RESOURCE_TYPES = {
     segmentDelimiter: '--',
     wordDelimiter: '-',
     iamService: 'athena',
+    consoleLabel: 'athena',
     arn: {
       service: 'athena',
       includeRegion: true,
@@ -895,6 +931,7 @@ export const RESOURCE_TYPES = {
     segmentDelimiter: '--',
     wordDelimiter: '-',
     iamService: 'redshift',
+    consoleLabel: 'redshift',
     arn: {
       service: 'redshift',
       includeRegion: true,
@@ -925,6 +962,7 @@ export const RESOURCE_TYPES = {
     segmentDelimiter: '--',
     wordDelimiter: '-',
     iamService: 'kafka',
+    consoleLabel: 'msk',
     arn: {
       service: 'kafka',
       includeRegion: true,
@@ -956,6 +994,7 @@ export const RESOURCE_TYPES = {
     wordDelimiter: '-',
     suffix: '-stack',
     iamService: 'cloudformation',
+    consoleLabel: 'cloudformation',
     // resourceSuffix '/*' matches all stack instances (stack ARNs include a generated UUID).
     arn: {
       service: 'cloudformation',
@@ -986,6 +1025,7 @@ export const RESOURCE_TYPES = {
     wordDelimiter: '-',
     suffix: '-rule',
     iamService: 'config',
+    consoleLabel: 'config',
     arn: {
       service: 'config',
       includeRegion: true,
@@ -1017,6 +1057,7 @@ export const RESOURCE_TYPES = {
     segments: ['org', 'domain', 'service'],
     suffix: '--waf',
     iamService: 'wafv2',
+    consoleLabel: 'waf',
     arn: { service: 'wafv2', includeRegion: true, includeAccount: true, resourcePrefix: 'webacl/' },
     permissions: {
       read: ['wafv2:Get*', 'wafv2:List*', 'wafv2:Describe*'],
@@ -1041,6 +1082,7 @@ export const RESOURCE_TYPES = {
     segmentDelimiter: '--',
     wordDelimiter: '-',
     iamService: 'backup',
+    consoleLabel: 'backup-vault',
     arn: {
       service: 'backup',
       includeRegion: true,
@@ -1065,6 +1107,7 @@ export const RESOURCE_TYPES = {
     segmentDelimiter: '--',
     wordDelimiter: '-',
     iamService: 'xray',
+    consoleLabel: 'xray',
     arn: {
       service: 'xray',
       includeRegion: true,
@@ -1131,6 +1174,7 @@ export const RESOURCE_TYPES = {
     segmentDelimiter: '--',
     wordDelimiter: '-',
     iamService: 'ssm',
+    consoleLabel: 'ssm-document',
     arn: { service: 'ssm', includeRegion: true, includeAccount: true, resourcePrefix: 'document/' },
     permissions: {
       read: ['ssm:GetDocument', 'ssm:DescribeDocument', 'ssm:ListDocuments'],
