@@ -79,8 +79,10 @@ export const RESOURCE_TYPES = {
     },
   },
   cloudwatchMetricNamespace: {
-    // namespace is org/domain only; service goes into Dimensions
-    // not a direct IAM ARN target — policies use '*' for CloudWatch metrics
+    // Namespace is org/domain only — service-level granularity belongs in Dimensions.
+    // Use conventions.dimensions() to produce the CloudWatch Dimensions array
+    // (Service, Environment, Tenant, etc.) alongside PutMetricData calls.
+    // Not a direct IAM ARN target — CloudWatch metric policies use Resource: '*'.
     global: false,
     segmentDelimiter: '/',
     wordDelimiter: '-',
@@ -422,15 +424,26 @@ export const RESOURCE_TYPES = {
   },
   iamPath: {
     // path prefix for organising roles/users: /{org}/{domain}/{service}/
+    // AWS requires IAM paths to start AND end with '/'; suffix adds the trailing slash.
     global: false,
     segmentDelimiter: '/',
     wordDelimiter: '-',
     leadingDelimiter: true,
+    suffix: '/',
   },
 
   // ── DNS / Route53 / CloudFront / ACM ─────────────────────────────────────
   // apex encodes the effective zone for this deployment (e.g. 'dev.acme.com' or 'acme.com').
   // Use .apexMapping() on the convention instance to derive it from env at naming time.
+  //
+  // Three subdomain patterns are supported:
+  //   service-first  — route53Record / route53PrivateRecord / cloudFrontAlias / acmCertificate
+  //                    {service}.{zone}         e.g. checkout-api.dev.acme.com
+  //   tenant-first   — route53TenantRecord / route53TenantPrivateRecord / cloudFrontTenantAlias / acmCertificateTenant
+  //                    {tenant}.{service}.{zone} e.g. acme-corp.checkout-api.dev.acme.com
+  //   zone apex (@)  — route53ApexRecord         just the zone itself, for root A/AAAA records
+  //   wildcard       — route53WildcardRecord / cloudFrontWildcardAlias
+  //                    *.{zone}                  e.g. *.dev.acme.com
   route53HostedZone: {
     global: false,
     segmentDelimiter: '.',
@@ -449,6 +462,38 @@ export const RESOURCE_TYPES = {
     segmentDelimiter: '.',
     wordDelimiter: '-',
     segments: ['service', 'apex'],
+  },
+  route53ApexRecord: {
+    // Zone apex (@) record — the domain itself with no service prefix.
+    // Use for root A/AAAA records: e.g. 'dev.acme.com' → 54.x.x.x.
+    // Identical to route53HostedZone in output; semantically it names a record, not the zone.
+    global: false,
+    segmentDelimiter: '.',
+    wordDelimiter: '-',
+    segments: ['apex'],
+  },
+  route53WildcardRecord: {
+    // Wildcard record covering all unmatched subdomains: *.{effective-apex}
+    // e.g. with apexMapping(s => `${s.env}.${s.apex}`) → '*.dev.acme.com'
+    global: false,
+    segmentDelimiter: '.',
+    wordDelimiter: '-',
+    segments: ['apex'],
+    namePrefix: '*.',
+  },
+  route53TenantRecord: {
+    // Tenant-first subdomain: {tenant}.{service}.{effective-apex}
+    // e.g. acme-corp.checkout-api.dev.acme.com
+    global: false,
+    segmentDelimiter: '.',
+    wordDelimiter: '-',
+    segments: ['tenant', 'service', 'apex'],
+  },
+  route53TenantPrivateRecord: {
+    global: false,
+    segmentDelimiter: '.',
+    wordDelimiter: '-',
+    segments: ['tenant', 'service', 'apex'],
   },
   cloudFrontDistribution: {
     global: false,
@@ -480,11 +525,33 @@ export const RESOURCE_TYPES = {
     wordDelimiter: '-',
     segments: ['service', 'apex'],
   },
+  cloudFrontWildcardAlias: {
+    // Wildcard CloudFront alias: *.{effective-apex}
+    global: false,
+    segmentDelimiter: '.',
+    wordDelimiter: '-',
+    segments: ['apex'],
+    namePrefix: '*.',
+  },
+  cloudFrontTenantAlias: {
+    // Tenant-first CloudFront alias: {tenant}.{service}.{effective-apex}
+    global: false,
+    segmentDelimiter: '.',
+    wordDelimiter: '-',
+    segments: ['tenant', 'service', 'apex'],
+  },
   acmCertificate: {
     global: false,
     segmentDelimiter: '.',
     wordDelimiter: '-',
     segments: ['service', 'apex'],
+  },
+  acmCertificateTenant: {
+    // Tenant-first ACM certificate: {tenant}.{service}.{effective-apex}
+    global: false,
+    segmentDelimiter: '.',
+    wordDelimiter: '-',
+    segments: ['tenant', 'service', 'apex'],
   },
 
   // ── Networking ───────────────────────────────────────────────────────────
@@ -773,6 +840,11 @@ export const RESOURCE_TYPES = {
     },
   },
   openSearchIndex: {
+    // Index name is org/domain/entity — intentionally NOT service.
+    // An entity (e.g. 'transactions', 'users') lives at the domain level, not within a
+    // specific service. Multiple services that produce or consume the same entity type
+    // share the same index — this is by design. Use 'entity' to identify the document
+    // type and 'tenant' to shard by tenant in a multi-tenant deployment.
     global: false,
     segmentDelimiter: '--',
     wordDelimiter: '-',

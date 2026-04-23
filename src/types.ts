@@ -36,6 +36,12 @@ export interface Segments {
   tenant?: string
   domain?: string
   service?: string
+  /**
+   * Data entity within a domain — e.g. `'transactions'`, `'users'`.
+   * Intentionally absent from `DEFAULT_SEGMENT_ORDER`. Only participates in resource types
+   * that declare it explicitly in their `segments` list (e.g. `openSearchIndex`). Passing
+   * `entity` to any other type has no effect and produces no name output.
+   */
   entity?: string
   partition?: string
   key?: string
@@ -115,6 +121,8 @@ export interface ResourceTypeConfig {
   segments?: SegmentKey[]
   /** Prepend the segment delimiter at the start of the name (e.g. SSM `/acme/...`) */
   leadingDelimiter?: boolean
+  /** Literal string prepended to the joined name (before suffix). Used for wildcard DNS records: `'*.'` */
+  namePrefix?: string
   /** Literal string appended after all segments are joined, e.g. `'--gsi'`, `'.fifo'`, `'-rule'` */
   suffix?: string
   /** IAM action prefix for this resource type, e.g. `'s3'`, `'lambda'`. */

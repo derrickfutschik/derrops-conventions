@@ -156,8 +156,8 @@ describe('DerropsConventions — apex and apexMapping', () => {
     })
   })
 
-  describe('tenant-specific subdomains', () => {
-    // Pattern: {tenant}.{env}.{apex} — each tenant gets its own subdomain zone
+  describe('tenant-specific subdomains — service-first via apexMapping', () => {
+    // Pattern: {service}.{tenant}.{env}.{apex} — tenant embedded in the zone via apexMapping
     const tenantZone = (s: { env?: string; apex?: string; tenant?: string }) =>
       `${s.tenant}.${s.env}.${s.apex}`
 
@@ -230,6 +230,92 @@ describe('DerropsConventions — apex and apexMapping', () => {
       expect(tenanted.name({ type: 's3Bucket', key: 'data' })).toBe(
         'ap-southeast-2--dev--acme--payments--checkout-api--acme-corp--data',
       )
+    })
+  })
+
+  describe('tenant-specific subdomains — tenant-first via tenant record types', () => {
+    // Pattern: {tenant}.{service}.{effective-apex}
+    // Use route53TenantRecord / route53TenantPrivateRecord / acmCertificateTenant / cloudFrontTenantAlias
+    // when each tenant needs its own outermost subdomain label.
+    const envZone = (s: { env?: string; apex?: string }) =>
+      s.env === 'prod' ? s.apex! : `${s.env}.${s.apex}`
+
+    it('route53TenantRecord: tenant is the outermost label', () => {
+      expect(
+        makeBase()
+          .with({ tenant: 'acme-corp' })
+          .apexMapping(envZone)
+          .name({ type: 'route53TenantRecord' }),
+      ).toBe('acme-corp.checkout-api.dev.acme.com')
+    })
+
+    it('route53TenantPrivateRecord: same pattern in private zone', () => {
+      expect(
+        makeBase()
+          .with({ tenant: 'acme-corp' })
+          .apexMapping(envZone)
+          .name({ type: 'route53TenantPrivateRecord' }),
+      ).toBe('acme-corp.checkout-api.dev.acme.com')
+    })
+
+    it('acmCertificateTenant: tenant-first for cert CN', () => {
+      expect(
+        makeBase()
+          .with({ tenant: 'acme-corp' })
+          .apexMapping(envZone)
+          .name({ type: 'acmCertificateTenant' }),
+      ).toBe('acme-corp.checkout-api.dev.acme.com')
+    })
+
+    it('cloudFrontTenantAlias: tenant-first for CF alias', () => {
+      expect(
+        makeBase()
+          .with({ tenant: 'acme-corp' })
+          .apexMapping(envZone)
+          .name({ type: 'cloudFrontTenantAlias' }),
+      ).toBe('acme-corp.checkout-api.dev.acme.com')
+    })
+
+    it('different tenants produce different outermost labels', () => {
+      const base = makeBase().apexMapping(envZone)
+      expect(base.with({ tenant: 'acme-corp' }).name({ type: 'route53TenantRecord' })).toBe(
+        'acme-corp.checkout-api.dev.acme.com',
+      )
+      expect(base.with({ tenant: 'globex' }).name({ type: 'route53TenantRecord' })).toBe(
+        'globex.checkout-api.dev.acme.com',
+      )
+    })
+
+    it('prod env produces bare apex zone', () => {
+      expect(
+        makeBase()
+          .with({ env: 'prod', tenant: 'acme-corp' })
+          .apexMapping(envZone)
+          .name({ type: 'route53TenantRecord' }),
+      ).toBe('acme-corp.checkout-api.acme.com')
+    })
+
+    it('tenant-first propagates through with()', () => {
+      const parent = makeBase().with({ tenant: 'acme-corp' }).apexMapping(envZone)
+      const child = parent.with({ service: 'auth-service' })
+      expect(child.name({ type: 'route53TenantRecord' })).toBe(
+        'acme-corp.auth-service.dev.acme.com',
+      )
+    })
+
+    it('contrast: service-first vs tenant-first for same inputs', () => {
+      const base = makeBase().with({ tenant: 'acme-corp' }).apexMapping(envZone)
+      // service-first: checkout-api.dev.acme.com (service is outermost, tenant embedded in zone)
+      // NOTE: apexMapping here returns dev.acme.com (no tenant), so service is outermost
+      const serviceFirst = makeBase()
+        .with({ tenant: 'acme-corp' })
+        .apexMapping((s) => `${s.env}.${s.apex}`)
+        .name({ type: 'route53Record' })
+      expect(serviceFirst).toBe('checkout-api.dev.acme.com')
+
+      // tenant-first: acme-corp.checkout-api.dev.acme.com
+      const tenantFirst = base.name({ type: 'route53TenantRecord' })
+      expect(tenantFirst).toBe('acme-corp.checkout-api.dev.acme.com')
     })
   })
 

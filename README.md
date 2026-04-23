@@ -60,13 +60,32 @@ naming.name({ type: 'lambdaFunction', key: 'webhook-handler' })
 naming.name({ type: 'ssmParam', key: 'stripe-webhook-secret' })
 // → '/acme/payments/checkout-api/stripe-webhook-secret'
 
-// CloudWatch metrics namespace — org/domain only (service goes into Dimensions)
+// CloudWatch metrics namespace — org/domain only; service + env go into Dimensions
 naming.name({ type: 'cloudwatchMetricNamespace' })
 // → 'acme/payments'
 
-// Route53 record — reversed DNS hierarchy
-naming.name({ type: 'route53Record', org: 'acme.com' })
-// → 'checkout-api.prod.acme.com'
+// CloudWatch Dimensions — ready to pass to PutMetricData
+naming.dimensions()
+// → [{ Name: 'Service', Value: 'checkout-api' }]
+
+naming.dimensionKeys('service', 'environment').dimensions()
+// → [{ Name: 'Service', Value: 'checkout-api' }, { Name: 'Environment', Value: 'prod' }]
+
+// Route53 record — service-first subdomain
+naming.name({ type: 'route53Record', apex: 'dev.acme.com' })
+// → 'checkout-api.dev.acme.com'
+
+// Route53 tenant record — tenant outermost label
+naming.with({ tenant: 't-a3f8b2' }).name({ type: 'route53TenantRecord', apex: 'dev.acme.com' })
+// → 't-a3f8b2.checkout-api.dev.acme.com'
+
+// Wildcard record
+naming.name({ type: 'route53WildcardRecord', apex: 'dev.acme.com' })
+// → '*.dev.acme.com'
+
+// Zone apex (@) record — root A/AAAA record, no service prefix
+naming.name({ type: 'route53ApexRecord', apex: 'dev.acme.com' })
+// → 'dev.acme.com'
 
 // SQS FIFO queue — .fifo suffix appended automatically
 naming.name({ type: 'sqsFifoQueue', key: 'events' })
@@ -85,24 +104,24 @@ naming.name({ type: 'subnet', kind: 'private', az: '1a' })
 
 ## Segment reference
 
-| Segment     | Used in                                 | Example                 | Description                                                            |
-| ----------- | --------------------------------------- | ----------------------- | ---------------------------------------------------------------------- |
-| `region`    | Globally unique resources (S3)          | `ap-southeast-2`        | AWS region code                                                        |
-| `env`       | Globally unique resources + DNS         | `prod`, `dev`           | Deployment environment; omit if account-segregated                     |
-| `org`       | All resources                           | `acme`                  | Top-level organisational boundary                                      |
-| `domain`    | All resources                           | `payments`              | Bounded business capability                                            |
-| `service`   | Most resources                          | `checkout-api`          | Deployable service unit                                                |
-| `tenant`    | Silo multi-tenancy only                 | `t-a3f8b2`              | Opaque tenant ID — provisioned at runtime; never a human-readable name |
-| `entity`    | OpenSearch indexes                      | `transactions`          | Data entity within a domain                                            |
-| `partition` | Time-series S3 data                     | `2024/01/15/14`         | Date/time partition path (only segment that may contain `/`)           |
-| `key`       | Most resources                          | `stripe-webhook-secret` | Specific resource, config value, or filename                           |
-| `purpose`   | Security groups, volumes, target groups | `web`, `db`             | Functional role of a resource within its service                       |
-| `kind`      | Subnets, EC2 instances                  | `private`, `public`     | Sub-classification — e.g. subnet visibility, EC2 instance role         |
-| `az`        | Subnets                                 | `1a`, `1b`, `1c`        | Availability zone suffix for per-AZ resources                          |
-| `num`       | EC2 instances                           | `01`, `02`, `03`        | Ordinal instance number when multiple instances share the same role    |
-| `consumer`  | API Gateway keys                        | `partner-a`             | Consuming service or external principal                                |
-| `target`    | AppSync data sources                    | `user-table`            | Target resource or data source                                         |
-| `version`   | ECR image tags                          | `1.2.3`, `latest`       | Version identifier — use with a custom `segmentOrder` for ECR          |
+| Segment     | Used in                                 | Example                 | Description                                                                                                                                                        |
+| ----------- | --------------------------------------- | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `region`    | Globally unique resources (S3)          | `ap-southeast-2`        | AWS region code                                                                                                                                                    |
+| `env`       | Globally unique resources + DNS         | `prod`, `dev`           | Deployment environment; omit if account-segregated                                                                                                                 |
+| `org`       | All resources                           | `acme`                  | Top-level organisational boundary                                                                                                                                  |
+| `domain`    | All resources                           | `payments`              | Bounded business capability                                                                                                                                        |
+| `service`   | Most resources                          | `checkout-api`          | Deployable service unit                                                                                                                                            |
+| `tenant`    | Silo multi-tenancy only                 | `t-a3f8b2`              | Opaque tenant ID — provisioned at runtime; never a human-readable name                                                                                             |
+| `entity`    | OpenSearch indexes only                 | `transactions`          | Data entity within a domain. **Only appears in types that declare it explicitly** (currently `openSearchIndex`). Passing `entity` to any other type has no effect. |
+| `partition` | Time-series S3 data                     | `2024/01/15/14`         | Date/time partition path (only segment that may contain `/`)                                                                                                       |
+| `key`       | Most resources                          | `stripe-webhook-secret` | Specific resource, config value, or filename                                                                                                                       |
+| `purpose`   | Security groups, volumes, target groups | `web`, `db`             | Functional role of a resource within its service                                                                                                                   |
+| `kind`      | Subnets, EC2 instances                  | `private`, `public`     | Sub-classification — e.g. subnet visibility, EC2 instance role                                                                                                     |
+| `az`        | Subnets                                 | `1a`, `1b`, `1c`        | Availability zone suffix for per-AZ resources                                                                                                                      |
+| `num`       | EC2 instances                           | `01`, `02`, `03`        | Ordinal instance number when multiple instances share the same role                                                                                                |
+| `consumer`  | API Gateway keys                        | `partner-a`             | Consuming service or external principal                                                                                                                            |
+| `target`    | AppSync data sources                    | `user-table`            | Target resource or data source                                                                                                                                     |
+| `version`   | ECR image tags                          | `1.2.3`, `latest`       | Version identifier — use with a custom `segmentOrder` for ECR                                                                                                      |
 
 Stability decreases left to right — `org` and `domain` change almost never; `key` changes frequently.
 
@@ -326,6 +345,72 @@ Set the casing applied to built-in tag keys before they are written. Defaults to
 naming.tagKeyCasing('pascal').tagPrefix('MyApp_').tags()
 // → { 'MyApp_Domain': 'payments', 'MyApp_Service': 'checkout-api' }
 ```
+
+---
+
+## CloudWatch Dimensions
+
+CloudWatch metrics use a two-level addressing scheme: a **namespace** (coarse, org/domain) and **Dimensions** (fine, per-metric distinguishers like service, environment, or tenant). The convention maps directly to this:
+
+```typescript
+const naming = new DerropsConventions({
+  org: 'acme',
+  domain: 'payments',
+  service: 'checkout-api',
+  env: 'prod',
+})
+
+// Namespace — one per domain, not per service
+naming.name({ type: 'cloudwatchMetricNamespace' })
+// → 'acme/payments'
+
+// Dimensions — uniquely identify the metric series within that namespace
+naming.dimensions()
+// → [{ Name: 'Service', Value: 'checkout-api' }]
+```
+
+Pass dimensions directly to the AWS SDK:
+
+```typescript
+cloudwatch.putMetricData({
+  Namespace: naming.name({ type: 'cloudwatchMetricNamespace' }),
+  MetricData: [
+    {
+      MetricName: 'RequestCount',
+      Dimensions: naming.dimensions(),
+      Value: 42,
+      Unit: 'Count',
+    },
+  ],
+})
+```
+
+For multi-tenant deployments, `Tenant` can be added as a dimension — but only when your tenant count is small (< ~50). CloudWatch bills per unique metric stream (namespace + all dimension values). Adding `Tenant` multiplies your metric count by the number of tenants: at 1,000 tenants and 50 metric names that is 50,000 streams (~$15,000/month). For high-cardinality per-tenant analysis, prefer CloudWatch Contributor Insights or EMF structured logs instead.
+
+```typescript
+// Only viable with a small, bounded tenant count
+const tenantNaming = naming.with({ tenant: 't-a3f8b2' }).dimensionKeys('service', 'tenant')
+
+tenantNaming.dimensions()
+// → [{ Name: 'Service', Value: 'checkout-api' }, { Name: 'Tenant', Value: 't-a3f8b2' }]
+```
+
+### `.dimensions(overrides?)`
+
+Returns `Array<{ Name: string; Value: string }>`. Dimension `Name` values use PascalCase (`Service`, `Domain`, `Environment`, `Org`, `Tenant`) to match AWS CloudWatch convention. Only dimensions with a resolved segment value are included.
+
+### `.dimensionKeys(...keys)`
+
+Set which segment keys appear as Dimensions. Defaults to `['service']`. Available keys: `org`, `domain`, `service`, `environment`, `tenant`.
+
+```typescript
+naming.dimensionKeys('service', 'environment', 'tenant').dimensions()
+// → [{ Name: 'Service', ... }, { Name: 'Environment', ... }, { Name: 'Tenant', ... }]
+```
+
+Chainable — propagates to instances derived via `.with()`.
+
+---
 
 ### `.tagRule(fn)`
 
@@ -599,6 +684,69 @@ S3, CloudWatch Logs, ECR, ECS (cluster / service / task definition), DynamoDB, D
 
 ---
 
+## OpenSearch index naming
+
+OpenSearch indexes are named at the **domain/entity** level, not the service level. An entity (e.g. `transactions`, `users`, `api-specs`) belongs to a domain — multiple services that produce or consume the same entity type share the same index.
+
+```typescript
+const naming = new DerropsConventions({ org: 'acme', domain: 'payments' })
+
+// Two different services, same entity → same index name (correct)
+naming.name({ type: 'openSearchIndex', entity: 'transactions' })
+// → 'acme--payments--transactions'
+
+// Different entity → different index
+naming.name({ type: 'openSearchIndex', entity: 'refunds' })
+// → 'acme--payments--refunds'
+
+// Multi-tenant: add tenant to shard per tenant
+naming.with({ tenant: 't-a3f8b2' }).name({ type: 'openSearchIndex', entity: 'transactions' })
+// → 'acme--payments--transactions--t-a3f8b2'
+```
+
+The `entity` segment is intentionally absent from the default segment order. It only participates in `openSearchIndex` (via its explicit `segments` list). Passing `entity` to any other resource type has no effect.
+
+---
+
+## DNS subdomain patterns
+
+Four patterns are supported. Use `.apexMapping()` to derive the effective zone per environment.
+
+```typescript
+const naming = new DerropsConventions({
+  org: 'acme',
+  apex: 'acme.com',
+  env: 'dev',
+  domain: 'payments',
+  service: 'checkout-api',
+}).apexMapping((s) => (s.env === 'prod' ? s.apex! : `${s.env}.${s.apex}`))
+
+// service-first — checkout-api.dev.acme.com
+naming.name({ type: 'route53Record' })
+
+// tenant-first — t-a3f8b2.checkout-api.dev.acme.com
+naming.with({ tenant: 't-a3f8b2' }).name({ type: 'route53TenantRecord' })
+
+// wildcard — *.dev.acme.com
+naming.name({ type: 'route53WildcardRecord' })
+
+// zone apex (@) — dev.acme.com (for root A/AAAA records)
+naming.name({ type: 'route53ApexRecord' })
+```
+
+Each pattern has matching variants for CloudFront aliases and ACM certificates:
+
+| Pattern       | Route53                 | CloudFront                | ACM                    |
+| ------------- | ----------------------- | ------------------------- | ---------------------- |
+| service-first | `route53Record`         | `cloudFrontAlias`         | `acmCertificate`       |
+| tenant-first  | `route53TenantRecord`   | `cloudFrontTenantAlias`   | `acmCertificateTenant` |
+| wildcard      | `route53WildcardRecord` | `cloudFrontWildcardAlias` | —                      |
+| apex (@)      | `route53ApexRecord`     | —                         | —                      |
+
+Private hosted zones use `route53PrivateRecord` / `route53TenantPrivateRecord` instead of their public equivalents.
+
+---
+
 ## Multi-tenancy (silo model)
 
 Pass an opaque `tenant` ID to add tenant-scoped prefixes. See [the conventions guide](https://blog.slaops.com/blog/derrops-conventions#multi-tenancy) for the full decision matrix on tenant placement and when to use the silo vs pool model.
@@ -646,7 +794,7 @@ tenantNaming.with({}).moveSegment('tenant', 'domain').name({ type: 's3Bucket', k
 | `dynamoDb`                    | DynamoDB Table                | `--`      | ❌      |                  | `acme--payments--checkout-api--transactions`               |
 | `dynamoDbGsi`                 | DynamoDB GSI                  | `--`      | ❌      | `--gsi`          | `acme--payments--checkout-api--by-user--gsi`               |
 | `rdsInstance`                 | RDS Instance                  | `--`      | ❌      |                  | `acme--payments--checkout-api--primary`                    |
-| `rdsDbName`                   | RDS Database Name             | `_`       | ❌      |                  | `acme_payments_checkout-api`                               |
+| `rdsDbName`                   | RDS Database Name             | `_`       | ❌      |                  | `acme_payments_checkout_api`                               |
 | `rdsParameterGroup`           | RDS Parameter Group           | `--`      | ❌      |                  | `acme--payments--checkout-api--params`                     |
 | `rdsSubnetGroup`              | RDS Subnet Group              | `--`      | ❌      |                  | `acme--payments--checkout-api--subnet-group`               |
 | `rdsProxy`                    | RDS Proxy                     | `--`      | ❌      |                  | `acme--payments--checkout-api--proxy`                      |
@@ -663,12 +811,19 @@ tenantNaming.with({}).moveSegment('tenant', 'domain').name({ type: 's3Bucket', k
 | `iamPath`                     | IAM Path prefix               | `/`       | ❌      |                  | `/acme/payments/checkout-api/`                             |
 | `iamPolicy`                   | IAM Policy                    | `--`      | ❌      |                  | `acme--payments--checkout-api--s3-access-policy`           |
 | `iamUser`                     | IAM User                      | `--`      | ❌      |                  | `acme--payments--checkout-api--service-user`               |
-| `route53HostedZone`           | Route53 Hosted Zone           | `.`       | ✅      |                  | `prod.acme.com`                                            |
-| `route53Record`               | Route53 DNS Record            | `.`       | ✅      |                  | `checkout-api.prod.acme.com`                               |
-| `route53PrivateRecord`        | Route53 Private Record        | `.`       | ✅      |                  | `checkout-api.prod.acme.com`                               |
+| `route53HostedZone`           | Route53 Hosted Zone           | `.`       | ❌      |                  | `dev.acme.com`                                             |
+| `route53Record`               | Route53 DNS Record            | `.`       | ❌      |                  | `checkout-api.dev.acme.com` _(service-first)_              |
+| `route53PrivateRecord`        | Route53 Private Record        | `.`       | ❌      |                  | `checkout-api.dev.acme.com` _(service-first)_              |
+| `route53ApexRecord`           | Route53 Apex (@) Record       | `.`       | ❌      |                  | `dev.acme.com` _(zone only, no service prefix)_            |
+| `route53WildcardRecord`       | Route53 Wildcard Record       | `.`       | ❌      |                  | `*.dev.acme.com`                                           |
+| `route53TenantRecord`         | Route53 Tenant Record         | `.`       | ❌      |                  | `t-a3f8b2.checkout-api.dev.acme.com` _(tenant-first)_      |
+| `route53TenantPrivateRecord`  | Route53 Tenant Private Record | `.`       | ❌      |                  | `t-a3f8b2.checkout-api.dev.acme.com` _(tenant-first)_      |
 | `cloudFrontDistribution`      | CloudFront Distribution       | `--`      | ❌      |                  | `acme--payments--checkout-api--cdn`                        |
-| `cloudFrontAlias`             | CloudFront Alias (CNAME)      | `.`       | ✅      |                  | `checkout-api.prod.acme.com`                               |
-| `acmCertificate`              | ACM Certificate               | `.`       | ✅      |                  | `checkout-api.prod.acme.com`                               |
+| `cloudFrontAlias`             | CloudFront Alias (CNAME)      | `.`       | ❌      |                  | `checkout-api.dev.acme.com` _(service-first)_              |
+| `cloudFrontWildcardAlias`     | CloudFront Wildcard Alias     | `.`       | ❌      |                  | `*.dev.acme.com`                                           |
+| `cloudFrontTenantAlias`       | CloudFront Tenant Alias       | `.`       | ❌      |                  | `t-a3f8b2.checkout-api.dev.acme.com` _(tenant-first)_      |
+| `acmCertificate`              | ACM Certificate               | `.`       | ❌      |                  | `checkout-api.dev.acme.com` _(service-first)_              |
+| `acmCertificateTenant`        | ACM Certificate (tenant)      | `.`       | ❌      |                  | `t-a3f8b2.checkout-api.dev.acme.com` _(tenant-first)_      |
 | `vpc`                         | VPC                           | `--`      | ❌      |                  | `acme--payments--checkout-api--vpc`                        |
 | `subnet`                      | Subnet                        | `--`      | ❌      |                  | `acme--payments--checkout-api--private--1a` _(kind + az)_  |
 | `routeTable`                  | Route Table                   | `--`      | ❌      |                  | `acme--payments--checkout-api--rt-private`                 |
@@ -694,7 +849,7 @@ tenantNaming.with({}).moveSegment('tenant', 'domain').name({ type: 's3Bucket', k
 | `elastiCacheReplicationGroup` | ElastiCache Replication Group | `--`      | ❌      |                  | `acme--payments--checkout-api--replication-group`          |
 | `elastiCacheParameterGroup`   | ElastiCache Parameter Group   | `--`      | ❌      | `--params`       | `acme--payments--checkout-api--params`                     |
 | `openSearchDomain`            | OpenSearch Domain             | `--`      | ❌      |                  | `acme--payments--checkout-api`                             |
-| `openSearchIndex`             | OpenSearch Index              | `--`      | ❌      |                  | `acme--payments` _(org/domain/entity)_                     |
+| `openSearchIndex`             | OpenSearch Index              | `--`      | ❌      |                  | `acme--payments--transactions` _(org/domain/entity)_       |
 | `ssmParam`                    | SSM Parameter                 | `/`       | ❌      |                  | `/acme/payments/checkout-api/stripe-webhook-secret`        |
 | `ssmDocument`                 | SSM Document                  | `--`      | ❌      |                  | `acme--payments--checkout-api--patch-baseline`             |
 | `ssmMaintenanceWindow`        | SSM Maintenance Window        | `--`      | ❌      | `-window`        | `acme--payments--checkout-api--weekend-window`             |

@@ -88,6 +88,10 @@ const DEFAULT_SEGMENT_ORDER: SegmentKey[] = [
   // 'apex' is intentionally absent — it only participates in resource types that
   // declare it explicitly in their segments list (DNS types). Including it in the
   // default order would pollute names for all other resource types.
+  //
+  // 'entity' is also intentionally absent — it is only meaningful for openSearchIndex
+  // (and any custom type that declares it explicitly). Passing entity to a type that
+  // doesn't list it in its segments has no effect and produces no output.
 ]
 
 const GLOBAL_ONLY_SEGMENTS: SegmentKey[] = ['region', 'env']
@@ -117,6 +121,32 @@ const ALL_TAG_KEYS: TagKey[] = ['org', 'domain', 'service', 'environment', 'tena
 
 const DEFAULT_TAG_KEYS: TagKey[] = ['domain', 'service']
 const DEFAULT_TAG_CASING: TagKeyCasing = 'kebab'
+
+/**
+ * The segment keys that can appear as CloudWatch metric Dimensions.
+ * Same set as `TagKey` — both read from the same segments — but kept separate
+ * so the two concepts can diverge independently.
+ */
+export type DimensionKey = 'org' | 'domain' | 'service' | 'environment' | 'tenant'
+
+const SEGMENT_FOR_DIMENSION: Record<DimensionKey, keyof Segments> = {
+  org: 'org',
+  domain: 'domain',
+  service: 'service',
+  environment: 'env',
+  tenant: 'tenant',
+}
+
+const DIMENSION_NAME: Record<DimensionKey, string> = {
+  org: 'Org',
+  domain: 'Domain',
+  service: 'Service',
+  environment: 'Environment',
+  tenant: 'Tenant',
+}
+
+// Default: just Service — namespace already captures Org/Domain via cloudwatchMetricNamespace.
+const DEFAULT_DIMENSION_KEYS: DimensionKey[] = ['service']
 
 // Default limits match AWS tag constraints — https://docs.aws.amazon.com/general/latest/gr/aws_tagging.html
 const DEFAULT_TAG_KEY_MAX = 128
@@ -177,6 +207,7 @@ export class DerropsConventions<
   private storedArnContext: { accountId: string; partition?: string } | undefined
   private apexMapFn: ((segments: Segments) => string) | undefined
   private apexZoneMap: Record<string, string> | undefined
+  private visibleDimensions: DimensionKey[]
 
   constructor(
     defaults: ConstrainedSegments<C> = {} as ConstrainedSegments<C>,
@@ -202,6 +233,7 @@ export class DerropsConventions<
     this.storedArnContext = undefined
     this.apexMapFn = undefined
     this.apexZoneMap = undefined
+    this.visibleDimensions = [...DEFAULT_DIMENSION_KEYS]
   }
 
   // ── Segment constraint helpers ────────────────────────────────────────────
@@ -643,6 +675,7 @@ export class DerropsConventions<
     derived.storedArnContext = this.storedArnContext
     derived.apexMapFn = this.apexMapFn
     derived.apexZoneMap = this.apexZoneMap
+    derived.visibleDimensions = [...this.visibleDimensions]
     return derived as unknown as DerropsConventions<C, T extends ResourceType ? T : TType>
   }
 
@@ -669,7 +702,8 @@ export class DerropsConventions<
     const segments = this.buildSegments({ ...this.defaults, ...overrides }, config)
     const joined = segments.join(config.segmentDelimiter)
     const base = config.leadingDelimiter ? `${config.segmentDelimiter}${joined}` : joined
-    return config.suffix ? `${base}${config.suffix}` : base
+    const prefixed = config.namePrefix ? `${config.namePrefix}${base}` : base
+    return config.suffix ? `${prefixed}${config.suffix}` : prefixed
   }
 
   /**
@@ -757,6 +791,70 @@ export class DerropsConventions<
     for (const [k, v] of Object.entries(this.tags(options ?? ({} as TagOptions<C>)))) {
       fn(k, v)
     }
+  }
+
+  // ── CloudWatch dimensions ─────────────────────────────────────────────────
+
+  /**
+   * Set which segment keys appear as CloudWatch metric Dimensions in `dimensions()` output.
+   *
+   * Defaults to `['service']` — the namespace produced by `cloudwatchMetricNamespace` already
+   * captures `org` and `domain`, so only the service (and optionally environment/tenant) need
+   * to be expressed as Dimensions.
+   *
+   * **Cardinality warning for `'tenant'`:** CloudWatch bills per unique metric stream
+   * (namespace + all dimension values). Adding `Tenant` multiplies your metric count by the
+   * number of tenants — at 1,000 tenants and 50 metric names that is 50,000 streams, which
+   * costs roughly $15,000/month. Only include `'tenant'` when your tenant count is small
+   * (< ~50) and per-tenant operational metrics are genuinely required. For high-cardinality
+   * per-tenant analysis prefer CloudWatch Contributor Insights or EMF structured logs.
+   *
+   * Chainable — returns `this`. Propagates to instances derived via `.with()`.
+   *
+   * @example
+   * naming.dimensionKeys('service', 'environment').dimensions()
+   * // → [{ Name: 'Service', Value: 'checkout-api' }, { Name: 'Environment', Value: 'prod' }]
+   */
+  dimensionKeys(...keys: DimensionKey[]): this {
+    this.visibleDimensions = keys
+    return this
+  }
+
+  /**
+   * Generate the CloudWatch metric Dimensions array for this resource.
+   *
+   * Returns an `Array<{ Name: string; Value: string }>` ready to pass to
+   * `CloudWatch.putMetricData({ Dimensions: ... })`. Only dimensions enabled via
+   * `dimensionKeys()` and with a resolved segment value are included.
+   *
+   * Dimension `Name` values use PascalCase to match AWS CloudWatch convention:
+   * `Service`, `Domain`, `Environment`, `Org`, `Tenant`.
+   *
+   * Pair with `cloudwatchMetricNamespace` — the namespace captures `org/domain`; Dimensions
+   * add the service (and optionally environment/tenant) to uniquely identify each metric series.
+   *
+   * @example
+   * const naming = new DerropsConventions({
+   *   org: 'acme', domain: 'payments', service: 'checkout-api', env: 'prod',
+   * })
+   *
+   * naming.name({ type: 'cloudwatchMetricNamespace' })
+   * // → 'acme/payments'
+   *
+   * naming.dimensions()
+   * // → [{ Name: 'Service', Value: 'checkout-api' }]
+   *
+   * naming.dimensionKeys('service', 'environment').dimensions()
+   * // → [{ Name: 'Service', Value: 'checkout-api' }, { Name: 'Environment', Value: 'prod' }]
+   */
+  dimensions(options: TagOptions<C> = {} as TagOptions<C>): Array<{ Name: string; Value: string }> {
+    const merged: Segments = { ...this.defaults, ...(options as Segments) }
+    const result: Array<{ Name: string; Value: string }> = []
+    for (const dimKey of this.visibleDimensions) {
+      const value = merged[SEGMENT_FOR_DIMENSION[dimKey]]
+      if (value) result.push({ Name: DIMENSION_NAME[dimKey], Value: value })
+    }
+    return result
   }
 
   // ── IAM policy generation ─────────────────────────────────────────────────
@@ -985,7 +1083,10 @@ export class DerropsConventions<
   }
 
   private normalize(value: string, wordDelimiter: string): string {
-    return value.toLowerCase().replace(/\s+/g, wordDelimiter)
+    const lower = value.toLowerCase().replace(/\s+/g, wordDelimiter)
+    // When the word delimiter isn't '-', also convert hyphens — they are word separators
+    // and must conform to the type's convention (e.g. '_' for RDS/Glue database identifiers).
+    return wordDelimiter !== '-' ? lower.replace(/-/g, wordDelimiter) : lower
   }
 
   private resolveArnContext(override?: Partial<ArnContext>): ArnContext {

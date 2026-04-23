@@ -35,10 +35,10 @@ describe('DerropsConventions — naming', () => {
       ).toBe('acme.payments.checkout-api.events')
     })
 
-    it('rdsDbName uses underscore delimiters', () => {
+    it('rdsDbName uses underscore delimiters and converts hyphens', () => {
       expect(
         c.name({ type: 'rdsDbName', org: 'acme', domain: 'payments', service: 'checkout-api' }),
-      ).toBe('acme_payments_checkout-api')
+      ).toBe('acme_payments_checkout_api')
     })
   })
 
@@ -99,6 +99,199 @@ describe('DerropsConventions — naming', () => {
       expect(c.with({ apex: 'dev.acme.com' }).name({ type: 'cloudFrontAlias' })).toBe(
         'checkout-api.dev.acme.com',
       )
+    })
+
+    it('iamPath adds trailing slash for valid IAM path format', () => {
+      expect(c.name({ type: 'iamPath' })).toBe('/acme/payments/checkout-api/')
+    })
+
+    it('glueDatabase converts hyphens to underscores', () => {
+      expect(c.name({ type: 'glueDatabase' })).toBe('acme_payments_checkout_api')
+    })
+  })
+
+  describe('new DNS record types', () => {
+    const c = new DerropsConventions({
+      org: 'acme',
+      apex: 'dev.acme.com',
+      domain: 'payments',
+      service: 'checkout-api',
+    })
+
+    it('route53ApexRecord is the zone verbatim — no service prefix', () => {
+      expect(c.name({ type: 'route53ApexRecord' })).toBe('dev.acme.com')
+    })
+
+    it('route53WildcardRecord prepends *. to the zone', () => {
+      expect(c.name({ type: 'route53WildcardRecord' })).toBe('*.dev.acme.com')
+    })
+
+    it('cloudFrontWildcardAlias prepends *. to the zone', () => {
+      expect(c.name({ type: 'cloudFrontWildcardAlias' })).toBe('*.dev.acme.com')
+    })
+
+    it('route53TenantRecord puts tenant before service', () => {
+      expect(c.with({ tenant: 'acme-corp' }).name({ type: 'route53TenantRecord' })).toBe(
+        'acme-corp.checkout-api.dev.acme.com',
+      )
+    })
+
+    it('route53TenantPrivateRecord puts tenant before service', () => {
+      expect(c.with({ tenant: 'acme-corp' }).name({ type: 'route53TenantPrivateRecord' })).toBe(
+        'acme-corp.checkout-api.dev.acme.com',
+      )
+    })
+
+    it('acmCertificateTenant puts tenant before service', () => {
+      expect(c.with({ tenant: 'acme-corp' }).name({ type: 'acmCertificateTenant' })).toBe(
+        'acme-corp.checkout-api.dev.acme.com',
+      )
+    })
+
+    it('cloudFrontTenantAlias puts tenant before service', () => {
+      expect(c.with({ tenant: 'acme-corp' }).name({ type: 'cloudFrontTenantAlias' })).toBe(
+        'acme-corp.checkout-api.dev.acme.com',
+      )
+    })
+
+    it('wildcard + apexMapping resolves correctly', () => {
+      const mapped = c
+        .with({ apex: 'acme.com', env: 'staging' })
+        .apexMapping((s) => `${s.env}.${s.apex}`)
+      expect(mapped.name({ type: 'route53WildcardRecord' })).toBe('*.staging.acme.com')
+    })
+
+    it('tenant-first + apexMapping resolves correctly', () => {
+      const mapped = c
+        .with({ apex: 'acme.com', env: 'prod', tenant: 'globex' })
+        .apexMapping((s) => (s.env === 'prod' ? s.apex! : `${s.env}.${s.apex}`))
+      expect(mapped.name({ type: 'route53TenantRecord' })).toBe('globex.checkout-api.acme.com')
+    })
+  })
+
+  describe('normalize() — word-delimiter conversion', () => {
+    // wordDelimiter: '_' types must convert both spaces AND hyphens so output is valid
+    // for PostgreSQL identifiers, Glue catalog names, and Redshift database names.
+    // wordDelimiter: '-' types must leave hyphens untouched.
+
+    describe('rdsDbName (wordDelimiter: _)', () => {
+      const c = new DerropsConventions()
+
+      it('hyphens in service converted to underscores', () => {
+        expect(
+          c.name({ type: 'rdsDbName', org: 'acme', domain: 'payments', service: 'checkout-api' }),
+        ).toBe('acme_payments_checkout_api')
+      })
+
+      it('hyphens in org and domain also converted', () => {
+        expect(
+          c.name({ type: 'rdsDbName', org: 'my-org', domain: 'order-management', service: 'api' }),
+        ).toBe('my_org_order_management_api')
+      })
+
+      it('spaces converted to underscores', () => {
+        expect(
+          c.name({ type: 'rdsDbName', org: 'acme', domain: 'payments', service: 'checkout api' }),
+        ).toBe('acme_payments_checkout_api')
+      })
+
+      it('mixed hyphens and spaces both become underscores', () => {
+        expect(
+          c.name({ type: 'rdsDbName', org: 'acme', domain: 'pay ments', service: 'check-out' }),
+        ).toBe('acme_pay_ments_check_out')
+      })
+
+      it('multiple consecutive hyphens each become a single underscore', () => {
+        expect(c.name({ type: 'rdsDbName', org: 'acme', domain: 'a--b', service: 'api' })).toBe(
+          'acme_a__b_api',
+        )
+      })
+
+      it('already-underscore values are left unchanged', () => {
+        expect(
+          c.name({ type: 'rdsDbName', org: 'acme', domain: 'payments', service: 'checkout_v2' }),
+        ).toBe('acme_payments_checkout_v2')
+      })
+    })
+
+    describe('glueDatabase (wordDelimiter: _)', () => {
+      const c = new DerropsConventions({
+        org: 'acme',
+        domain: 'analytics',
+        service: 'data-pipeline',
+      })
+
+      it('hyphens in service converted to underscores', () => {
+        expect(c.name({ type: 'glueDatabase' })).toBe('acme_analytics_data_pipeline')
+      })
+
+      it('hyphens in key converted to underscores', () => {
+        expect(c.name({ type: 'glueDatabase', key: 'raw-events' })).toBe(
+          'acme_analytics_data_pipeline_raw_events',
+        )
+      })
+    })
+
+    describe('redshiftDatabase (wordDelimiter: _)', () => {
+      const c = new DerropsConventions()
+
+      it('hyphens in all segments converted to underscores', () => {
+        expect(
+          c.name({
+            type: 'redshiftDatabase',
+            org: 'acme',
+            domain: 'data-warehouse',
+            service: 'reporting-api',
+          }),
+        ).toBe('acme_data_warehouse_reporting_api')
+      })
+
+      it('spaces also converted to underscores', () => {
+        expect(
+          c.name({
+            type: 'redshiftDatabase',
+            org: 'acme',
+            domain: 'data warehouse',
+            service: 'api',
+          }),
+        ).toBe('acme_data_warehouse_api')
+      })
+    })
+
+    describe('wordDelimiter: - types must NOT convert hyphens', () => {
+      const c = new DerropsConventions({ org: 'acme', domain: 'payments', service: 'checkout-api' })
+
+      it('lambdaFunction preserves hyphens', () => {
+        expect(c.name({ type: 'lambdaFunction', key: 'webhook-handler' })).toBe(
+          'acme--payments--checkout-api--webhook-handler',
+        )
+      })
+
+      it('s3Bucket preserves hyphens (global)', () => {
+        expect(
+          c
+            .with({ region: 'ap-southeast-2', env: 'prod' })
+            .name({ type: 's3Bucket', key: 'raw-data' }),
+        ).toBe('ap-southeast-2--prod--acme--payments--checkout-api--raw-data')
+      })
+
+      it('ssmParam preserves hyphens', () => {
+        expect(c.name({ type: 'ssmParam', key: 'stripe-webhook-secret' })).toBe(
+          '/acme/payments/checkout-api/stripe-webhook-secret',
+        )
+      })
+
+      it('sqsQueue preserves hyphens', () => {
+        expect(c.name({ type: 'sqsQueue', key: 'order-events' })).toBe(
+          'acme--payments--checkout-api--order-events',
+        )
+      })
+
+      it('spaces in - types are converted to hyphens', () => {
+        expect(c.name({ type: 'sqsQueue', key: 'order events' })).toBe(
+          'acme--payments--checkout-api--order-events',
+        )
+      })
     })
   })
 
