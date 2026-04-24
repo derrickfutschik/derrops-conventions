@@ -34,12 +34,115 @@ export type NameOptions<
 
 /**
  * Options passed to `tags()` — segment overrides that merge with the instance defaults.
- * No `type` is required; tags are resource-type-agnostic.
+ * Pass `type` to use that resource type's segment ordering and delimiter for the
+ * auto-generated `segment` tag. Defaults to the instance's `defaultType` (if set via
+ * `.with({ type })`), then falls back to `'--'` delimiter with the full default order.
  */
-export type TagOptions<C extends SegmentConstraints = {}> = ConstrainedSegments<C>
+export type TagOptions<C extends SegmentConstraints = {}> = ConstrainedSegments<C> & {
+  type?: ResourceType
+}
 
 /** The conventional AWS resource tag keys produced by `tags()`. */
 export type TagKey = 'org' | 'domain' | 'service' | 'environment' | 'tenant'
+
+/**
+ * Granularity for `DerropsConventions.datePartition()`.
+ * Controls how many path components of `yyyy/mm/dd/hh` are emitted.
+ */
+export type DatePartitionGranularity = 'year' | 'month' | 'day' | 'hour'
+
+// ── conventions() factory types ───────────────────────────────────────────────
+
+/** @internal Produce `Record<K, V>` when V is not `never`, else an empty record. */
+type MaybeConstrain<K extends string, V extends string> = [V] extends [never]
+  ? Record<never, never>
+  : Record<K, V>
+
+/**
+ * Spec object accepted by `conventions()` and `DerropsConventions.create()`.
+ *
+ * Pass a **string** for segments that are global defaults (org, env, region, etc.).
+ * Pass a **readonly array of string literals** for segments you want to constrain —
+ * TypeScript will infer the union type and enforce it on every downstream `name()`,
+ * `tags()`, `with()`, and `topology()` call.
+ *
+ * Segments intentionally not constrainable here: `tenant` (runtime-provisioned),
+ * `key`, `partition`, `num`, `consumer`, `target`, `version` (typically per-call).
+ *
+ * @example
+ * const conv = conventions({
+ *   org: 'acme',
+ *   env: 'prod',
+ *   domain: ['payments', 'identity'],   // ← constrained: 'payments' | 'identity'
+ *   service: ['checkout-api'],           // ← constrained: 'checkout-api'
+ * })
+ * conv.name({ type: 'lambdaFunction', domain: 'analytics' }) // TypeScript error ✓
+ */
+export interface ConventionSpec<
+  TDomain extends string,
+  TService extends string,
+  TEnv extends string,
+  TKind extends string,
+  TPurpose extends string,
+  TAz extends string,
+> {
+  /** Top-level org identifier, e.g. `'acme'` */
+  org?: string
+  /** AWS region code, e.g. `'ap-southeast-2'` */
+  region?: string
+  /** Registered DNS apex domain, e.g. `'acme.com'` */
+  apex?: string
+  /** Opaque tenant ID — set as default only; constraints are runtime-provisioned */
+  tenant?: string
+  /** Date/time partition path */
+  partition?: string
+  /** Specific resource key */
+  key?: string
+  /** Ordinal instance number */
+  num?: string
+  /** Consuming service or principal */
+  consumer?: string
+  /** Target resource or data source */
+  target?: string
+  /** Version identifier */
+  version?: string
+  /**
+   * Deployment environment.
+   * - `string` → sets a default value
+   * - `readonly string[]` → constrains and narrows the type
+   */
+  env?: readonly TEnv[] | string
+  /**
+   * Business domain bounded context.
+   * - `string` → sets a default value
+   * - `readonly string[]` → constrains and narrows the type
+   */
+  domain?: readonly TDomain[] | string
+  /**
+   * Deployable service unit.
+   * - `string` → sets a default value
+   * - `readonly string[]` → constrains and narrows the type
+   */
+  service?: readonly TService[] | string
+  /**
+   * Subnet or resource sub-classification (`'private'`, `'public'`, `'isolated'`).
+   * - `string` → sets a default value
+   * - `readonly string[]` → constrains and narrows the type
+   */
+  kind?: readonly TKind[] | string
+  /**
+   * Functional purpose for security groups and target groups.
+   * - `string` → sets a default value
+   * - `readonly string[]` → constrains and narrows the type
+   */
+  purpose?: readonly TPurpose[] | string
+  /**
+   * Availability zone suffix (`'1a'`, `'1b'`, `'1c'`).
+   * - `string` → sets a default value
+   * - `readonly string[]` → constrains and narrows the type
+   */
+  az?: readonly TAz[] | string
+}
 
 /**
  * Casing applied to tag keys before they are written to the output dict.
@@ -715,6 +818,56 @@ export class DerropsConventions<
   }
 
   /**
+   * Build an S3 key prefix — a path ending with `/` suitable for `ListObjectsV2`,
+   * S3 batch operations, Glue crawl roots, and Athena partition projections.
+   *
+   * Accepts either a `Date` + `granularity` pair (resolved via `datePartition()` into the
+   * `partition` segment) or a raw `partition` string as an escape hatch. Omit both to get a
+   * plain service-scoped prefix with no date component.
+   *
+   * Instance defaults for `org`, `domain`, `service`, and `tenant` are inherited as usual.
+   * Pass `tenant` here to override the instance default for a single call.
+   *
+   * @example
+   * // All objects ingested in the 14:00 UTC hour of 2024-03-15
+   * c.s3Prefix({ date: new Date('2024-03-15T14:30:00Z'), granularity: 'hour' })
+   * // → 'slaops/logs/ingest/2024/03/15/14/'
+   *
+   * // Per-tenant log prefix for a full day
+   * c.s3Prefix({ tenant: 't-a3f8b2', date: new Date('2024-03-15T00:00:00Z'), granularity: 'day' })
+   * // → 'slaops/logs/ingest/t-a3f8b2/2024/03/15/'
+   *
+   * // Plain service prefix — no date
+   * c.s3Prefix()
+   * // → 'slaops/logs/ingest/'
+   *
+   * // Raw partition string (escape hatch for custom layouts)
+   * c.s3Prefix({ partition: 'custom/path' })
+   * // → 'slaops/logs/ingest/custom/path/'
+   */
+  s3Prefix(
+    options: {
+      date?: Date
+      granularity?: DatePartitionGranularity
+      tenant?: string
+      partition?: string
+    } = {},
+  ): string {
+    const { date, granularity, tenant, partition: rawPartition } = options
+    const partition =
+      date !== undefined && granularity !== undefined
+        ? DerropsConventions.datePartition(date, granularity)
+        : rawPartition
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const base = this.name({
+      type: 's3LogKey',
+      ...(tenant !== undefined && { tenant }),
+      ...(partition !== undefined && { partition }),
+    } as any)
+    return base.endsWith('/') ? base : `${base}/`
+  }
+
+  /**
    * Generate the standard AWS resource tags for this resource.
    *
    * Returns a `Record<string, string>` keyed by the conventional tag names from the Derrops
@@ -1151,6 +1304,119 @@ export class DerropsConventions<
   }
 
   /**
+   * Format a `Date` as an S3 time-partition path segment using UTC.
+   *
+   * | Granularity | Output example      |
+   * | ----------- | ------------------- |
+   * | `'year'`    | `'2024'`            |
+   * | `'month'`   | `'2024/03'`         |
+   * | `'day'`     | `'2024/03/15'`      |
+   * | `'hour'`    | `'2024/03/15/14'`   |
+   *
+   * Always UTC — pass this result as the `partition` segment to `name()` or `s3Prefix()`:
+   * @example
+   * c.name({
+   *   type: 's3LogKey',
+   *   partition: DerropsConventions.datePartition(new Date(), 'hour'),
+   *   key: 'log-001.gz',
+   * })
+   */
+  static datePartition(date: Date, granularity: DatePartitionGranularity): string {
+    const y = date.getUTCFullYear()
+    const m = String(date.getUTCMonth() + 1).padStart(2, '0')
+    const d = String(date.getUTCDate()).padStart(2, '0')
+    const h = String(date.getUTCHours()).padStart(2, '0')
+    switch (granularity) {
+      case 'year':
+        return `${y}`
+      case 'month':
+        return `${y}/${m}`
+      case 'day':
+        return `${y}/${m}/${d}`
+      case 'hour':
+        return `${y}/${m}/${d}/${h}`
+    }
+  }
+
+  /**
+   * Type-safe factory — create a convention from a single config object where
+   * **arrays constrain** segment values and **strings set defaults**.
+   *
+   * TypeScript infers a union type from each array and enforces it on every
+   * downstream `name()`, `tags()`, `with()`, and `topology()` call.
+   *
+   * Prefer the top-level `conventions()` function for brevity.
+   *
+   * @example
+   * const conv = DerropsConventions.create({
+   *   org: 'acme',                        // string → default, not constrained
+   *   env: 'prod',                        // string → default
+   *   domain: ['payments', 'identity'],   // array → type narrowed to 'payments' | 'identity'
+   *   service: ['checkout-api'],           // array → type narrowed to 'checkout-api'
+   * })
+   *
+   * conv.name({ type: 'lambdaFunction', domain: 'analytics' }) // ← TypeScript error ✓
+   */
+  static create<
+    TDomain extends string = never,
+    TService extends string = never,
+    TEnv extends string = never,
+    TKind extends string = never,
+    TPurpose extends string = never,
+    TAz extends string = never,
+  >(
+    spec: ConventionSpec<TDomain, TService, TEnv, TKind, TPurpose, TAz>,
+  ): DerropsConventions<
+    MaybeConstrain<'domain', TDomain> &
+      MaybeConstrain<'service', TService> &
+      MaybeConstrain<'env', TEnv> &
+      MaybeConstrain<'kind', TKind> &
+      MaybeConstrain<'purpose', TPurpose> &
+      MaybeConstrain<'az', TAz>
+  > {
+    // Collect string values as segment defaults
+    const defaults: Partial<Record<SegmentKey, string>> = {}
+    const allKeys = [
+      'org',
+      'region',
+      'apex',
+      'tenant',
+      'partition',
+      'key',
+      'num',
+      'consumer',
+      'target',
+      'version',
+      'domain',
+      'service',
+      'env',
+      'kind',
+      'purpose',
+      'az',
+    ] as const
+
+    for (const k of allKeys) {
+      const v = (spec as Record<string, unknown>)[k]
+      if (typeof v === 'string') defaults[k as SegmentKey] = v
+    }
+
+    const instance = new DerropsConventions(defaults)
+
+    // Apply array values as runtime constraints (also narrows the type phantom-style)
+    const constrainableKeys = ['domain', 'service', 'env', 'kind', 'purpose', 'az'] as const
+    for (const k of constrainableKeys) {
+      const v = (spec as Record<string, unknown>)[k]
+      if (Array.isArray(v) && v.length > 0) {
+        instance.constrain(k, ...(v as string[]))
+      }
+    }
+
+    return instance as unknown as ReturnType<
+      typeof DerropsConventions.create<TDomain, TService, TEnv, TKind, TPurpose, TAz>
+    >
+  }
+
+  /**
    * Convert an AWS region name to a compact alphabetic code suitable for DNS labels and resource names.
    *
    * | Region            | Code    |
@@ -1248,4 +1514,54 @@ export class DerropsConventions<
       accountId,
     }
   }
+}
+
+/**
+ * Type-safe convention factory — create a `DerropsConventions` instance from a single
+ * config object where **arrays constrain** segment values and **strings set defaults**.
+ *
+ * TypeScript infers the union type from each array literal and enforces it on every
+ * `name()`, `tags()`, `with()`, and `topology()` call on the resulting instance.
+ * No `as const` required.
+ *
+ * ```typescript
+ * const conv = conventions({
+ *   org: 'acme',
+ *   env: 'prod',
+ *   domain: ['payments', 'identity'],    // → type narrowed to 'payments' | 'identity'
+ *   service: ['checkout-api'],            // → type narrowed to 'checkout-api'
+ * })
+ *
+ * conv.name({ type: 'lambdaFunction', domain: 'analytics' })
+ * //                                 ^^^^^^ TypeScript error: not assignable to 'payments' | 'identity'
+ *
+ * conv.with({ domain: 'payments' })      // ✓ valid
+ * conv.with({ domain: 'analytics' })     // ✗ TypeScript error
+ * ```
+ *
+ * Segments passed as plain strings are set as defaults and do NOT constrain the type
+ * (e.g. `org: 'acme'` makes `'acme'` the default org but does not prevent overriding it).
+ *
+ * Segments intentionally not constrainable via this factory: `tenant` (provisioned at runtime),
+ * `key`, `partition`, `num`, `consumer`, `target`, `version` (typically set per `name()` call).
+ * These remain constrainable via the `.constrain()` / `.key()` / etc. chaining API.
+ */
+export function conventions<
+  TDomain extends string = never,
+  TService extends string = never,
+  TEnv extends string = never,
+  TKind extends string = never,
+  TPurpose extends string = never,
+  TAz extends string = never,
+>(
+  spec: ConventionSpec<TDomain, TService, TEnv, TKind, TPurpose, TAz>,
+): DerropsConventions<
+  MaybeConstrain<'domain', TDomain> &
+    MaybeConstrain<'service', TService> &
+    MaybeConstrain<'env', TEnv> &
+    MaybeConstrain<'kind', TKind> &
+    MaybeConstrain<'purpose', TPurpose> &
+    MaybeConstrain<'az', TAz>
+> {
+  return DerropsConventions.create(spec)
 }

@@ -1,9 +1,21 @@
-export { DerropsConventions } from './DerropsConventions.js'
+export { DerropsConventions, conventions } from './DerropsConventions.js'
+export type { ConventionSpec } from './DerropsConventions.js'
 export { buildNetworkTopology } from './topology.js'
-export type { SubnetKind, SubnetEntry, DomainNetworkTopology, OrgNetworkTopology } from './topology.js'
+export type {
+  SubnetKind,
+  SubnetEntry,
+  DomainNetworkTopology,
+  OrgNetworkTopology,
+} from './topology.js'
 export { buildConsoleUrl } from './console.js'
 export type { ConsoleUrlContext } from './console.js'
-export type { NameOptions, TagOptions, TagKey, TagKeyCasing } from './DerropsConventions.js'
+export type {
+  NameOptions,
+  TagOptions,
+  TagKey,
+  TagKeyCasing,
+  DatePartitionGranularity,
+} from './DerropsConventions.js'
 export { RESOURCE_TYPES } from './resource-types.js'
 export type { ResourceType } from './resource-types.js'
 export type {
