@@ -1,4 +1,6 @@
 export { DerropsConventions } from './DerropsConventions.js'
+export { buildNetworkTopology } from './topology.js'
+export type { SubnetEntry, DomainNetworkTopology, OrgNetworkTopology } from './topology.js'
 export { buildConsoleUrl } from './console.js'
 export type { ConsoleUrlContext } from './console.js'
 export type { NameOptions, TagOptions, TagKey, TagKeyCasing } from './DerropsConventions.js'

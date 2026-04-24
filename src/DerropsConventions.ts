@@ -15,6 +15,8 @@ import type { Resource } from './policy/Resource.js'
 import { buildPolicyArns } from './policy/arn.js'
 import type { ArnContext } from './policy/types.js'
 import { buildConsoleUrl } from './console.js'
+import { buildNetworkTopology } from './topology.js'
+import type { OrgNetworkTopology } from './topology.js'
 
 /**
  * Options passed to `name()`.
@@ -208,6 +210,7 @@ export class DerropsConventions<
   private apexMapFn: ((segments: Segments) => string) | undefined
   private apexZoneMap: Record<string, string> | undefined
   private visibleDimensions: DimensionKey[]
+  private storedConstraints: Partial<Record<SegmentKey, readonly string[]>>
 
   constructor(
     defaults: ConstrainedSegments<C> = {} as ConstrainedSegments<C>,
@@ -234,21 +237,25 @@ export class DerropsConventions<
     this.apexMapFn = undefined
     this.apexZoneMap = undefined
     this.visibleDimensions = [...DEFAULT_DIMENSION_KEYS]
+    this.storedConstraints = {}
   }
 
   // ── Segment constraint helpers ────────────────────────────────────────────
 
   /**
    * Narrow the allowed values for one segment key, returning a more-specific instance type.
-   * This is a compile-time-only operation — no runtime validation is performed.
    * Calling `.constrain()` again on the same key replaces the previous constraint.
+   *
+   * Also stores the values at runtime so they are accessible via `constraints()` and
+   * used by `topology()` to determine domain ordering for CIDR allocation. All
+   * segment-specific helpers (`.domain()`, `.service()`, etc.) delegate to this method,
+   * so they also store values automatically.
    */
   constrain<K extends SegmentKey, V extends string>(
     key: K,
     ...values: V[]
   ): DerropsConventions<Omit<C, K> & Record<K, V>, TType> {
-    void key
-    void values
+    this.storedConstraints = { ...this.storedConstraints, [key]: values }
     return this as unknown as DerropsConventions<Omit<C, K> & Record<K, V>, TType>
   }
 
@@ -676,6 +683,7 @@ export class DerropsConventions<
     derived.apexMapFn = this.apexMapFn
     derived.apexZoneMap = this.apexZoneMap
     derived.visibleDimensions = [...this.visibleDimensions]
+    derived.storedConstraints = { ...this.storedConstraints }
     return derived as unknown as DerropsConventions<C, T extends ResourceType ? T : TType>
   }
 
@@ -948,6 +956,51 @@ export class DerropsConventions<
       securityGroups[purpose] = n({ type: 'ec2SecurityGroup', purpose })
     }
     return { securityGroups }
+  }
+
+  // ── Constraints ───────────────────────────────────────────────────────────
+
+  /**
+   * Returns the constrained segment values registered via `.constrain()` or any segment
+   * helper (`.domain()`, `.service()`, `.key()`, etc.). Only segments that have been
+   * explicitly constrained are present — unconstrained segments (e.g. `tenant`) are absent.
+   *
+   * Used by `topology()` to determine the ordered domain list for CIDR allocation.
+   * The order in which domains were passed to `.domain([...])` is preserved and determines
+   * which /20 CIDR block each domain receives.
+   *
+   * @example
+   * convention.domain(['payments', 'identity']).constraints()
+   * // → { domain: ['payments', 'identity'] }
+   *
+   * convention.domain(['payments']).service(['checkout-api', 'auth-service']).constraints()
+   * // → { domain: ['payments'], service: ['checkout-api', 'auth-service'] }
+   */
+  constraints(): Partial<Record<SegmentKey, readonly string[]>> {
+    return { ...this.storedConstraints }
+  }
+
+  /**
+   * Generate the full network topology — names AND CIDR blocks — for the org and all
+   * constrained domains. Domain ordering must be established first via `.domain([...])`;
+   * the order determines CIDR allocation (domain 0 → first /20 block, etc.).
+   *
+   * Network logic lives in the separate `topology.ts` module. This method is a thin
+   * delegation so `DerropsConventions` stays focused on naming.
+   *
+   * @throws if `.domain([...])` has not been called on this instance
+   *
+   * @example
+   * const plan = orgConvention
+   *   .domain(['payments', 'identity', 'platform'])
+   *   .topology({ vpcCidr: '10.0.0.0/16', azs: ['1a', '1b', '1c'] })
+   *
+   * plan.vpc        // { name: 'acme', cidr: '10.0.0.0/16' }
+   * plan.domains.payments.cidr             // '10.0.0.0/20'
+   * plan.domains.payments.subnets.private  // [{ name, cidr, az }, ...]
+   */
+  topology(options: { vpcCidr: string; azs: string[]; kinds?: string[] }): OrgNetworkTopology {
+    return buildNetworkTopology(this, options)
   }
 
   // ── IAM policy generation ─────────────────────────────────────────────────
