@@ -2,6 +2,23 @@ import type { DerropsConventions, NameOptions } from './DerropsConventions.js'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
+/**
+ * Standard subnet tier kinds used by the Derrops network topology convention.
+ *
+ * | Kind       | Routing                          | Typical residents                   |
+ * | ---------- | -------------------------------- | ----------------------------------- |
+ * | `private`  | Outbound via NAT gateway         | Application services, ECS tasks     |
+ * | `public`   | Direct internet gateway route    | Load balancers, NAT gateways        |
+ * | `isolated` | No internet route (inbound or out) | Databases, OpenSearch, ElastiCache |
+ *
+ * The default `kinds` parameter of `topology()` uses all three in this order, which
+ * determines CIDR offset within each domain's `/20` block:
+ * - `private`  → offset 0    (first `/22`)
+ * - `public`   → offset 1024 (second `/22`)
+ * - `isolated` → offset 2048 (third `/22`)
+ */
+export type SubnetKind = 'private' | 'public' | 'isolated'
+
 /** A single subnet with its convention name, CIDR block, and availability zone. */
 export interface SubnetEntry {
   /** Convention name — e.g. `'acme--payments--private--1a'` */
@@ -22,8 +39,12 @@ export interface DomainNetworkTopology {
   tgwAttachment: string
   /** Route table name per tier — e.g. `{ private: 'acme--payments--private', ... }` */
   routeTables: Record<string, string>
-  /** Subnets per tier, each with name, CIDR, and AZ — e.g. `{ private: [{...}, ...] }` */
-  subnets: Record<string, SubnetEntry[]>
+  /**
+   * Subnets per tier. Keys are `SubnetKind` values (`'private'`, `'public'`, `'isolated'`).
+   * `Partial<>` because a custom `kinds` array passed to `topology()` may include only a
+   * subset of the standard tiers. When called with the default `kinds`, all three are present.
+   */
+  subnets: Partial<Record<SubnetKind, SubnetEntry[]>>
 }
 
 /** The complete org network topology — VPC, Transit Gateway, and all domain resources. */
