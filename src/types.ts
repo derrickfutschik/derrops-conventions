@@ -55,7 +55,7 @@ export interface Segments {
   num?: string
   /** Consuming service or principal for API keys and similar — e.g. `partner-a` */
   consumer?: string
-  /** Target resource or data source — e.g. `user-table`, `events-bus` */
+  /** Target resource or data source — e.g. `user-table`, `events-bus`; or remote org name for VPC peering — e.g. `globex` */
   target?: string
   /** Version identifier for image tags and similar — e.g. `1.2.3`, `latest` */
   version?: string

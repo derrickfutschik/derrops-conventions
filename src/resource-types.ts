@@ -554,28 +554,46 @@ export const RESOURCE_TYPES = {
     segments: ['tenant', 'service', 'apex'],
   },
 
-  // ── Networking ───────────────────────────────────────────────────────────
+  // ── Networking — boundary-aligned naming ─────────────────────────────────
+  // VPC = org boundary      → vpc:         segments ['org']
+  // Subnet = domain tier    → subnet:      segments ['org', 'domain', 'kind', 'az']
+  // NACL = domain guard     → networkAcl:  segments ['org', 'domain']
+  // SG = service access     → ec2SecurityGroup: segments ['org', 'domain', 'service', 'purpose']
+  //
+  // Cross-boundary:
+  //   vpcPeering            → ['org', 'target']           (target = remote org name)
+  //   transitGateway        → ['org']                     (org hub)
+  //   transitGatewayAttachment → ['org', 'domain']        (domain attaches to org TGW)
+  //   vpcEndpoint           → ['org', 'domain', 'service'] (service = AWS service name)
   vpc: {
+    // Org boundary — one VPC per org per account. Provisioned once.
     global: false,
     segmentDelimiter: '--',
     wordDelimiter: '-',
+    segments: ['org'],
   },
   subnet: {
+    // Domain boundary — one subnet group per domain per tier (private/public/isolated) per AZ.
+    // 'service' is intentionally absent: subnets are domain-scoped, not service-scoped.
     global: false,
     segmentDelimiter: '--',
     wordDelimiter: '-',
-    segments: ['org', 'domain', 'service', 'kind', 'az'],
+    segments: ['org', 'domain', 'kind', 'az'],
   },
   routeTable: {
+    // Domain + tier — one route table per subnet kind per domain.
     global: false,
     segmentDelimiter: '--',
     wordDelimiter: '-',
+    segments: ['org', 'domain', 'kind'],
   },
   networkAcl: {
+    // Domain boundary control — enforces inter-domain traffic rules at the subnet boundary.
+    // 'service' is intentionally absent: NACLs are domain-scoped, not service-scoped.
     global: false,
     segmentDelimiter: '--',
     wordDelimiter: '-',
-    segments: ['org', 'domain', 'service'],
+    segments: ['org', 'domain'],
     suffix: '--nacl',
   },
   alb: {
@@ -588,6 +606,62 @@ export const RESOURCE_TYPES = {
     segmentDelimiter: '--',
     wordDelimiter: '-',
     segments: ['org', 'domain', 'service', 'purpose'],
+  },
+  transitGateway: {
+    // Org-level network hub — connects all domain VPCs and cross-org peers.
+    // Use TGW (hub-and-spoke) over VPC peering when connecting 3+ orgs.
+    global: false,
+    segmentDelimiter: '--',
+    wordDelimiter: '-',
+    segments: ['org'],
+    suffix: '--tgw',
+  },
+  transitGatewayAttachment: {
+    // Domain VPC attachment to the org Transit Gateway.
+    global: false,
+    segmentDelimiter: '--',
+    wordDelimiter: '-',
+    segments: ['org', 'domain'],
+    suffix: '--tgw-attach',
+  },
+  vpcPeering: {
+    // Cross-org VPC peering connection. 'target' = the remote org name.
+    // Use for point-to-point two-org scenarios; prefer TGW for 3+ orgs.
+    global: false,
+    segmentDelimiter: '--',
+    wordDelimiter: '-',
+    segments: ['org', 'target'],
+    suffix: '--peer',
+  },
+  vpcEndpoint: {
+    // VPC Interface or Gateway endpoint for an AWS service inside a domain.
+    // 'service' here is the AWS service name (e.g. 's3', 'dynamodb', 'ecr-api'),
+    // not an application service name.
+    global: false,
+    segmentDelimiter: '--',
+    wordDelimiter: '-',
+    segments: ['org', 'domain', 'service'],
+    suffix: '--endpoint',
+  },
+  clientVpnEndpoint: {
+    // AWS Client VPN endpoint — one shared endpoint per org per region.
+    // All users share the same endpoint SG. Per-group access is controlled
+    // exclusively via Client VPN Authorization Rules (AD/Cognito group → CIDR).
+    //
+    // Resource-level differentiation (OpenSearch vs RDS) is achieved by placing
+    // each resource type in a different domain's subnet — each domain has its own
+    // CIDR block, so authorization rules can target them independently:
+    //   engineers: CIDR of acme--platform--isolated  (OpenSearch)
+    //              + CIDR of acme--payments--isolated (RDS)
+    //   search-only: CIDR of acme--platform--isolated only
+    //
+    // Use the authorization rule description field to reference the subnet name
+    // (from the convention) rather than the raw CIDR, so audit logs are readable.
+    global: false,
+    segmentDelimiter: '--',
+    wordDelimiter: '-',
+    segments: ['org', 'domain'],
+    suffix: '--client-vpn',
   },
 
   // ── Messaging ────────────────────────────────────────────────────────────

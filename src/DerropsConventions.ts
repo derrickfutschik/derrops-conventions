@@ -857,6 +857,99 @@ export class DerropsConventions<
     return result
   }
 
+  // ── Network topology ──────────────────────────────────────────────────────
+
+  /**
+   * Generate all resource names for the **org network layer** — resources provisioned
+   * once per account (VPC, Transit Gateway). Call on an instance with `org` set.
+   *
+   * @example
+   * orgConvention.orgNetworkLayer()
+   * // → { vpc: 'acme', transitGateway: 'acme--tgw' }
+   */
+  orgNetworkLayer(): { vpc: string; transitGateway: string } {
+    const n = (opts: object) => this.name(opts as NameOptions<C, TType>)
+    return {
+      vpc: n({ type: 'vpc' }),
+      transitGateway: n({ type: 'transitGateway' }),
+    }
+  }
+
+  /**
+   * Generate all resource names for the **domain network layer** — resources provisioned
+   * when a new domain is added (subnets, NACL, route tables, TGW attachment).
+   * Call on an instance with `org` + `domain` set.
+   *
+   * @param azs - Availability zone suffixes to generate subnets for, e.g. `['1a', '1b', '1c']`
+   * @param kinds - Subnet tiers to generate. Defaults to `['private', 'public', 'isolated']`
+   *
+   * @example
+   * orgConvention.with({ domain: 'payments' }).domainNetworkLayer(['1a', '1b', '1c'])
+   * // → {
+   * //   subnets: {
+   * //     private:  ['acme--payments--private--1a', ...],
+   * //     public:   ['acme--payments--public--1a', ...],
+   * //     isolated: ['acme--payments--isolated--1a', ...],
+   * //   },
+   * //   nacl: 'acme--payments--nacl',
+   * //   routeTables: { private: 'acme--payments--private', public: 'acme--payments--public', isolated: 'acme--payments--isolated' },
+   * //   tgwAttachment: 'acme--payments--tgw-attach',
+   * // }
+   */
+  domainNetworkLayer(
+    azs: string[],
+    kinds: string[] = ['private', 'public', 'isolated'],
+  ): {
+    subnets: Record<string, string[]>
+    nacl: string
+    routeTables: Record<string, string>
+    tgwAttachment: string
+  } {
+    const n = (opts: object) => this.name(opts as NameOptions<C, TType>)
+    const subnets: Record<string, string[]> = {}
+    const routeTables: Record<string, string> = {}
+    for (const kind of kinds) {
+      subnets[kind] = azs.map((az) => n({ type: 'subnet', kind, az }))
+      routeTables[kind] = n({ type: 'routeTable', kind })
+    }
+    return {
+      subnets,
+      nacl: n({ type: 'networkAcl' }),
+      routeTables,
+      tgwAttachment: n({ type: 'transitGatewayAttachment' }),
+    }
+  }
+
+  /**
+   * Generate all security group names for the **service network layer** — resources
+   * provisioned with each service deployment. Call on an instance with `org` + `domain` + `service` set.
+   *
+   * The `purpose` value encodes the access role the security group protects:
+   * `web` (HTTP/HTTPS), `db` (database), `cache` (Redis), `search` (OpenSearch),
+   * `internal` (intra-domain), `relay` (egress), `bastion` (SSH), `worker`.
+   *
+   * @param purposes - Access roles to generate security groups for
+   *
+   * @example
+   * orgConvention.with({ domain: 'payments', service: 'checkout-api' })
+   *   .serviceNetworkLayer(['web', 'db', 'internal'])
+   * // → {
+   * //   securityGroups: {
+   * //     web:      'acme--payments--checkout-api--web',
+   * //     db:       'acme--payments--checkout-api--db',
+   * //     internal: 'acme--payments--checkout-api--internal',
+   * //   }
+   * // }
+   */
+  serviceNetworkLayer(purposes: string[]): { securityGroups: Record<string, string> } {
+    const n = (opts: object) => this.name(opts as NameOptions<C, TType>)
+    const securityGroups: Record<string, string> = {}
+    for (const purpose of purposes) {
+      securityGroups[purpose] = n({ type: 'ec2SecurityGroup', purpose })
+    }
+    return { securityGroups }
+  }
+
   // ── IAM policy generation ─────────────────────────────────────────────────
 
   /**

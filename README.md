@@ -708,6 +708,99 @@ The `entity` segment is intentionally absent from the default segment order. It 
 
 ---
 
+## Network topology
+
+The convention maps directly to the three-layer AWS network hierarchy. Each layer has its own provisioning lifecycle and the segment depth of each resource type encodes which layer it lives at.
+
+### Three stability layers
+
+```
+Layer     Segments       Lifecycle                      Resources
+────────  ─────────────  ─────────────────────────────  ──────────────────────────────────
+Org       org            Provisioned once per account   VPC, Transit Gateway
+Domain    org+domain     Added when a domain expands    Subnets, NACL, Route Tables, TGW Attachment
+Service   org+domain+    Deployed per service release   Security Groups, ALBs, Target Groups
+          service
+```
+
+- **Org resources** are the most stable. A VPC is created once and almost never changed. Resource type `segments` stop at `['org']`.
+- **Domain resources** are structural. Adding a new domain (e.g. `analytics`) triggers subnet and NACL provisioning, but this happens infrequently. Segments stop at `['org', 'domain']`.
+- **Service resources** are operational. Security groups are created and updated with each service deployment. Segments descend to `['org', 'domain', 'service', 'purpose']`.
+
+This is why `subnet` and `networkAcl` do **not** include `service` in their segments — they are domain-scoped boundaries, not service-scoped.
+
+### Topology generation
+
+Call the layer methods to generate all resource names for a scope at once:
+
+```typescript
+const orgConvention = new DerropsConventions({ org: 'acme' })
+
+// Org layer — provision once
+orgConvention.orgNetworkLayer()
+// → { vpc: 'acme', transitGateway: 'acme--tgw' }
+
+// Domain layer — provision when a domain is added
+orgConvention.with({ domain: 'payments' }).domainNetworkLayer(['1a', '1b', '1c'])
+// → {
+//   subnets: {
+//     private:  ['acme--payments--private--1a', ...],
+//     public:   ['acme--payments--public--1a', ...],
+//     isolated: ['acme--payments--isolated--1a', ...],
+//   },
+//   nacl:         'acme--payments--nacl',
+//   routeTables:  { private: 'acme--payments--private', public: 'acme--payments--public', isolated: 'acme--payments--isolated' },
+//   tgwAttachment:'acme--payments--tgw-attach',
+// }
+
+// Service layer — provision with each service deployment
+orgConvention.with({ domain: 'payments', service: 'checkout-api' })
+  .serviceNetworkLayer(['web', 'db', 'internal'])
+// → {
+//   securityGroups: {
+//     web:      'acme--payments--checkout-api--web',
+//     db:       'acme--payments--checkout-api--db',
+//     internal: 'acme--payments--checkout-api--internal',
+//   }
+// }
+```
+
+### Security group purposes
+
+The `purpose` segment on `ec2SecurityGroup` encodes the access role — what the security group protects, not who calls it. Standard values:
+
+| `purpose` | Inbound traffic |
+|-----------|----------------|
+| `web` | HTTP/HTTPS from ALB or internet |
+| `internal` | Intra-domain service-to-service |
+| `db` | Database protocols (PostgreSQL 5432, MySQL 3306) |
+| `cache` | Cache protocols (Redis 6379) |
+| `search` | OpenSearch/Elasticsearch (9200, 443) |
+| `relay` | Outbound relay / egress |
+| `bastion` | SSH from operator IP ranges |
+| `worker` | Background processing |
+
+The security group IS the named access object. `acme--payments--checkout-api--db` says exactly: "database-tier access control for checkout-api in the payments domain of the acme org."
+
+### Cross-boundary patterns
+
+```typescript
+// Cross-org VPC peering — 'target' holds the remote org name
+naming.name({ type: 'vpcPeering', target: 'globex' })
+// → 'acme--globex--peer'
+
+// AWS service endpoint inside a domain
+// 'service' here is the AWS service name, not an application service
+naming.name({ type: 'vpcEndpoint', service: 's3' })
+// → 'acme--payments--s3--endpoint'
+```
+
+Use VPC peering for two-org point-to-point connections. Use Transit Gateway (`transitGateway` / `transitGatewayAttachment`) when connecting three or more orgs — peering grows as O(n²) connections, TGW as O(n) attachments.
+
+See the [network topology guide](https://blog.slaops.com/blog/derrops-network-topology) for the full design rationale, CDK usage examples, and the access/permissions distinction.
+
+---
+
 ## DNS subdomain patterns
 
 Four patterns are supported. Use `.apexMapping()` to derive the effective zone per environment.

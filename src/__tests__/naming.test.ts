@@ -497,7 +497,7 @@ describe('DerropsConventions — naming', () => {
     })
 
     it('networkAcl appends --nacl', () => {
-      expect(c.name({ type: 'networkAcl' })).toBe('acme--payments--api--nacl')
+      expect(c.name({ type: 'networkAcl' })).toBe('acme--payments--nacl')
     })
 
     it('wafWebAcl appends --waf', () => {
@@ -515,14 +515,14 @@ describe('DerropsConventions — naming', () => {
   describe('new segment keys — kind, az, purpose, num, consumer, target, version', () => {
     const c = new DerropsConventions({ org: 'acme', domain: 'payments', service: 'api' })
 
-    it('subnet uses kind and az segments', () => {
+    it('subnet uses kind and az segments (service not included — domain-scoped)', () => {
       expect(c.name({ type: 'subnet', kind: 'private', az: '1a' })).toBe(
-        'acme--payments--api--private--1a',
+        'acme--payments--private--1a',
       )
     })
 
     it('subnet omits az when not supplied', () => {
-      expect(c.name({ type: 'subnet', kind: 'public' })).toBe('acme--payments--api--public')
+      expect(c.name({ type: 'subnet', kind: 'public' })).toBe('acme--payments--public')
     })
 
     it('ec2Instance uses kind and num segments', () => {
@@ -606,6 +606,266 @@ describe('DerropsConventions — naming', () => {
       expect(
         c.with({ tenant: 't-a3f8b2' }).name({ type: 'openSearchIndex', entity: 'transactions' }),
       ).toBe('acme--payments--transactions--t-a3f8b2')
+    })
+  })
+
+  describe('networking topology — boundary-aligned naming', () => {
+    const c = new DerropsConventions({ org: 'acme', domain: 'payments', service: 'checkout-api' })
+
+    describe('vpc (org boundary)', () => {
+      it('name is org-only', () => {
+        expect(c.name({ type: 'vpc' })).toBe('acme')
+      })
+
+      it('domain and service are not included even when set on instance', () => {
+        expect(c.name({ type: 'vpc' })).not.toContain('payments')
+        expect(c.name({ type: 'vpc' })).not.toContain('checkout-api')
+      })
+    })
+
+    describe('subnet (domain boundary, no service)', () => {
+      it('private subnet with az', () => {
+        expect(c.name({ type: 'subnet', kind: 'private', az: '1a' })).toBe(
+          'acme--payments--private--1a',
+        )
+      })
+
+      it('public subnet with az', () => {
+        expect(c.name({ type: 'subnet', kind: 'public', az: '1c' })).toBe(
+          'acme--payments--public--1c',
+        )
+      })
+
+      it('isolated subnet without az', () => {
+        expect(c.name({ type: 'subnet', kind: 'isolated' })).toBe('acme--payments--isolated')
+      })
+
+      it('service is absent even when set on instance', () => {
+        expect(c.name({ type: 'subnet', kind: 'private', az: '1a' })).not.toContain('checkout-api')
+      })
+    })
+
+    describe('networkAcl (domain boundary control)', () => {
+      it('name is org + domain + --nacl suffix', () => {
+        expect(c.name({ type: 'networkAcl' })).toBe('acme--payments--nacl')
+      })
+
+      it('service is absent even when set on instance', () => {
+        expect(c.name({ type: 'networkAcl' })).not.toContain('checkout-api')
+      })
+
+      it('different domains produce different NACLs', () => {
+        expect(c.with({ domain: 'identity' }).name({ type: 'networkAcl' })).toBe(
+          'acme--identity--nacl',
+        )
+      })
+    })
+
+    describe('routeTable (domain + tier)', () => {
+      it('private route table', () => {
+        expect(c.name({ type: 'routeTable', kind: 'private' })).toBe('acme--payments--private')
+      })
+
+      it('public route table', () => {
+        expect(c.name({ type: 'routeTable', kind: 'public' })).toBe('acme--payments--public')
+      })
+    })
+
+    describe('ec2SecurityGroup (service-scoped access object)', () => {
+      it('web purpose', () => {
+        expect(c.name({ type: 'ec2SecurityGroup', purpose: 'web' })).toBe(
+          'acme--payments--checkout-api--web',
+        )
+      })
+
+      it('db purpose', () => {
+        expect(c.name({ type: 'ec2SecurityGroup', purpose: 'db' })).toBe(
+          'acme--payments--checkout-api--db',
+        )
+      })
+
+      it('internal purpose', () => {
+        expect(c.name({ type: 'ec2SecurityGroup', purpose: 'internal' })).toBe(
+          'acme--payments--checkout-api--internal',
+        )
+      })
+    })
+
+    describe('transitGateway (org hub)', () => {
+      it('name is org + --tgw suffix', () => {
+        expect(c.name({ type: 'transitGateway' })).toBe('acme--tgw')
+      })
+
+      it('domain and service are not included', () => {
+        expect(c.name({ type: 'transitGateway' })).not.toContain('payments')
+      })
+    })
+
+    describe('transitGatewayAttachment (domain → org TGW)', () => {
+      it('name is org + domain + --tgw-attach suffix', () => {
+        expect(c.name({ type: 'transitGatewayAttachment' })).toBe('acme--payments--tgw-attach')
+      })
+
+      it('different domains produce different attachments', () => {
+        expect(c.with({ domain: 'identity' }).name({ type: 'transitGatewayAttachment' })).toBe(
+          'acme--identity--tgw-attach',
+        )
+      })
+    })
+
+    describe('vpcPeering (cross-org)', () => {
+      it('uses target segment for remote org name', () => {
+        expect(c.name({ type: 'vpcPeering', target: 'globex' })).toBe('acme--globex--peer')
+      })
+
+      it('domain does not appear — peering is org-level', () => {
+        expect(c.name({ type: 'vpcPeering', target: 'globex' })).not.toContain('payments')
+      })
+
+      it('different remote orgs produce different peer names', () => {
+        expect(c.name({ type: 'vpcPeering', target: 'acme-partner' })).toBe(
+          'acme--acme-partner--peer',
+        )
+      })
+    })
+
+    describe('vpcEndpoint (domain → AWS service)', () => {
+      it('s3 endpoint', () => {
+        expect(c.name({ type: 'vpcEndpoint', service: 's3' })).toBe(
+          'acme--payments--s3--endpoint',
+        )
+      })
+
+      it('dynamodb endpoint', () => {
+        expect(c.name({ type: 'vpcEndpoint', service: 'dynamodb' })).toBe(
+          'acme--payments--dynamodb--endpoint',
+        )
+      })
+
+      it('ecr-api endpoint (hyphen preserved — wordDelimiter is -)', () => {
+        expect(c.name({ type: 'vpcEndpoint', service: 'ecr-api' })).toBe(
+          'acme--payments--ecr-api--endpoint',
+        )
+      })
+    })
+
+    describe('clientVpnEndpoint (employee VPN entry point)', () => {
+      const platform = new DerropsConventions({ org: 'acme', domain: 'platform' })
+
+      it('name is org + domain + --client-vpn', () => {
+        expect(platform.name({ type: 'clientVpnEndpoint' })).toBe('acme--platform--client-vpn')
+      })
+
+      it('different domains produce different endpoint names', () => {
+        expect(
+          new DerropsConventions({ org: 'acme', domain: 'ops' }).name({
+            type: 'clientVpnEndpoint',
+          }),
+        ).toBe('acme--ops--client-vpn')
+      })
+
+      // Resource-level access control (OpenSearch vs RDS) is achieved by placing each
+      // resource type in a different domain — each domain has its own CIDR block, so
+      // authorization rules (group → CIDR) can target them independently without
+      // requiring multiple endpoints (which incur per-endpoint AWS charges).
+      it('endpoint SG is shared across all users — authorization rules enforce per-group CIDR access', () => {
+        const endpointSg = platform.with({ service: 'client-vpn' }).name({
+          type: 'ec2SecurityGroup',
+          purpose: 'all',
+        })
+        // Coarse allow — authorization rules narrow access per AD/Cognito group
+        expect(endpointSg).toBe('acme--platform--client-vpn--all')
+      })
+    })
+  })
+
+  describe('networkLayer() — topology generation', () => {
+    const orgC = new DerropsConventions({ org: 'acme' })
+    const domainC = orgC.with({ domain: 'payments' })
+    const serviceC = domainC.with({ service: 'checkout-api' })
+
+    describe('orgNetworkLayer()', () => {
+      it('returns vpc and transitGateway names', () => {
+        expect(orgC.orgNetworkLayer()).toEqual({
+          vpc: 'acme',
+          transitGateway: 'acme--tgw',
+        })
+      })
+
+      it('works on a domain-scoped instance too (org segment still present)', () => {
+        expect(domainC.orgNetworkLayer()).toEqual({
+          vpc: 'acme',
+          transitGateway: 'acme--tgw',
+        })
+      })
+    })
+
+    describe('domainNetworkLayer()', () => {
+      it('returns subnets, nacl, routeTables, tgwAttachment for two AZs', () => {
+        const layer = domainC.domainNetworkLayer(['1a', '1b'])
+        expect(layer.nacl).toBe('acme--payments--nacl')
+        expect(layer.tgwAttachment).toBe('acme--payments--tgw-attach')
+        expect(layer.subnets).toEqual({
+          private: ['acme--payments--private--1a', 'acme--payments--private--1b'],
+          public: ['acme--payments--public--1a', 'acme--payments--public--1b'],
+          isolated: ['acme--payments--isolated--1a', 'acme--payments--isolated--1b'],
+        })
+        expect(layer.routeTables).toEqual({
+          private: 'acme--payments--private',
+          public: 'acme--payments--public',
+          isolated: 'acme--payments--isolated',
+        })
+      })
+
+      it('default kinds are private, public, isolated', () => {
+        const layer = domainC.domainNetworkLayer(['1a'])
+        expect(Object.keys(layer.subnets)).toEqual(['private', 'public', 'isolated'])
+      })
+
+      it('custom kinds subset', () => {
+        const layer = domainC.domainNetworkLayer(['1a', '1b', '1c'], ['private'])
+        expect(Object.keys(layer.subnets)).toEqual(['private'])
+        expect(layer.subnets.private).toHaveLength(3)
+      })
+
+      it('three AZs produce three subnets per kind', () => {
+        const layer = domainC.domainNetworkLayer(['1a', '1b', '1c'])
+        expect(layer.subnets.private).toHaveLength(3)
+        expect(layer.subnets['private']![2]).toBe('acme--payments--private--1c')
+      })
+
+      it('different domains produce different topology', () => {
+        const identityLayer = orgC.with({ domain: 'identity' }).domainNetworkLayer(['1a'])
+        expect(identityLayer.nacl).toBe('acme--identity--nacl')
+        expect(identityLayer.subnets['private']![0]).toBe('acme--identity--private--1a')
+      })
+    })
+
+    describe('serviceNetworkLayer()', () => {
+      it('returns security group names keyed by purpose', () => {
+        expect(serviceC.serviceNetworkLayer(['web', 'db', 'internal'])).toEqual({
+          securityGroups: {
+            web: 'acme--payments--checkout-api--web',
+            db: 'acme--payments--checkout-api--db',
+            internal: 'acme--payments--checkout-api--internal',
+          },
+        })
+      })
+
+      it('single purpose', () => {
+        expect(serviceC.serviceNetworkLayer(['web'])).toEqual({
+          securityGroups: { web: 'acme--payments--checkout-api--web' },
+        })
+      })
+
+      it('empty purposes returns empty securityGroups', () => {
+        expect(serviceC.serviceNetworkLayer([])).toEqual({ securityGroups: {} })
+      })
+
+      it('different services produce different security groups', () => {
+        const authLayer = domainC.with({ service: 'auth-service' }).serviceNetworkLayer(['web'])
+        expect(authLayer.securityGroups.web).toBe('acme--payments--auth-service--web')
+      })
     })
   })
 })
