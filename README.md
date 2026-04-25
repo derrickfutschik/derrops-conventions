@@ -765,6 +765,277 @@ orgConvention.with({ domain: 'payments', service: 'checkout-api' })
 // }
 ```
 
+### Subnet kinds
+
+Three standard tiers. Each gets a `/22` block within its domain's `/20`, with one `/24` per availability zone within that `/22`.
+
+| Kind | Routing | `mapPublicIpOnLaunch` | Typical residents |
+|---|---|---|---|
+| `private` | Outbound via NAT gateway — no direct inbound | `false` | Application servers, ECS tasks, Lambda in VPC |
+| `public` | Internet Gateway — direct inbound and outbound | `true` | Load balancers, NAT gateways, bastion hosts |
+| `isolated` | No internet route in either direction | `false` | Databases (RDS, Aurora), OpenSearch, ElastiCache |
+
+The flow is one-way: `internet ↔ public → private → isolated`. Resources in `isolated` can only be reached from within the VPC.
+
+Not every domain needs all three tiers. A data-only domain (no load balancers) needs only `private` and `isolated`. Configure this per domain using `includeKinds` — see [Per-domain kind configuration](#per-domain-kind-configuration).
+
+---
+
+### CDK — provisioning the VPC
+
+`topology()` returns names and CIDR blocks for every subnet, route table, NACL, and TGW attachment across all domains. Pass those directly to CDK L1 constructs.
+
+The convention name (`subnet.name`) is used as the CloudFormation logical ID via `overrideLogicalId()`. This is what makes the infrastructure stable — as long as the name doesn't change, CloudFormation recognises the resource as existing and leaves it alone.
+
+```typescript
+import { Stack, Tags, type StackProps } from 'aws-cdk-lib'
+import * as ec2 from 'aws-cdk-lib/aws-ec2'
+import { Construct } from 'constructs'
+import { DerropsConventions } from '@derrops-conventions'
+
+const region = 'ap-southeast-2'
+
+const orgC = new DerropsConventions({ org: 'acme', env: 'prod', region })
+  .domain(['payments', 'identity'])
+  .tagPrefix('acme:')
+  .tagKeys('org', 'domain', 'environment')
+
+// Compute the full plan — names and CIDRs for all domains, kinds, and AZs.
+// This object is the authoritative source of truth for all network resource names.
+const plan = orgC.topology({
+  vpcCidr: '10.0.0.0/16',
+  azAllocations: [
+    { slot: 0, az: '1a' },
+    { slot: 1, az: '1b' },
+    { slot: 2, az: '1c' },
+  ],
+  defaultKinds: [
+    { slot: 0, name: 'private' },
+    { slot: 1, name: 'public' },
+    { slot: 2, name: 'isolated' },
+  ],
+})
+
+export class VpcStack extends Stack {
+  constructor(scope: Construct, id: string, props?: StackProps) {
+    super(scope, id, props)
+
+    // ── VPC ──────────────────────────────────────────────────────────────────
+    const vpc = new ec2.CfnVPC(this, plan.vpc.name, {
+      cidrBlock: plan.vpc.cidr,
+      enableDnsHostnames: true,
+      enableDnsSupport: true,
+    })
+    vpc.overrideLogicalId(plan.vpc.name)
+    orgC.applyTags((k, v) => Tags.of(vpc).add(k, v))
+
+    // ── Internet Gateway (shared — public subnets across all domains use it) ─
+    const igw = new ec2.CfnInternetGateway(this, `${plan.vpc.name}--igw`, {})
+    new ec2.CfnVPCGatewayAttachment(this, `${plan.vpc.name}--igw-attach`, {
+      vpcId: vpc.ref,
+      internetGatewayId: igw.ref,
+    })
+
+    // ── Per-domain resources ──────────────────────────────────────────────────
+    for (const [domainName, domain] of Object.entries(plan.domains)) {
+      const domainC = orgC.with({ domain: domainName })
+
+      // Network ACL — one per domain
+      const nacl = new ec2.CfnNetworkAcl(this, domain.nacl, { vpcId: vpc.ref })
+      nacl.overrideLogicalId(domain.nacl)
+      domainC.applyTags((k, v) => Tags.of(nacl).add(k, v))
+
+      // Route tables — one per kind actually allocated for this domain
+      const routeTableRefs: Record<string, string> = {}
+      for (const [kind, rtName] of Object.entries(domain.routeTables)) {
+        const rt = new ec2.CfnRouteTable(this, rtName, { vpcId: vpc.ref })
+        rt.overrideLogicalId(rtName)
+        domainC.applyTags((k, v) => Tags.of(rt).add(k, v))
+        routeTableRefs[kind] = rt.ref
+
+        // public tier: default route via IGW
+        // private tier: default route via NAT (add after NAT GW is created below)
+        // isolated tier: no default route
+        if (kind === 'public') {
+          new ec2.CfnRoute(this, `${rtName}--igw`, {
+            routeTableId: rt.ref,
+            destinationCidrBlock: '0.0.0.0/0',
+            gatewayId: igw.ref,
+          })
+        }
+      }
+
+      // Subnets — only the kinds this domain has, each with its stable CIDR
+      for (const [kind, subnets] of Object.entries(domain.subnets)) {
+        for (const subnet of subnets) {
+          const cfnSubnet = new ec2.CfnSubnet(this, subnet.name, {
+            vpcId: vpc.ref,
+            cidrBlock: subnet.cidr,
+            availabilityZone: `${region}${subnet.az}`,
+            // Only public subnets assign a public IP automatically
+            mapPublicIpOnLaunch: kind === 'public',
+          })
+          cfnSubnet.overrideLogicalId(subnet.name)
+          domainC.applyTags((k, v) => Tags.of(cfnSubnet).add(k, v))
+
+          new ec2.CfnSubnetRouteTableAssociation(
+            this,
+            `${subnet.name}--rta`,
+            {
+              subnetId: cfnSubnet.ref,
+              routeTableId: routeTableRefs[kind]!,
+            },
+          )
+
+          // NACLs — associate each subnet with the domain NACL
+          new ec2.CfnSubnetNetworkAclAssociation(
+            this,
+            `${subnet.name}--nacl`,
+            {
+              subnetId: cfnSubnet.ref,
+              networkAclId: nacl.ref,
+            },
+          )
+        }
+      }
+    }
+  }
+}
+```
+
+This produces the following subnet layout for the `payments` domain:
+
+```
+payments  10.0.0.0/20
+  private   10.0.0.0/22   → 10.0.0.0/24 (1a), 10.0.1.0/24 (1b), 10.0.2.0/24 (1c)
+  public    10.0.4.0/22   → 10.0.4.0/24 (1a), 10.0.5.0/24 (1b), 10.0.6.0/24 (1c)
+  isolated  10.0.8.0/22   → 10.0.8.0/24 (1a), 10.0.9.0/24 (1b), 10.0.10.0/24 (1c)
+
+identity  10.0.16.0/20
+  private   10.0.16.0/22  → 10.0.16.0/24 (1a), 10.0.17.0/24 (1b), 10.0.18.0/24 (1c)
+  public    10.0.20.0/22  → 10.0.20.0/24 (1a), ...
+  isolated  10.0.24.0/22  → 10.0.24.0/24 (1a), ...
+```
+
+---
+
+### CDK — per-domain kind configuration
+
+Not every domain needs all three tiers. Use `includeKinds` to declare which tiers a domain actually provisions. Only those route tables and subnets are created — there are no phantom resources.
+
+```typescript
+const plan = orgC.topology({
+  vpcCidr: '10.0.0.0/16',
+  azAllocations: [
+    { slot: 0, az: '1a' },
+    { slot: 1, az: '1b' },
+    { slot: 2, az: '1c' },
+  ],
+  defaultKinds: [
+    { slot: 0, name: 'private' },
+    { slot: 1, name: 'public' },
+    { slot: 2, name: 'isolated' },
+  ],
+  domains: {
+    // identity has no public-facing load balancers — drop the public tier
+    identity: { includeKinds: ['private', 'isolated'] },
+    // platform only needs app + data tiers
+    platform: { includeKinds: ['private', 'isolated'] },
+    // analytics domain adds a dedicated ingest tier at the next available slot
+    analytics: {
+      additionalKinds: [{ slot: 3, name: 'ingest' }],
+    },
+  },
+})
+
+// payments gets all three kinds:   private, public, isolated
+// identity gets two kinds:          private, isolated  (no public — no IGW route)
+// platform gets two kinds:          private, isolated
+// analytics gets four kinds:        private, public, isolated, ingest
+```
+
+The `isolated` subnets for `identity` keep their slot 2 CIDRs (`10.0.24.0/24`, etc.) even though the `public` tier is omitted. Removing a tier from `includeKinds` creates a gap in the address space, but that gap is harmless and preserves the stability of every other address.
+
+---
+
+### CDK — growing infrastructure without downtime
+
+Subnet `slot` numbers determine CIDR offsets. Adding new subnets — a fourth AZ or a new kind tier — never changes the CIDRs of existing subnets. CloudFormation sees the existing resources as unchanged and only provisions the new ones.
+
+**Adding a third AZ after initial deployment:**
+
+```typescript
+// v1 — initial deployment (2 AZs)
+const plan = orgC.topology({
+  vpcCidr: '10.0.0.0/16',
+  azAllocations: [
+    { slot: 0, az: '1a' },
+    { slot: 1, az: '1b' },
+  ],
+  defaultKinds: [
+    { slot: 0, name: 'private' },
+    { slot: 1, name: 'public' },
+    { slot: 2, name: 'isolated' },
+  ],
+})
+
+// v2 — later, add a third AZ by appending slot 2
+// Slots 0 and 1 are untouched → existing subnets are not modified
+const plan = orgC.topology({
+  vpcCidr: '10.0.0.0/16',
+  azAllocations: [
+    { slot: 0, az: '1a' },    // existing — CIDR unchanged
+    { slot: 1, az: '1b' },    // existing — CIDR unchanged
+    { slot: 2, az: '1c' },    // new — provisioned on next deploy
+  ],
+  defaultKinds: [
+    { slot: 0, name: 'private' },
+    { slot: 1, name: 'public' },
+    { slot: 2, name: 'isolated' },
+  ],
+})
+```
+
+**Adding a new kind tier after initial deployment:**
+
+```typescript
+// v1 — initial deployment (private + isolated only)
+const plan = orgC.topology({
+  vpcCidr: '10.0.0.0/16',
+  azs: ['1a', '1b', '1c'],
+  defaultKinds: [
+    { slot: 0, name: 'private' },
+    { slot: 2, name: 'isolated' },
+    // slot 1 intentionally left vacant to insert public later between them,
+    // or just use slot 3 if order doesn't matter
+  ],
+})
+
+// v2 — add public tier by filling slot 1
+// Slots 0 and 2 are untouched → private and isolated CIDRs are unchanged
+const plan = orgC.topology({
+  vpcCidr: '10.0.0.0/16',
+  azs: ['1a', '1b', '1c'],
+  defaultKinds: [
+    { slot: 0, name: 'private' },
+    { slot: 1, name: 'public' },    // new
+    { slot: 2, name: 'isolated' },
+  ],
+})
+```
+
+The capacity limit is 4 slots per axis (0–3). With 4 kind slots and 4 AZ slots, one domain can hold up to 16 subnets. Use `capacityReport()` to check utilisation before deploying:
+
+```typescript
+const report = orgC.capacityReport({ vpcCidr: '10.0.0.0/16', azs: ['1a', '1b', '1c'], ... })
+if (report.warnings.length) {
+  console.warn('Capacity warnings:\n' + report.warnings.join('\n'))
+}
+// Example warning: Domain "payments": 3 of 4 kind slots used (75%)
+```
+
+---
+
 ### Security group purposes
 
 The `purpose` segment on `ec2SecurityGroup` encodes the access role — what the security group protects, not who calls it. Standard values:
