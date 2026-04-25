@@ -61,6 +61,9 @@ export interface Segments {
   version?: string
 }
 
+/** Segments extracted by parsing a resource name back through the convention. */
+export type ParsedSegments = Partial<Record<SegmentKey, string>>
+
 /** Maps a subset of segment keys to narrowed string literal unions. */
 export type SegmentConstraints = Partial<Record<SegmentKey, string>>
 

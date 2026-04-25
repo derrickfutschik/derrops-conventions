@@ -983,4 +983,72 @@ describe('DerropsConventions — tags', () => {
       expect(c.tags()).toMatchObject({ 'has-env': 'false' })
     })
   })
+
+  describe('emitSegmentValues()', () => {
+    it('segment-values is absent by default', () => {
+      const c = new DerropsConventions({ org: 'acme', domain: 'payments', service: 'api' })
+      expect(c.tags()).not.toHaveProperty('segment-values')
+    })
+
+    it('segment-values is present after opt-in', () => {
+      const c = new DerropsConventions({
+        org: 'acme',
+        domain: 'payments',
+        service: 'api',
+      }).emitSegmentValues()
+      expect(c.tags()).toHaveProperty('segment-values', 'org=acme,domain=payments,service=api')
+    })
+
+    it('segment-values uses the same active segments as the segment tag', () => {
+      const c = new DerropsConventions({
+        org: 'acme',
+        domain: 'payments',
+        service: 'api',
+        env: 'prod',
+      }).emitSegmentValues()
+      const tags = c.tags()
+      expect(tags['segment']).toBe('env--org--domain--service')
+      expect(tags['segment-values']).toBe('env=prod,org=acme,domain=payments,service=api')
+    })
+
+    it('segment-values respects tagPrefix', () => {
+      const c = new DerropsConventions({
+        domain: 'payments',
+        service: 'api',
+      })
+        .emitSegmentValues()
+        .tagPrefix('slaops:')
+      expect(c.tags()).toHaveProperty('slaops:segment-values', 'domain=payments,service=api')
+    })
+
+    it('segment-values respects pascal tagKeyCasing', () => {
+      const c = new DerropsConventions({
+        domain: 'payments',
+        service: 'api',
+      })
+        .emitSegmentValues()
+        .tagKeyCasing('pascal')
+      expect(c.tags()).toHaveProperty('SegmentValues', 'domain=payments,service=api')
+    })
+
+    it('segment-values is omitted when no segments are set', () => {
+      const c = new DerropsConventions({}).emitSegmentValues()
+      expect(c.tags()).not.toHaveProperty('segment-values')
+    })
+
+    it('propagates through with()', () => {
+      const base = new DerropsConventions({ org: 'acme', domain: 'platform' }).emitSegmentValues()
+      const derived = base.with({ domain: 'payments', service: 'checkout-api' })
+      expect(derived.tags()).toHaveProperty(
+        'segment-values',
+        'org=acme,domain=payments,service=checkout-api',
+      )
+    })
+
+    it('does not propagate to with() when not set on parent', () => {
+      const base = new DerropsConventions({ org: 'acme', domain: 'platform' })
+      const derived = base.with({ service: 'api' })
+      expect(derived.tags()).not.toHaveProperty('segment-values')
+    })
+  })
 })

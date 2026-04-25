@@ -29,6 +29,7 @@ export type { ResourceType } from './resource-types.js'
 export type {
   SegmentKey,
   Segments,
+  ParsedSegments,
   ResourceTypeConfig,
   SegmentConstraints,
   ConstrainedSegments,

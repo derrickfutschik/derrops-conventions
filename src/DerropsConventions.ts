@@ -4,6 +4,7 @@ import type {
   ResourceTypeConfig,
   SegmentConstraints,
   ConstrainedSegments,
+  ParsedSegments,
 } from './types.js'
 import { RESOURCE_TYPES } from './resource-types.js'
 import type { ResourceType } from './resource-types.js'
@@ -315,6 +316,7 @@ export class DerropsConventions<
   private apexZoneMap: Record<string, string> | undefined
   private visibleDimensions: DimensionKey[]
   private storedConstraints: Partial<Record<SegmentKey, readonly string[]>>
+  private _emitSegmentValues: boolean
 
   constructor(
     defaults: ConstrainedSegments<C> = {} as ConstrainedSegments<C>,
@@ -342,6 +344,7 @@ export class DerropsConventions<
     this.apexZoneMap = undefined
     this.visibleDimensions = [...DEFAULT_DIMENSION_KEYS]
     this.storedConstraints = {}
+    this._emitSegmentValues = false
   }
 
   // ── Segment constraint helpers ────────────────────────────────────────────
@@ -788,7 +791,27 @@ export class DerropsConventions<
     derived.apexZoneMap = this.apexZoneMap
     derived.visibleDimensions = [...this.visibleDimensions]
     derived.storedConstraints = { ...this.storedConstraints }
+    derived._emitSegmentValues = this._emitSegmentValues
     return derived as unknown as DerropsConventions<C, T extends ResourceType ? T : TType>
+  }
+
+  /**
+   * Opt this instance in to emitting a `segment-values` tag from `tags()`.
+   *
+   * The tag stores all active segment key-value pairs in `key=value,...` format,
+   * enabling reconstruction of the full segment context from AWS tags alone —
+   * without needing the resource name.
+   *
+   * Chainable — returns `this`. Propagates to instances derived via `.with()`.
+   *
+   * @example
+   * conventions.emitSegmentValues().tags()
+   * // → { domain: 'payments', service: 'api', segment: 'domain--service',
+   * //     'segment-values': 'domain=payments,service=api' }
+   */
+  emitSegmentValues(): this {
+    this._emitSegmentValues = true
+    return this
   }
 
   // ── Name generation ───────────────────────────────────────────────────────
@@ -816,6 +839,56 @@ export class DerropsConventions<
     const base = config.leadingDelimiter ? `${config.segmentDelimiter}${joined}` : joined
     const prefixed = config.namePrefix ? `${config.namePrefix}${base}` : base
     return config.suffix ? `${prefixed}${config.suffix}` : prefixed
+  }
+
+  /**
+   * Parse a resource name back into its constituent segments.
+   *
+   * Uses the instance's `defaultType` when `options.type` is omitted.
+   * Any segment defaults already set on this instance are validated against the parsed values —
+   * an error is thrown if a parsed segment conflicts with a known default.
+   *
+   * Pass `options.tags` with the resource's actual AWS tags (e.g. fetched from the AWS API)
+   * to use the `segment` tag for unambiguous key ordering. Without it, the key order is
+   * derived from the resource type's configuration.
+   *
+   * Returns only the segments found in the name (does not merge instance defaults).
+   *
+   * @example
+   * const c = new DerropsConventions({ org: 'acme', env: 'prod' })
+   * c.parse('acme--payments--checkout-api', { type: 'lambdaFunction' })
+   * // → { org: 'acme', domain: 'payments', service: 'checkout-api' }
+   *
+   * // With real resource tags for precise key order:
+   * c.parse('acme--payments--checkout-api--v2', {
+   *   type: 'lambdaFunction',
+   *   tags: { segment: 'org--domain--service--version' },
+   * })
+   * // → { org: 'acme', domain: 'payments', service: 'checkout-api', version: 'v2' }
+   */
+  parse(
+    name: string,
+    options?: { type?: ResourceType; tags?: Record<string, string> },
+  ): ParsedSegments {
+    const resolvedType = options?.type ?? this.defaultType
+    if (!resolvedType) {
+      throw new Error(
+        'parse() requires a "type" — either pass it directly or set a default via .with({ type })',
+      )
+    }
+
+    const parsed = DerropsConventions.parse(name, resolvedType, { tags: options?.tags })
+
+    for (const [key, knownValue] of Object.entries(this.defaults) as [keyof Segments, string][]) {
+      const parsedValue = parsed[key as SegmentKey]
+      if (parsedValue !== undefined && parsedValue !== knownValue) {
+        throw new Error(
+          `parse(): segment "${key}" in name is "${parsedValue}" but instance default is "${knownValue}"`,
+        )
+      }
+    }
+
+    return parsed
   }
 
   /**
@@ -938,6 +1011,19 @@ export class DerropsConventions<
       .join(segmentDelimiter)
     if (segmentPattern) {
       result[this.keyPrefix + applyTagKeyCasing('segment', this.keyCasing)] = segmentPattern
+    }
+
+    if (this._emitSegmentValues) {
+      const segmentValues = activeSegmentOrder
+        .filter((key) => {
+          const v = merged[key]
+          return v !== undefined && v.length > 0
+        })
+        .map((key) => `${key}=${merged[key]}`)
+        .join(',')
+      if (segmentValues) {
+        result[this.keyPrefix + applyTagKeyCasing('segment-values', this.keyCasing)] = segmentValues
+      }
     }
 
     for (const rule of this.tagRules) {
@@ -1346,6 +1432,173 @@ export class DerropsConventions<
 
   // ── Static utilities ──────────────────────────────────────────────────────
 
+  /**
+   * Parse a resource name back into its constituent segments without any instance context.
+   *
+   * When `options.tags` contains a `segment` tag (with any key prefix), that tag's value is
+   * used as the authoritative ordered key list. Otherwise the key order is derived from the
+   * resource type's configuration.
+   *
+   * Note: word-delimiter normalisation applied during `name()` (e.g. hyphens → underscores
+   * for RDS/Glue types) is not reversed — values are returned as they appear in the name.
+   *
+   * @example
+   * DerropsConventions.parse('acme--payments--checkout-api', 'lambdaFunction')
+   * // → { org: 'acme', domain: 'payments', service: 'checkout-api' }
+   *
+   * DerropsConventions.parse('ap-southeast-2--prod--acme--payments--uploads', 's3Bucket')
+   * // → { region: 'ap-southeast-2', env: 'prod', org: 'acme',
+   * //     domain: 'payments', service: 'uploads' }
+   *
+   * // With segment tag for unambiguous key order:
+   * DerropsConventions.parse('acme--payments--v2', 'lambdaFunction', {
+   *   tags: { segment: 'org--domain--version' },
+   * })
+   * // → { org: 'acme', domain: 'payments', version: 'v2' }
+   */
+  static parse(
+    name: string,
+    type: ResourceType,
+    options?: { tags?: Record<string, string> },
+  ): ParsedSegments {
+    const config: ResourceTypeConfig = RESOURCE_TYPES[type]
+    const delimiter = config.segmentDelimiter
+
+    let cleanName = name
+    if (config.leadingDelimiter && cleanName.startsWith(delimiter)) {
+      cleanName = cleanName.slice(delimiter.length)
+    }
+    if (config.namePrefix && cleanName.startsWith(config.namePrefix)) {
+      cleanName = cleanName.slice(config.namePrefix.length)
+    }
+    if (config.suffix && cleanName.endsWith(config.suffix)) {
+      cleanName = cleanName.slice(0, -config.suffix.length)
+    }
+
+    const segmentTagValue = options?.tags
+      ? DerropsConventions._findSegmentTag(options.tags)
+      : undefined
+
+    const keyOrder: SegmentKey[] =
+      segmentTagValue !== undefined
+        ? (segmentTagValue.split(delimiter) as SegmentKey[])
+        : DerropsConventions._defaultSegmentOrder(config)
+
+    const parts = cleanName.split(delimiter)
+    const result: ParsedSegments = {}
+    const keyCount = Math.min(keyOrder.length, parts.length)
+    for (let i = 0; i < keyCount; i++) {
+      const key = keyOrder[i]
+      // Last key is greedy: collect any remaining delimiter-bearing parts into it.
+      // This handles values that contain the delimiter (e.g. 'acme.com' for apex in DNS names,
+      // 'acme.com.au' for Route53 wildcard zones).
+      const value =
+        i === keyCount - 1 && parts.length > keyCount
+          ? parts.slice(i).join(delimiter)
+          : parts[i]!
+      if (key && value) result[key] = value
+    }
+
+    return result
+  }
+
+  /**
+   * Parse an S3 object key back into its constituent segments.
+   *
+   * Strips the instance's known prefix segments (`org/domain/service[/tenant]`) from the
+   * front of the key, then treats the final `/`-separated component as the `key` segment
+   * and everything in between as the `partition` segment (which may contain `/` date paths
+   * like `2024/03/15`).
+   *
+   * Throws if the key does not start with the expected prefix for any segment that is set
+   * on this instance.
+   *
+   * @example
+   * const c = new DerropsConventions({ org: 'acme', domain: 'payments', service: 'checkout-api' })
+   * c.parseS3Key('acme/payments/checkout-api/2024/03/15/14/log-001.gz')
+   * // → { org: 'acme', domain: 'payments', service: 'checkout-api',
+   * //     partition: '2024/03/15/14', key: 'log-001.gz' }
+   *
+   * c.parseS3Key('acme/payments/checkout-api/t-xyz/2024/03/15/')
+   * // → { org: 'acme', domain: 'payments', service: 'checkout-api',
+   * //     tenant: 't-xyz', partition: '2024/03/15' }
+   */
+  parseS3Key(
+    key: string,
+    options?: { tenant?: string },
+  ): ParsedSegments {
+    const result: ParsedSegments = {}
+    let remainder = key
+
+    const stripSegment = (label: keyof Segments, value: string): void => {
+      if (remainder.startsWith(value + '/')) {
+        result[label] = value
+        remainder = remainder.slice(value.length + 1)
+      } else if (remainder === value) {
+        result[label] = value
+        remainder = ''
+      } else {
+        throw new Error(
+          `parseS3Key(): key does not match expected ${label} prefix "${value}/" — got "${remainder}"`,
+        )
+      }
+    }
+
+    if (this.defaults.org) stripSegment('org', this.defaults.org)
+    if (this.defaults.domain) stripSegment('domain', this.defaults.domain)
+    if (this.defaults.service) stripSegment('service', this.defaults.service)
+
+    const tenant = options?.tenant ?? this.defaults.tenant
+    if (tenant && remainder.startsWith(tenant + '/')) {
+      result.tenant = tenant
+      remainder = remainder.slice(tenant.length + 1)
+    }
+
+    if (!remainder) return result
+
+    // A trailing slash means this is an S3 prefix (directory), not an object key.
+    // Everything remaining is the partition path; there is no key segment.
+    const isPrefix = remainder.endsWith('/')
+    if (isPrefix) remainder = remainder.slice(0, -1)
+    if (!remainder) return result
+
+    if (isPrefix) {
+      // Entire remainder is the partition path
+      result.partition = remainder
+    } else {
+      const lastSlash = remainder.lastIndexOf('/')
+      if (lastSlash === -1) {
+        result.key = remainder
+      } else {
+        result.partition = remainder.slice(0, lastSlash)
+        result.key = remainder.slice(lastSlash + 1)
+      }
+    }
+
+    return result
+  }
+
+  /**
+   * Parse an S3 object key back into its constituent segments without any instance context.
+   *
+   * Equivalent to `DerropsConventions.parse(key, 's3ObjectKey', options)`.
+   * The last `/`-separated component is greedy — it absorbs any extra delimiter parts,
+   * making it suitable for keys whose final segment value contains `/`.
+   *
+   * For log keys with multi-part date partitions in the middle of the path, prefer the
+   * instance `parseS3Key()` method which can strip a known prefix first.
+   *
+   * @example
+   * DerropsConventions.parseS3Key('acme/payments/checkout-api', { tags: { segment: 'org/domain/service' } })
+   * // → { org: 'acme', domain: 'payments', service: 'checkout-api' }
+   */
+  static parseS3Key(
+    key: string,
+    options?: { tags?: Record<string, string> },
+  ): ParsedSegments {
+    return DerropsConventions.parse(key, 's3ObjectKey', options)
+  }
+
   /** List all registered resource type keys. */
   static resourceTypes(): string[] {
     return Object.keys(RESOURCE_TYPES).sort()
@@ -1502,6 +1755,21 @@ export class DerropsConventions<
   }
 
   // ── Private ───────────────────────────────────────────────────────────────
+
+  private static _defaultSegmentOrder(config: ResourceTypeConfig): SegmentKey[] {
+    if (config.segments) return config.segments
+    if (config.global) return DEFAULT_SEGMENT_ORDER
+    return DEFAULT_SEGMENT_ORDER.filter((s) => !GLOBAL_ONLY_SEGMENTS.includes(s))
+  }
+
+  private static _findSegmentTag(tags: Record<string, string>): string | undefined {
+    for (const [key, value] of Object.entries(tags)) {
+      const baseKey = key.includes(':') ? key.split(':').pop()! : key
+      // Match 'segment' (and any casing: 'Segment') but not 'segment-values' variants
+      if (baseKey.toLowerCase() === 'segment') return value
+    }
+    return undefined
+  }
 
   private resolveApex(merged: Segments): string | undefined {
     let apex = merged.apex
