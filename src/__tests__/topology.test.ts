@@ -230,3 +230,605 @@ describe('topology() — names and CIDRs', () => {
     })
   })
 })
+
+// ── Slot-based CIDR allocation ────────────────────────────────────────────────
+
+describe('topology() — slot-based CIDR allocation', () => {
+  const orgC = new DerropsConventions({ org: 'acme' }).domain(['payments', 'identity'])
+
+  it('full topology is identical between legacy shorthand and equivalent slot-based form', () => {
+    const byShorthand = orgC.topology({
+      vpcCidr: '10.0.0.0/16',
+      azs: ['1a', '1b', '1c'],
+      kinds: ['private', 'public', 'isolated'],
+    })
+    const bySlots = orgC.topology({
+      vpcCidr: '10.0.0.0/16',
+      azAllocations: [
+        { slot: 0, az: '1a' },
+        { slot: 1, az: '1b' },
+        { slot: 2, az: '1c' },
+      ],
+      defaultKinds: [
+        { slot: 0, name: 'private' },
+        { slot: 1, name: 'public' },
+        { slot: 2, name: 'isolated' },
+      ],
+    })
+    expect(bySlots).toEqual(byShorthand)
+  })
+
+  it('explicit slot order matches array-position shorthand for same logical order', () => {
+    const byShorthand = orgC.topology({ vpcCidr: '10.0.0.0/16', azs: ['1a', '1b'] })
+    const bySlots = orgC.topology({
+      vpcCidr: '10.0.0.0/16',
+      azAllocations: [{ slot: 0, az: '1a' }, { slot: 1, az: '1b' }],
+    })
+    expect(bySlots.domains.payments?.subnets.private?.[0]?.cidr).toBe(
+      byShorthand.domains.payments?.subnets.private?.[0]?.cidr,
+    )
+    expect(bySlots.domains.payments?.subnets.private?.[1]?.cidr).toBe(
+      byShorthand.domains.payments?.subnets.private?.[1]?.cidr,
+    )
+  })
+
+  it('array order of defaultKinds does not affect CIDR — slot is the source of truth', () => {
+    const bySlots = orgC.topology({
+      vpcCidr: '10.0.0.0/16',
+      azs: ['1a'],
+      // public listed first in array, but has slot 1 → same CIDR as if it were second
+      defaultKinds: [
+        { slot: 1, name: 'public' },
+        { slot: 0, name: 'private' },
+      ],
+    })
+    // private slot 0 → 10.0.0.0/24
+    expect(bySlots.domains.payments?.subnets.private?.[0]?.cidr).toBe('10.0.0.0/24')
+    // public slot 1 → 10.0.4.0/24
+    expect(bySlots.domains.payments?.subnets.public?.[0]?.cidr).toBe('10.0.4.0/24')
+  })
+
+  it('adding a new kind at slot 2 does not change CIDRs for slots 0 and 1', () => {
+    const baseline = orgC.topology({
+      vpcCidr: '10.0.0.0/16',
+      azs: ['1a'],
+      defaultKinds: [
+        { slot: 0, name: 'private' },
+        { slot: 1, name: 'isolated' },
+      ],
+    })
+    const extended = orgC.topology({
+      vpcCidr: '10.0.0.0/16',
+      azs: ['1a'],
+      defaultKinds: [
+        { slot: 0, name: 'private' },
+        { slot: 1, name: 'isolated' },
+        { slot: 2, name: 'public' },
+      ],
+    })
+    // Existing CIDRs must be identical
+    expect(extended.domains.payments?.subnets.private?.[0]?.cidr).toBe(
+      baseline.domains.payments?.subnets.private?.[0]?.cidr,
+    )
+    expect(extended.domains.payments?.subnets.isolated?.[0]?.cidr).toBe(
+      baseline.domains.payments?.subnets.isolated?.[0]?.cidr,
+    )
+    // New kind at slot 2
+    expect(extended.domains.payments?.subnets.public?.[0]?.cidr).toBe('10.0.8.0/24')
+  })
+
+  it('adding a new AZ at slot 3 does not change CIDRs for slots 0, 1, 2', () => {
+    const baseline = orgC.topology({
+      vpcCidr: '10.0.0.0/16',
+      azAllocations: [
+        { slot: 0, az: '1a' },
+        { slot: 1, az: '1b' },
+        { slot: 2, az: '1c' },
+      ],
+    })
+    const extended = orgC.topology({
+      vpcCidr: '10.0.0.0/16',
+      azAllocations: [
+        { slot: 0, az: '1a' },
+        { slot: 1, az: '1b' },
+        { slot: 2, az: '1c' },
+        { slot: 3, az: '1d' },
+      ],
+    })
+    const b = baseline.domains.payments?.subnets.private
+    const e = extended.domains.payments?.subnets.private
+    expect(e?.[0]?.cidr).toBe(b?.[0]?.cidr)
+    expect(e?.[1]?.cidr).toBe(b?.[1]?.cidr)
+    expect(e?.[2]?.cidr).toBe(b?.[2]?.cidr)
+    // New AZ at slot 3
+    expect(e?.[3]?.cidr).toBe('10.0.3.0/24')
+    expect(e?.[3]?.az).toBe('1d')
+  })
+})
+
+// ── Per-domain kind control ────────────────────────────────────────────────────
+
+describe('topology() — per-domain kind control', () => {
+  const orgC = new DerropsConventions({ org: 'acme' }).domain(['payments', 'identity'])
+
+  it('domain with kinds override emits only those kinds', () => {
+    const r = orgC.topology({
+      vpcCidr: '10.0.0.0/16',
+      azs: ['1a'],
+      domains: {
+        payments: {
+          kinds: [{ slot: 0, name: 'private' }],
+        },
+      },
+    })
+    expect(Object.keys(r.domains.payments?.subnets ?? {})).toEqual(['private'])
+    expect(Object.keys(r.domains.payments?.routeTables ?? {})).toEqual(['private'])
+    // identity still gets defaults
+    expect(Object.keys(r.domains.identity?.subnets ?? {}).sort()).toEqual([
+      'isolated',
+      'private',
+      'public',
+    ])
+  })
+
+  it('domain with additionalKinds extends defaults', () => {
+    const r = orgC.topology({
+      vpcCidr: '10.0.0.0/16',
+      azs: ['1a'],
+      defaultKinds: [
+        { slot: 0, name: 'private' },
+        { slot: 1, name: 'isolated' },
+      ],
+      domains: {
+        payments: {
+          additionalKinds: [{ slot: 3, name: 'mgmt' }],
+        },
+      },
+    })
+    const keys = Object.keys(r.domains.payments?.subnets ?? {}).sort()
+    expect(keys).toEqual(['isolated', 'mgmt', 'private'])
+    // CIDR for slot 3
+    expect(r.domains.payments?.subnets.mgmt?.[0]?.cidr).toBe('10.0.12.0/24')
+  })
+
+  it('two domains can have different kind sets in the same topology() call', () => {
+    const r = orgC.topology({
+      vpcCidr: '10.0.0.0/16',
+      azs: ['1a'],
+      domains: {
+        payments: {
+          kinds: [{ slot: 0, name: 'private' }, { slot: 1, name: 'public' }],
+        },
+        identity: {
+          kinds: [{ slot: 0, name: 'private' }],
+        },
+      },
+    })
+    expect(Object.keys(r.domains.payments?.subnets ?? {}).sort()).toEqual(['private', 'public'])
+    expect(Object.keys(r.domains.identity?.subnets ?? {})).toEqual(['private'])
+  })
+
+  it('route tables only contain keys for allocated kinds', () => {
+    const r = orgC.topology({
+      vpcCidr: '10.0.0.0/16',
+      azs: ['1a'],
+      domains: {
+        payments: {
+          kinds: [{ slot: 0, name: 'private' }],
+        },
+      },
+    })
+    expect(r.domains.payments?.routeTables).toEqual({
+      private: 'acme--payments--private',
+    })
+  })
+})
+
+// ── includeKinds filter ───────────────────────────────────────────────────────
+
+describe('topology() — includeKinds filter', () => {
+  const orgC = new DerropsConventions({ org: 'acme' }).domain(['payments', 'identity'])
+
+  it('domain with includeKinds emits only the named tiers', () => {
+    const r = orgC.topology({
+      vpcCidr: '10.0.0.0/16',
+      azs: ['1a'],
+      domains: {
+        identity: { includeKinds: ['private', 'isolated'] },
+      },
+    })
+    expect(Object.keys(r.domains.identity?.subnets ?? {}).sort()).toEqual(['isolated', 'private'])
+    expect(Object.keys(r.domains.identity?.routeTables ?? {}).sort()).toEqual(['isolated', 'private'])
+  })
+
+  it('slots are preserved from defaultKinds so CIDRs are unchanged', () => {
+    const full = orgC.topology({ vpcCidr: '10.0.0.0/16', azs: ['1a'] })
+    const filtered = orgC.topology({
+      vpcCidr: '10.0.0.0/16',
+      azs: ['1a'],
+      domains: {
+        identity: { includeKinds: ['private', 'isolated'] },
+      },
+    })
+    // private at slot 0 and isolated at slot 2 must keep the same CIDRs as the full topology
+    expect(filtered.domains.identity?.subnets.private?.[0]?.cidr).toBe(
+      full.domains.identity?.subnets.private?.[0]?.cidr,
+    )
+    expect(filtered.domains.identity?.subnets.isolated?.[0]?.cidr).toBe(
+      full.domains.identity?.subnets.isolated?.[0]?.cidr,
+    )
+  })
+
+  it('other domains still receive the full default kinds', () => {
+    const r = orgC.topology({
+      vpcCidr: '10.0.0.0/16',
+      azs: ['1a'],
+      domains: {
+        identity: { includeKinds: ['private'] },
+      },
+    })
+    expect(Object.keys(r.domains.payments?.subnets ?? {}).sort()).toEqual([
+      'isolated',
+      'private',
+      'public',
+    ])
+  })
+
+  it('throws when includeKinds and kinds are both set', () => {
+    expect(() =>
+      orgC.topology({
+        vpcCidr: '10.0.0.0/16',
+        azs: ['1a'],
+        domains: {
+          payments: {
+            kinds: [{ slot: 0, name: 'private' }],
+            includeKinds: ['private'],
+          },
+        },
+      }),
+    ).toThrow('only one of')
+  })
+
+  it('throws when includeKinds and additionalKinds are both set', () => {
+    expect(() =>
+      orgC.topology({
+        vpcCidr: '10.0.0.0/16',
+        azs: ['1a'],
+        domains: {
+          payments: {
+            includeKinds: ['private'],
+            additionalKinds: [{ slot: 3, name: 'mgmt' }],
+          },
+        },
+      }),
+    ).toThrow('only one of')
+  })
+})
+
+// ── AZ configurability ────────────────────────────────────────────────────────
+
+describe('topology() — AZ configurability', () => {
+  const orgC = new DerropsConventions({ org: 'acme' }).domain(['payments', 'identity'])
+
+  it('per-domain azAllocations override global AZs for that domain only', () => {
+    const r = orgC.topology({
+      vpcCidr: '10.0.0.0/16',
+      azAllocations: [{ slot: 0, az: '1a' }, { slot: 1, az: '1b' }],
+      domains: {
+        payments: {
+          azAllocations: [{ slot: 0, az: '1c' }],
+        },
+      },
+    })
+    // payments uses its own AZ override
+    expect(r.domains.payments?.subnets.private).toHaveLength(1)
+    expect(r.domains.payments?.subnets.private?.[0]?.az).toBe('1c')
+    // identity still uses global AZs
+    expect(r.domains.identity?.subnets.private).toHaveLength(2)
+    expect(r.domains.identity?.subnets.private?.[0]?.az).toBe('1a')
+    expect(r.domains.identity?.subnets.private?.[1]?.az).toBe('1b')
+  })
+
+  it('per-kind azAllocations override domain AZs for that kind only', () => {
+    const r = orgC.topology({
+      vpcCidr: '10.0.0.0/16',
+      azs: ['1a', '1b'],
+      defaultKinds: [
+        { slot: 0, name: 'private' },
+        {
+          slot: 1,
+          name: 'isolated',
+          azAllocations: [{ slot: 0, az: '1a' }],  // isolated only in one AZ
+        },
+      ],
+    })
+    expect(r.domains.payments?.subnets.private).toHaveLength(2)
+    expect(r.domains.payments?.subnets.isolated).toHaveLength(1)
+    expect(r.domains.payments?.subnets.isolated?.[0]?.az).toBe('1a')
+  })
+})
+
+// ── Validation errors ─────────────────────────────────────────────────────────
+
+describe('topology() — validation errors', () => {
+  const orgC = new DerropsConventions({ org: 'acme' }).domain(['payments'])
+
+  it('throws on duplicate kind slots', () => {
+    expect(() =>
+      orgC.topology({
+        vpcCidr: '10.0.0.0/16',
+        azs: ['1a'],
+        defaultKinds: [
+          { slot: 0, name: 'private' },
+          { slot: 0, name: 'public' },
+        ],
+      }),
+    ).toThrow('duplicate kind slots: 0')
+  })
+
+  it('throws on duplicate AZ slots', () => {
+    expect(() =>
+      orgC.topology({
+        vpcCidr: '10.0.0.0/16',
+        azAllocations: [
+          { slot: 0, az: '1a' },
+          { slot: 0, az: '1b' },
+        ],
+      }),
+    ).toThrow('duplicate AZ slots: 0')
+  })
+
+  it('throws when kind slot is out of range', () => {
+    expect(() =>
+      orgC.topology({
+        vpcCidr: '10.0.0.0/16',
+        azs: ['1a'],
+        defaultKinds: [{ slot: 4, name: 'private' }],
+      }),
+    ).toThrow('slot 4 is out of range 0–3')
+  })
+
+  it('throws when AZ slot is out of range', () => {
+    expect(() =>
+      orgC.topology({
+        vpcCidr: '10.0.0.0/16',
+        azAllocations: [{ slot: 4, az: '1a' }],
+      }),
+    ).toThrow('slot 4 is out of range 0–3')
+  })
+
+  it('throws when kinds and additionalKinds are both set for a domain', () => {
+    expect(() =>
+      orgC.topology({
+        vpcCidr: '10.0.0.0/16',
+        azs: ['1a'],
+        domains: {
+          payments: {
+            kinds: [{ slot: 0, name: 'private' }],
+            additionalKinds: [{ slot: 3, name: 'mgmt' }],
+          },
+        },
+      }),
+    ).toThrow('only one of')
+  })
+})
+
+// ── capacityReport() ──────────────────────────────────────────────────────────
+
+describe('capacityReport()', () => {
+  const orgC = new DerropsConventions({ org: 'acme' }).domain(['payments', 'identity'])
+
+  it('reports correct kindSlotsUsed', () => {
+    const report = orgC.capacityReport({
+      vpcCidr: '10.0.0.0/16',
+      azs: ['1a'],
+      defaultKinds: [
+        { slot: 0, name: 'private' },
+        { slot: 1, name: 'isolated' },
+      ],
+    })
+    for (const d of report.domains) {
+      expect(d.kindSlotsUsed).toBe(2)
+      expect(d.kindSlotsTotal).toBe(4)
+    }
+  })
+
+  it('reports correct azSlotsUsed per kind', () => {
+    const report = orgC.capacityReport({
+      vpcCidr: '10.0.0.0/16',
+      azAllocations: [{ slot: 0, az: '1a' }, { slot: 1, az: '1b' }, { slot: 2, az: '1c' }],
+    })
+    const payments = report.domains.find((d) => d.domain === 'payments')
+    for (const k of payments!.perKind) {
+      expect(k.azSlotsUsed).toBe(3)
+      expect(k.azSlotsTotal).toBe(4)
+    }
+  })
+
+  it('emits warning when >75% of kind slots are used', () => {
+    const report = orgC.capacityReport({
+      vpcCidr: '10.0.0.0/16',
+      azs: ['1a'],
+      defaultKinds: [
+        { slot: 0, name: 'private' },
+        { slot: 1, name: 'public' },
+        { slot: 2, name: 'isolated' },
+        { slot: 3, name: 'mgmt' },
+      ],
+    })
+    expect(report.warnings.length).toBeGreaterThan(0)
+    expect(report.warnings.some((w) => w.includes('kind slots'))).toBe(true)
+  })
+
+  it('emits warning when >75% of AZ slots are used', () => {
+    const report = orgC.capacityReport({
+      vpcCidr: '10.0.0.0/16',
+      azAllocations: [
+        { slot: 0, az: '1a' },
+        { slot: 1, az: '1b' },
+        { slot: 2, az: '1c' },
+        { slot: 3, az: '1d' },
+      ],
+    })
+    expect(report.warnings.some((w) => w.includes('AZ slots'))).toBe(true)
+  })
+
+  it('no warnings when utilisation is under threshold', () => {
+    const report = orgC.capacityReport({
+      vpcCidr: '10.0.0.0/16',
+      azs: ['1a', '1b'],
+      defaultKinds: [
+        { slot: 0, name: 'private' },
+        { slot: 1, name: 'isolated' },
+      ],
+    })
+    expect(report.warnings).toHaveLength(0)
+  })
+})
+
+// ── Appending allocations to an existing deployed topology ────────────────────
+
+describe('topology() — appending to an existing deployment', () => {
+  const orgC = new DerropsConventions({ org: 'acme' }).domain(['payments', 'identity'])
+
+  /**
+   * Helper: collect every SubnetEntry across all domains and kinds from a topology,
+   * keyed by subnet name. Used to assert that previously-allocated subnets are
+   * completely unchanged after extending the topology.
+   */
+  function collectSubnets(topo: ReturnType<typeof orgC.topology>) {
+    const map: Record<string, { cidr: string; az: string }> = {}
+    for (const domain of Object.values(topo.domains)) {
+      for (const subnets of Object.values(domain.subnets)) {
+        for (const s of subnets) {
+          map[s.name] = { cidr: s.cidr, az: s.az }
+        }
+      }
+    }
+    return map
+  }
+
+  it('adding a third AZ leaves all existing subnets unchanged', () => {
+    const initial = orgC.topology({
+      vpcCidr: '10.0.0.0/16',
+      azAllocations: [
+        { slot: 0, az: '1a' },
+        { slot: 1, az: '1b' },
+      ],
+      defaultKinds: [
+        { slot: 0, name: 'private' },
+        { slot: 1, name: 'public' },
+        { slot: 2, name: 'isolated' },
+      ],
+    })
+
+    const extended = orgC.topology({
+      vpcCidr: '10.0.0.0/16',
+      azAllocations: [
+        { slot: 0, az: '1a' },
+        { slot: 1, az: '1b' },
+        { slot: 2, az: '1c' },   // new AZ appended
+      ],
+      defaultKinds: [
+        { slot: 0, name: 'private' },
+        { slot: 1, name: 'public' },
+        { slot: 2, name: 'isolated' },
+      ],
+    })
+
+    const before = collectSubnets(initial)
+    const after = collectSubnets(extended)
+
+    // Every subnet from the initial topology must exist with the same CIDR and AZ
+    for (const [name, entry] of Object.entries(before)) {
+      expect(after[name]).toEqual(entry)
+    }
+
+    // The new subnets must be present with the expected CIDRs
+    expect(after['acme--payments--private--1c']).toEqual({ cidr: '10.0.2.0/24', az: '1c' })
+    expect(after['acme--payments--public--1c']).toEqual({ cidr: '10.0.6.0/24', az: '1c' })
+    expect(after['acme--payments--isolated--1c']).toEqual({ cidr: '10.0.10.0/24', az: '1c' })
+    expect(after['acme--identity--private--1c']).toEqual({ cidr: '10.0.18.0/24', az: '1c' })
+  })
+
+  it('adding a new kind tier leaves all existing subnets unchanged', () => {
+    const initial = orgC.topology({
+      vpcCidr: '10.0.0.0/16',
+      azAllocations: [
+        { slot: 0, az: '1a' },
+        { slot: 1, az: '1b' },
+      ],
+      defaultKinds: [
+        { slot: 0, name: 'private' },
+        { slot: 1, name: 'isolated' },
+      ],
+    })
+
+    const extended = orgC.topology({
+      vpcCidr: '10.0.0.0/16',
+      azAllocations: [
+        { slot: 0, az: '1a' },
+        { slot: 1, az: '1b' },
+      ],
+      defaultKinds: [
+        { slot: 0, name: 'private' },
+        { slot: 1, name: 'isolated' },
+        { slot: 2, name: 'public' },  // new kind tier appended at next available slot
+      ],
+    })
+
+    const before = collectSubnets(initial)
+    const after = collectSubnets(extended)
+
+    for (const [name, entry] of Object.entries(before)) {
+      expect(after[name]).toEqual(entry)
+    }
+
+    // New kind at slot 2 — offset 2 × 1024 = 2048 → 10.0.8.0 within payments /20
+    expect(after['acme--payments--public--1a']).toEqual({ cidr: '10.0.8.0/24', az: '1a' })
+    expect(after['acme--payments--public--1b']).toEqual({ cidr: '10.0.9.0/24', az: '1b' })
+  })
+
+  it('adding a new AZ and a new kind tier simultaneously leaves all existing subnets unchanged', () => {
+    const initial = orgC.topology({
+      vpcCidr: '10.0.0.0/16',
+      azAllocations: [
+        { slot: 0, az: '1a' },
+        { slot: 1, az: '1b' },
+      ],
+      defaultKinds: [
+        { slot: 0, name: 'private' },
+        { slot: 1, name: 'isolated' },
+      ],
+    })
+
+    const extended = orgC.topology({
+      vpcCidr: '10.0.0.0/16',
+      azAllocations: [
+        { slot: 0, az: '1a' },
+        { slot: 1, az: '1b' },
+        { slot: 2, az: '1c' },
+      ],
+      defaultKinds: [
+        { slot: 0, name: 'private' },
+        { slot: 1, name: 'isolated' },
+        { slot: 2, name: 'public' },
+      ],
+    })
+
+    const before = collectSubnets(initial)
+    const after = collectSubnets(extended)
+
+    for (const [name, entry] of Object.entries(before)) {
+      expect(after[name]).toEqual(entry)
+    }
+
+    // New AZ on existing kinds
+    expect(after['acme--payments--private--1c']).toEqual({ cidr: '10.0.2.0/24', az: '1c' })
+    expect(after['acme--payments--isolated--1c']).toEqual({ cidr: '10.0.6.0/24', az: '1c' })
+    // New kind across all AZs
+    expect(after['acme--payments--public--1a']).toEqual({ cidr: '10.0.8.0/24', az: '1a' })
+    expect(after['acme--payments--public--1b']).toEqual({ cidr: '10.0.9.0/24', az: '1b' })
+    expect(after['acme--payments--public--1c']).toEqual({ cidr: '10.0.10.0/24', az: '1c' })
+  })
+})

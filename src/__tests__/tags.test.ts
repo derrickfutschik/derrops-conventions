@@ -15,6 +15,7 @@ describe('DerropsConventions — tags', () => {
         domain: 'payments',
         service: 'checkout-api',
         environment: 'prod',
+        segment: 'env--org--domain--service',
       })
     })
 
@@ -35,15 +36,16 @@ describe('DerropsConventions — tags', () => {
         org: 'acme',
         domain: 'identity',
         service: 'auth-service',
+        segment: 'org--domain--service',
       })
     })
 
     it('omits tags whose segments are absent', () => {
       const c = new DerropsConventions({ domain: 'payments' })
-      expect(c.tags()).toEqual({ domain: 'payments' })
+      expect(c.tags()).toEqual({ domain: 'payments', segment: 'domain' })
     })
 
-    it('never includes region, tenant, key, or partition', () => {
+    it('never includes region, tenant, key, or partition in the visible tag set', () => {
       const c = new DerropsConventions({
         region: 'ap-southeast-2',
         org: 'acme',
@@ -58,6 +60,7 @@ describe('DerropsConventions — tags', () => {
         domain: 'payments',
         service: 'checkout-api',
         environment: 'prod',
+        segment: 'region--env--org--domain--service--tenant--key',
       })
     })
 
@@ -69,13 +72,102 @@ describe('DerropsConventions — tags', () => {
         domain: 'payments',
         service: 'checkout-api',
         environment: 'dev',
+        segment: 'env--org--domain--service',
       })
     })
 
     it('does not mutate instance defaults', () => {
       const c = new DerropsConventions({ org: 'acme', domain: 'payments' })
       c.tags({ service: 'checkout-api' })
-      expect(c.tags()).toEqual({ org: 'acme', domain: 'payments' })
+      expect(c.tags()).toEqual({ org: 'acme', domain: 'payments', segment: 'org--domain' })
+    })
+  })
+
+  describe('segment tag', () => {
+    it('uses the correct delimiter when type is passed', () => {
+      const c = new DerropsConventions({ org: 'acme', domain: 'logs', service: 'ingest' })
+      expect(c.tags({ type: 's3ObjectKey' })).toMatchObject({
+        segment: 'org/domain/service',
+      })
+    })
+
+    it('uses -- for lambdaFunction (non-global, standard delimiter)', () => {
+      const c = new DerropsConventions({ org: 'acme', domain: 'payments', service: 'api' })
+      expect(c.tags({ type: 'lambdaFunction' })).toMatchObject({
+        segment: 'org--domain--service',
+      })
+    })
+
+    it('includes region and env key names for global types when they are set', () => {
+      const c = new DerropsConventions({
+        org: 'acme',
+        domain: 'storage',
+        service: 'uploads',
+        env: 'prod',
+        region: 'ap-southeast-2',
+      })
+      expect(c.tags({ type: 's3Bucket' })).toMatchObject({
+        segment: 'region--env--org--domain--service',
+      })
+    })
+
+    it('excludes region and env key names for non-global types even when set', () => {
+      const c = new DerropsConventions({
+        org: 'acme',
+        domain: 'payments',
+        service: 'api',
+        env: 'prod',
+        region: 'ap-southeast-2',
+      })
+      expect(c.tags({ type: 'lambdaFunction' })).toMatchObject({
+        segment: 'org--domain--service',
+      })
+    })
+
+    it('falls back to -- delimiter when no type is known', () => {
+      const c = new DerropsConventions({ org: 'acme', domain: 'payments', service: 'api' })
+      expect(c.tags()).toMatchObject({ segment: 'org--domain--service' })
+    })
+
+    it('uses defaultType set via with({ type }) when no type is passed to tags()', () => {
+      const c = new DerropsConventions({ org: 'acme', domain: 'logs', service: 'ingest' }).with({
+        type: 's3ObjectKey',
+      })
+      expect(c.tags()).toMatchObject({ segment: 'org/domain/service' })
+    })
+
+    it('type passed to tags() overrides instance defaultType', () => {
+      const c = new DerropsConventions({ org: 'acme', domain: 'logs', service: 'ingest' }).with({
+        type: 's3ObjectKey',
+      })
+      expect(c.tags({ type: 'lambdaFunction' })).toMatchObject({ segment: 'org--domain--service' })
+    })
+
+    it('respects tagPrefix', () => {
+      const c = new DerropsConventions({ domain: 'payments', service: 'api' }).tagPrefix('slaops:')
+      expect(c.tags()).toMatchObject({ 'slaops:segment': 'domain--service' })
+    })
+
+    it('respects pascal tagKeyCasing', () => {
+      const c = new DerropsConventions({ domain: 'payments', service: 'api' }).tagKeyCasing(
+        'pascal',
+      )
+      expect(c.tags()).toMatchObject({ Segment: 'domain--service' })
+    })
+
+    it('is always present even when tagKeys() is empty', () => {
+      const c = new DerropsConventions({ domain: 'payments', service: 'api' }).tagKeys()
+      expect(c.tags()).toEqual({ segment: 'domain--service' })
+    })
+
+    it('segment value uses only segments that have non-empty values', () => {
+      const c = new DerropsConventions({ org: 'acme' })
+      expect(c.tags()).toMatchObject({ segment: 'org' })
+    })
+
+    it('segment value is empty and tag is omitted when no segments are set', () => {
+      const c = new DerropsConventions({})
+      expect(c.tags()).not.toHaveProperty('segment')
     })
   })
 
@@ -93,19 +185,26 @@ describe('DerropsConventions — tags', () => {
         domain: 'payments',
         service: 'checkout-api',
         environment: 'prod',
+        segment: 'env--org--domain--service',
       })
     })
 
     it('show only org', () => {
-      expect(c.tagKeys('org').tags()).toEqual({ org: 'acme' })
+      expect(c.tagKeys('org').tags()).toEqual({
+        org: 'acme',
+        segment: 'env--org--domain--service',
+      })
     })
 
     it('show only environment', () => {
-      expect(c.tagKeys('environment').tags()).toEqual({ environment: 'prod' })
+      expect(c.tagKeys('environment').tags()).toEqual({
+        environment: 'prod',
+        segment: 'env--org--domain--service',
+      })
     })
 
-    it('empty tagKeys produces no tags', () => {
-      expect(c.tagKeys().tags()).toEqual({})
+    it('empty tagKeys produces only the segment tag', () => {
+      expect(c.tagKeys().tags()).toEqual({ segment: 'env--org--domain--service' })
     })
 
     it('with() inherits tagKeys from parent', () => {
@@ -121,6 +220,7 @@ describe('DerropsConventions — tags', () => {
         domain: 'payments',
         service: 'checkout-api',
         environment: 'dev',
+        segment: 'env--org--domain--service',
       })
     })
 
@@ -128,7 +228,12 @@ describe('DerropsConventions — tags', () => {
       const base = new DerropsConventions({ org: 'acme', domain: 'payments', service: 'api' })
       const derived = base.with({})
       derived.tagKeys('org', 'domain', 'service', 'environment')
-      expect(base.tags()).toEqual({ org: 'acme', domain: 'payments', service: 'api' })
+      expect(base.tags()).toEqual({
+        org: 'acme',
+        domain: 'payments',
+        service: 'api',
+        segment: 'org--domain--service',
+      })
     })
   })
 
@@ -142,6 +247,7 @@ describe('DerropsConventions — tags', () => {
         'slaops:domain': 'payments',
         'slaops:service': 'checkout-api',
         'slaops:environment': 'prod',
+        'slaops:segment': 'env--org--domain--service',
       })
     })
 
@@ -152,6 +258,7 @@ describe('DerropsConventions — tags', () => {
         'my-app/domain': 'payments',
         'my-app/service': 'checkout-api',
         'my-app/environment': 'prod',
+        'my-app/segment': 'env--org--domain--service',
       })
     })
 
@@ -164,6 +271,7 @@ describe('DerropsConventions — tags', () => {
         'slaops:domain': 'payments',
         'slaops:service': 'checkout-api',
         'slaops:environment': 'prod',
+        'slaops:segment': 'env--org--domain--service',
       })
     })
 
@@ -174,6 +282,7 @@ describe('DerropsConventions — tags', () => {
         domain: 'payments',
         service: 'checkout-api',
         environment: 'prod',
+        segment: 'env--org--domain--service',
       })
     })
 
@@ -184,6 +293,7 @@ describe('DerropsConventions — tags', () => {
         'slaops:org': 'acme',
         'slaops:domain': 'payments',
         'slaops:service': 'checkout-api',
+        'slaops:segment': 'org--domain--service',
       })
     })
 
@@ -191,7 +301,12 @@ describe('DerropsConventions — tags', () => {
       const base = new DerropsConventions({ org: 'acme', domain: 'payments', service: 'api' })
       const derived = base.with({})
       derived.tagPrefix('slaops:')
-      expect(base.tags()).toEqual({ org: 'acme', domain: 'payments', service: 'api' })
+      expect(base.tags()).toEqual({
+        org: 'acme',
+        domain: 'payments',
+        service: 'api',
+        segment: 'org--domain--service',
+      })
     })
   })
 
@@ -209,6 +324,7 @@ describe('DerropsConventions — tags', () => {
         domain: 'payments',
         service: 'checkout-api',
         environment: 'prod',
+        segment: 'env--org--domain--service',
       })
     })
 
@@ -218,6 +334,7 @@ describe('DerropsConventions — tags', () => {
         domain: 'payments',
         service: 'checkout-api',
         environment: 'prod',
+        segment: 'env--org--domain--service',
       })
     })
 
@@ -227,6 +344,7 @@ describe('DerropsConventions — tags', () => {
         domain: 'payments',
         service: 'checkout-api',
         environment: 'prod',
+        segment: 'env--org--domain--service',
       })
     })
 
@@ -236,6 +354,7 @@ describe('DerropsConventions — tags', () => {
         Domain: 'payments',
         Service: 'checkout-api',
         Environment: 'prod',
+        Segment: 'env--org--domain--service',
       })
     })
 
@@ -245,6 +364,7 @@ describe('DerropsConventions — tags', () => {
         MyApp_Domain: 'payments',
         MyApp_Service: 'checkout-api',
         MyApp_Environment: 'prod',
+        MyApp_Segment: 'env--org--domain--service',
       })
     })
 
@@ -257,6 +377,7 @@ describe('DerropsConventions — tags', () => {
       ).toEqual({
         'myApp.domain': 'payments',
         'myApp.service': 'checkout-api',
+        'myApp.segment': 'domain--service',
       })
     })
 
@@ -265,14 +386,23 @@ describe('DerropsConventions — tags', () => {
         'pascal',
       )
       const scoped = base.with({ service: 'checkout-api' })
-      expect(scoped.tags()).toEqual({ Org: 'acme', Domain: 'payments', Service: 'checkout-api' })
+      expect(scoped.tags()).toEqual({
+        Org: 'acme',
+        Domain: 'payments',
+        Service: 'checkout-api',
+        Segment: 'org--domain--service',
+      })
     })
 
     it('tagKeyCasing on derived instance does not affect parent', () => {
       const base = new DerropsConventions({ domain: 'payments', service: 'api' })
       const derived = base.with({})
       derived.tagKeyCasing('pascal')
-      expect(base.tags()).toEqual({ domain: 'payments', service: 'api' })
+      expect(base.tags()).toEqual({
+        domain: 'payments',
+        service: 'api',
+        segment: 'domain--service',
+      })
     })
   })
 
@@ -334,7 +464,8 @@ describe('DerropsConventions — tags', () => {
 
   describe('valueMax()', () => {
     it('does not throw when all values are within the limit', () => {
-      const c = new DerropsConventions({ domain: 'pay', service: 'api' }).valueMax(10)
+      // segment value is 'domain--service' (14 chars) — limit must accommodate it
+      const c = new DerropsConventions({ domain: 'pay', service: 'api' }).valueMax(20)
       expect(() => c.tags()).not.toThrow()
     })
 
@@ -382,29 +513,30 @@ describe('DerropsConventions — tags', () => {
 
   describe('maxTags()', () => {
     it('does not throw when tag count is within the limit', () => {
-      const c = new DerropsConventions({ domain: 'pay', service: 'api' }).maxTags(2)
+      // domain + service + segment = 3 built-in tags
+      const c = new DerropsConventions({ domain: 'pay', service: 'api' }).maxTags(3)
       expect(() => c.tags()).not.toThrow()
     })
 
     it('throws when tag count exceeds the limit', () => {
       const c = new DerropsConventions({ domain: 'pay', service: 'api' }).maxTags(1)
-      // two visible tags (domain + service) exceeds limit of 1
+      // domain + service + segment = 3 tags — exceeds limit of 1
       expect(() => c.tags()).toThrow(/maxTags/)
     })
 
     it('counts built-in and rule-generated tags together', () => {
       const c = new DerropsConventions({ domain: 'pay', service: 'api' })
-        .maxTags(2)
+        .maxTags(3)
         .tagRule(() => ({ tier: 'standard' }))
-      // 3 tags total — exceeds limit of 2
+      // domain + service + segment + tier = 4 tags — exceeds limit of 3
       expect(() => c.tags()).toThrow(/maxTags/)
     })
 
     it('defaults to 50 (AWS limit)', () => {
-      const rules = Array.from({ length: 48 }, (_, i) => () => ({ [`extra-${i}`]: 'v' }))
+      // 3 built-in (domain, service, segment) + 47 rule tags = 50 — exactly at the limit
+      const rules = Array.from({ length: 47 }, (_, i) => () => ({ [`extra-${i}`]: 'v' }))
       let c = new DerropsConventions({ domain: 'pay', service: 'api' })
       for (const rule of rules) c = c.tagRule(rule)
-      // 2 built-in + 48 rule tags = 50 — exactly at the limit
       expect(() => c.tags()).not.toThrow()
 
       const c2 = c.tagRule(() => ({ 'one-more': 'v' }))
@@ -435,11 +567,12 @@ describe('DerropsConventions — tags', () => {
       expect(c.tags()).toEqual({
         domain: 'payments',
         service: 'checkout-api',
+        segment: 'domain--service',
         'updated-at': '2026-01-01T00:00:00.000Z',
       })
     })
 
-    it('receives a snapshot of the accumulated tags at call time', () => {
+    it('receives a snapshot of the accumulated tags at call time (includes segment)', () => {
       const received: Record<string, string>[] = []
       const c = new DerropsConventions({ domain: 'payments', service: 'checkout-api' }).tagAugment(
         (tags) => {
@@ -449,7 +582,11 @@ describe('DerropsConventions — tags', () => {
       )
 
       c.tags()
-      expect(received[0]).toEqual({ domain: 'payments', service: 'checkout-api' })
+      expect(received[0]).toEqual({
+        domain: 'payments',
+        service: 'checkout-api',
+        segment: 'domain--service',
+      })
     })
 
     it('receives tagRule output — runs after tagRule', () => {
@@ -488,7 +625,7 @@ describe('DerropsConventions — tags', () => {
       expect(c.tags()).toMatchObject({ tier: 'premium' })
     })
 
-    it('augmentor can override a built-in tag', () => {
+    it('augmentor can override a built-in tag value', () => {
       const c = new DerropsConventions({ domain: 'payments', service: 'api' }).tagAugment(() => ({
         service: 'overridden',
       }))
@@ -695,6 +832,7 @@ describe('DerropsConventions — tags', () => {
         org: 'acme',
         domain: 'payments',
         service: 'checkout-api',
+        segment: 'org--domain--service',
         'cost-center': 'payments-team',
       })
     })
@@ -714,6 +852,7 @@ describe('DerropsConventions — tags', () => {
         domain: 'auth',
         service: 'token-service',
         environment: 'prod',
+        segment: 'env--org--domain--service',
         sensitive: 'true',
       })
     })
@@ -753,6 +892,7 @@ describe('DerropsConventions — tags', () => {
         org: 'acme',
         domain: 'payments',
         service: 'checkout-api',
+        segment: 'org--domain--service',
         'cost-center': 'payments-team',
         tier: 'standard',
         backup: 'true',
@@ -808,6 +948,7 @@ describe('DerropsConventions — tags', () => {
         org: 'acme',
         domain: 'payments',
         service: 'checkout-api',
+        segment: 'org--domain--service',
         'cost-center': 'payments-team',
       })
     })

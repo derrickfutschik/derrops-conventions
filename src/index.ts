@@ -1,12 +1,20 @@
 export { DerropsConventions, conventions } from './DerropsConventions.js'
 export type { ConventionSpec } from './DerropsConventions.js'
-export { buildNetworkTopology } from './topology.js'
+export { buildNetworkTopology, buildCapacityReport } from './topology.js'
 export type {
   SubnetKind,
   SubnetEntry,
   DomainNetworkTopology,
   OrgNetworkTopology,
 } from './topology.js'
+export type {
+  AzAllocation,
+  KindAllocation,
+  DomainAllocationConfig,
+  TopologyOptions,
+  DomainCapacityReport,
+  TopologyCapacityReport,
+} from './topology-types.js'
 export { buildConsoleUrl } from './console.js'
 export type { ConsoleUrlContext } from './console.js'
 export type {

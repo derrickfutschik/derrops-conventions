@@ -15,8 +15,9 @@ import type { Resource } from './policy/Resource.js'
 import { buildPolicyArns } from './policy/arn.js'
 import type { ArnContext } from './policy/types.js'
 import { buildConsoleUrl } from './console.js'
-import { buildNetworkTopology } from './topology.js'
+import { buildNetworkTopology, buildCapacityReport } from './topology.js'
 import type { OrgNetworkTopology } from './topology.js'
+import type { TopologyOptions, TopologyCapacityReport } from './topology-types.js'
 
 /**
  * Options passed to `name()`.
@@ -877,20 +878,30 @@ export class DerropsConventions<
    * Default visible tags: `domain`, `service`.
    * Hidden by default: `org`, `environment` (account-segregated deployments make them redundant).
    *
+   * **Auto-generated `segment` tag:** always included regardless of `tagKeys()`. Its value is
+   * the ordered segment key names that would appear in a resource name, joined by that type's
+   * delimiter. Pass `type` (or set a default via `.with({ type })`) to get the exact delimiter
+   * and segment ordering for a specific resource type; falls back to `--` and the full default
+   * order when no type is known.
+   *
    * @example
    * conventions.tags()
-   * // → { domain: 'payments', service: 'checkout-api' }
+   * // → { domain: 'payments', service: 'checkout-api', segment: 'domain--service' }
+   *
+   * conventions.tags({ type: 's3ObjectKey' })
+   * // → { domain: 'payments', service: 'checkout-api', segment: 'org/domain/service' }
    *
    * conventions.tagKeys('org', 'domain', 'service', 'environment').tags()
-   * // → { org: 'acme', domain: 'payments', service: 'checkout-api', environment: 'prod' }
+   * // → { org: 'acme', domain: 'payments', service: 'checkout-api', environment: 'prod', segment: 'org--domain--service' }
    *
    * conventions.tagPrefix('slaops:').tags()
-   * // → { 'slaops:domain': 'payments', 'slaops:service': 'checkout-api' }
+   * // → { 'slaops:domain': 'payments', 'slaops:service': 'checkout-api', 'slaops:segment': 'domain--service' }
    *
    * conventions.tagKeyCasing('pascal').tagPrefix('MyApp_').tags()
-   * // → { 'MyApp_Domain': 'payments', 'MyApp_Service': 'checkout-api' }
+   * // → { 'MyApp_Domain': 'payments', 'MyApp_Service': 'checkout-api', 'MyApp_Segment': 'domain--service' }
    */
   tags(options: TagOptions<C> = {} as TagOptions<C>): Record<string, string> {
+    const typeOverride = (options as { type?: ResourceType }).type
     const merged: Segments = { ...this.defaults, ...(options as Segments) }
     const result: Record<string, string> = {}
 
@@ -900,6 +911,33 @@ export class DerropsConventions<
         const finalKey = this.keyPrefix + applyTagKeyCasing(tagKey, this.keyCasing)
         result[finalKey] = value
       }
+    }
+
+    // Auto-generated segment pattern: the segment key names that would appear in a name
+    // for this resource type, joined by that type's delimiter. Lets libraries reverse-engineer
+    // which position in the name corresponds to which segment.
+    const resolvedType = typeOverride ?? this.defaultType
+    let activeSegmentOrder: SegmentKey[]
+    let segmentDelimiter: string
+    if (resolvedType) {
+      const config: ResourceTypeConfig = RESOURCE_TYPES[resolvedType]
+      activeSegmentOrder = config.segments ?? this.effectiveOrder(config)
+      segmentDelimiter = config.segmentDelimiter
+    } else {
+      const extraSegments = (['apex', 'entity'] as SegmentKey[]).filter(
+        (k) => !this.order.includes(k),
+      )
+      activeSegmentOrder = [...this.order, ...extraSegments]
+      segmentDelimiter = '--'
+    }
+    const segmentPattern = activeSegmentOrder
+      .filter((key) => {
+        const v = merged[key]
+        return v !== undefined && v.length > 0
+      })
+      .join(segmentDelimiter)
+    if (segmentPattern) {
+      result[this.keyPrefix + applyTagKeyCasing('segment', this.keyCasing)] = segmentPattern
     }
 
     for (const rule of this.tagRules) {
@@ -1152,8 +1190,23 @@ export class DerropsConventions<
    * plan.domains.payments.cidr             // '10.0.0.0/20'
    * plan.domains.payments.subnets.private  // [{ name, cidr, az }, ...]
    */
-  topology(options: { vpcCidr: string; azs: string[]; kinds?: string[] }): OrgNetworkTopology {
+  topology(options: TopologyOptions): OrgNetworkTopology {
     return buildNetworkTopology(this, options)
+  }
+
+  /**
+   * Returns a capacity report describing CIDR slot utilisation for all constrained domains,
+   * without throwing. Use before deployment to audit space consumption.
+   *
+   * A warning is emitted when any domain exceeds 75 % of kind slots, or any kind exceeds
+   * 75 % of AZ slots.
+   *
+   * @example
+   * const report = orgConvention.capacityReport({ vpcCidr: '10.0.0.0/16', azs: ['1a', '1b', '1c'] })
+   * if (report.warnings.length) console.warn(report.warnings)
+   */
+  capacityReport(options: TopologyOptions): TopologyCapacityReport {
+    return buildCapacityReport(this, options)
   }
 
   // ── IAM policy generation ─────────────────────────────────────────────────
