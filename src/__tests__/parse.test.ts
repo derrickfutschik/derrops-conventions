@@ -193,7 +193,7 @@ describe('DerropsConventions — parse()', () => {
   // ── parseS3Key ────────────────────────────────────────────────────────────
 
   describe('parseS3Key() — static', () => {
-    it('parses a basic S3 object key using segment tag', () => {
+    it('parses org/domain/service with explicit segment tag', () => {
       expect(
         DerropsConventions.parseS3Key('acme/payments/checkout-api', {
           tags: { segment: 'org/domain/service' },
@@ -201,93 +201,284 @@ describe('DerropsConventions — parse()', () => {
       ).toEqual({ org: 'acme', domain: 'payments', service: 'checkout-api' })
     })
 
-    it('parses without tags using default type order', () => {
+    it('parses org/domain/service without tags (uses default type order)', () => {
       const result = DerropsConventions.parseS3Key('acme/payments/checkout-api')
-      expect(result['org']).toBe('acme')
-      expect(result['domain']).toBe('payments')
-      expect(result['service']).toBe('checkout-api')
+      expect(result.org).toBe('acme')
+      expect(result.domain).toBe('payments')
+      expect(result.service).toBe('checkout-api')
+    })
+
+    it('parses org/domain with segment tag', () => {
+      expect(
+        DerropsConventions.parseS3Key('acme/payments', { tags: { segment: 'org/domain' } }),
+      ).toEqual({ org: 'acme', domain: 'payments' })
+    })
+
+    it('parses with hyphens in service name', () => {
+      const result = DerropsConventions.parseS3Key('acme/platform/checkout-api', {
+        tags: { segment: 'org/domain/service' },
+      })
+      expect(result.service).toBe('checkout-api')
+    })
+
+    it('parses with prefixed segment tag (e.g. slaops:segment)', () => {
+      expect(
+        DerropsConventions.parseS3Key('acme/payments/api', {
+          tags: { 'slaops:segment': 'org/domain/service' },
+        }),
+      ).toEqual({ org: 'acme', domain: 'payments', service: 'api' })
+    })
+
+    it('uses last-key-greedy behaviour for extra slash parts', () => {
+      // Service value contains a slash (shouldn't happen in practice, but greedy handles it)
+      const result = DerropsConventions.parseS3Key('acme/payments/checkout-api', {
+        tags: { segment: 'org/domain' },
+      })
+      // Last key (domain) should absorb remaining slashes
+      expect(result.org).toBe('acme')
+      expect(result.domain).toBe('payments/checkout-api')
+    })
+
+    it('round-trips: parse(name({ type: s3ObjectKey })) restores segments', () => {
+      const c = new DerropsConventions({ org: 'acme', domain: 'logs', service: 'ingest' })
+      const name = c.name({ type: 's3ObjectKey' })
+      const parsed = DerropsConventions.parseS3Key(name, { tags: c.tags({ type: 's3ObjectKey' }) })
+      expect(parsed.org).toBe('acme')
+      expect(parsed.domain).toBe('logs')
+      expect(parsed.service).toBe('ingest')
     })
   })
 
-  describe('parseS3Key() — instance', () => {
-    it('strips the known prefix and extracts partition + key', () => {
-      const c = new DerropsConventions({
-        org: 'acme',
-        domain: 'payments',
-        service: 'checkout-api',
-      })
-      expect(c.parseS3Key('acme/payments/checkout-api/2024/03/15/14/log-001.gz')).toEqual({
-        org: 'acme',
-        domain: 'payments',
-        service: 'checkout-api',
-        partition: '2024/03/15/14',
-        key: 'log-001.gz',
-      })
+  describe('parseS3Key() — instance: date granularities', () => {
+    const c = new DerropsConventions({ org: 'acme', domain: 'logs', service: 'ingest' })
+
+    it('hour granularity: extracts partition and key', () => {
+      const result = c.parseS3Key('acme/logs/ingest/2024/03/15/14/log-001.gz')
+      expect(result.partition).toBe('2024/03/15/14')
+      expect(result.key).toBe('log-001.gz')
     })
 
-    it('strips tenant when present in the key', () => {
-      const c = new DerropsConventions({
-        org: 'acme',
-        domain: 'payments',
-        service: 'checkout-api',
-        tenant: 't-xyz',
-      })
-      expect(c.parseS3Key('acme/payments/checkout-api/t-xyz/2024/03/15/log.gz')).toEqual({
-        org: 'acme',
-        domain: 'payments',
-        service: 'checkout-api',
-        tenant: 't-xyz',
-        partition: '2024/03/15',
-        key: 'log.gz',
-      })
+    it('day granularity: extracts partition and key', () => {
+      const result = c.parseS3Key('acme/logs/ingest/2024/03/15/log-001.gz')
+      expect(result.partition).toBe('2024/03/15')
+      expect(result.key).toBe('log-001.gz')
     })
 
-    it('accepts tenant via options when not set on instance', () => {
-      const c = new DerropsConventions({ org: 'acme', domain: 'payments', service: 'api' })
-      const result = c.parseS3Key('acme/payments/api/t-abc/2024/01/01/file.gz', {
-        tenant: 't-abc',
-      })
-      expect(result.tenant).toBe('t-abc')
-      expect(result.partition).toBe('2024/01/01')
-      expect(result.key).toBe('file.gz')
+    it('month granularity: extracts partition and key', () => {
+      const result = c.parseS3Key('acme/logs/ingest/2024/03/log-001.gz')
+      expect(result.partition).toBe('2024/03')
+      expect(result.key).toBe('log-001.gz')
     })
 
-    it('handles an s3Prefix (trailing slash) — no key segment emitted', () => {
-      const c = new DerropsConventions({
-        org: 'acme',
-        domain: 'payments',
-        service: 'checkout-api',
-      })
-      const result = c.parseS3Key('acme/payments/checkout-api/2024/03/15/')
+    it('year granularity: extracts partition and key', () => {
+      const result = c.parseS3Key('acme/logs/ingest/2024/log-001.gz')
+      expect(result.partition).toBe('2024')
+      expect(result.key).toBe('log-001.gz')
+    })
+
+    it('no date partition: single component after prefix treated as key', () => {
+      const result = c.parseS3Key('acme/logs/ingest/log-001.gz')
+      expect(result).not.toHaveProperty('partition')
+      expect(result.key).toBe('log-001.gz')
+    })
+
+    it('always includes the fixed prefix segments in the result', () => {
+      const result = c.parseS3Key('acme/logs/ingest/2024/03/15/14/f.gz')
+      expect(result.org).toBe('acme')
+      expect(result.domain).toBe('logs')
+      expect(result.service).toBe('ingest')
+    })
+  })
+
+  describe('parseS3Key() — instance: prefix (trailing slash)', () => {
+    const c = new DerropsConventions({ org: 'acme', domain: 'logs', service: 'ingest' })
+
+    it('hour prefix: partition set, key absent', () => {
+      const result = c.parseS3Key('acme/logs/ingest/2024/03/15/14/')
+      expect(result.partition).toBe('2024/03/15/14')
+      expect(result).not.toHaveProperty('key')
+    })
+
+    it('day prefix: partition set, key absent', () => {
+      const result = c.parseS3Key('acme/logs/ingest/2024/03/15/')
       expect(result.partition).toBe('2024/03/15')
       expect(result).not.toHaveProperty('key')
     })
 
-    it('returns only the fixed segments when no remainder', () => {
-      const c = new DerropsConventions({
-        org: 'acme',
-        domain: 'payments',
-        service: 'checkout-api',
-      })
-      const result = c.parseS3Key('acme/payments/checkout-api/')
-      expect(result).toEqual({ org: 'acme', domain: 'payments', service: 'checkout-api' })
+    it('month prefix: partition set, key absent', () => {
+      const result = c.parseS3Key('acme/logs/ingest/2024/03/')
+      expect(result.partition).toBe('2024/03')
+      expect(result).not.toHaveProperty('key')
     })
 
-    it('throws when key does not match expected prefix', () => {
-      const c = new DerropsConventions({ org: 'acme', domain: 'payments' })
-      expect(() => c.parseS3Key('globex/payments/api/log.gz')).toThrow(
-        /parseS3Key.*org prefix "acme/,
-      )
+    it('year prefix: partition set, key absent', () => {
+      const result = c.parseS3Key('acme/logs/ingest/2024/')
+      expect(result.partition).toBe('2024')
+      expect(result).not.toHaveProperty('key')
     })
 
-    it('round-trips: parseS3Key(s3Prefix()) extracts partition', () => {
+    it('service-only prefix (no partition, trailing slash): no partition or key', () => {
+      const result = c.parseS3Key('acme/logs/ingest/')
+      expect(result).toEqual({ org: 'acme', domain: 'logs', service: 'ingest' })
+      expect(result).not.toHaveProperty('partition')
+      expect(result).not.toHaveProperty('key')
+    })
+  })
+
+  describe('parseS3Key() — instance: tenant', () => {
+    it('strips tenant set on instance before parsing partition + key', () => {
       const c = new DerropsConventions({
         org: 'acme',
         domain: 'payments',
         service: 'api',
+        tenant: 't-xyz',
       })
-      const prefix = c.s3Prefix({ date: new Date('2024-03-15T14:30:00Z'), granularity: 'day' })
+      const result = c.parseS3Key('acme/payments/api/t-xyz/2024/03/15/14/log.gz')
+      expect(result.tenant).toBe('t-xyz')
+      expect(result.partition).toBe('2024/03/15/14')
+      expect(result.key).toBe('log.gz')
+    })
+
+    it('strips tenant from options when not set on instance', () => {
+      const c = new DerropsConventions({ org: 'acme', domain: 'payments', service: 'api' })
+      const result = c.parseS3Key('acme/payments/api/t-abc/2024/01/file.gz', {
+        tenant: 't-abc',
+      })
+      expect(result.tenant).toBe('t-abc')
+      expect(result.partition).toBe('2024/01')
+      expect(result.key).toBe('file.gz')
+    })
+
+    it('options tenant takes precedence over instance tenant', () => {
+      const c = new DerropsConventions({
+        org: 'acme',
+        domain: 'payments',
+        service: 'api',
+        tenant: 'default-tenant',
+      })
+      const result = c.parseS3Key('acme/payments/api/override-tenant/2024/file.gz', {
+        tenant: 'override-tenant',
+      })
+      expect(result.tenant).toBe('override-tenant')
+    })
+
+    it('does not strip tenant when no tenant is known', () => {
+      const c = new DerropsConventions({ org: 'acme', domain: 'payments', service: 'api' })
+      // Key has a tenant-looking component but instance has no tenant — it becomes part of partition
+      const result = c.parseS3Key('acme/payments/api/t-xyz/2024/03/file.gz')
+      expect(result).not.toHaveProperty('tenant')
+      expect(result.partition).toBe('t-xyz/2024/03')
+      expect(result.key).toBe('file.gz')
+    })
+
+    it('tenant prefix with trailing slash: tenant + partition set, no key', () => {
+      const c = new DerropsConventions({
+        org: 'acme',
+        domain: 'logs',
+        service: 'ingest',
+        tenant: 't-abc',
+      })
+      const result = c.parseS3Key('acme/logs/ingest/t-abc/2024/03/')
+      expect(result.tenant).toBe('t-abc')
+      expect(result.partition).toBe('2024/03')
+      expect(result).not.toHaveProperty('key')
+    })
+  })
+
+  describe('parseS3Key() — instance: partial prefix (not all segments known)', () => {
+    it('only org set — extracts org and leaves remainder as partition/key', () => {
+      const c = new DerropsConventions({ org: 'acme' })
+      const result = c.parseS3Key('acme/payments/api/2024/03/file.gz')
+      expect(result.org).toBe('acme')
+      expect(result.partition).toBe('payments/api/2024/03')
+      expect(result.key).toBe('file.gz')
+    })
+
+    it('only org + domain set — extracts both and leaves remainder', () => {
+      const c = new DerropsConventions({ org: 'acme', domain: 'payments' })
+      const result = c.parseS3Key('acme/payments/api/2024/03/file.gz')
+      expect(result.org).toBe('acme')
+      expect(result.domain).toBe('payments')
+      expect(result.partition).toBe('api/2024/03')
+      expect(result.key).toBe('file.gz')
+    })
+
+    it('no segments set — entire key treated as partition + key', () => {
+      const c = new DerropsConventions({})
+      const result = c.parseS3Key('acme/payments/api/file.gz')
+      expect(result).not.toHaveProperty('org')
+      expect(result).not.toHaveProperty('domain')
+      expect(result.partition).toBe('acme/payments/api')
+      expect(result.key).toBe('file.gz')
+    })
+  })
+
+  describe('parseS3Key() — instance: error cases', () => {
+    it('throws when org does not match', () => {
+      const c = new DerropsConventions({ org: 'acme' })
+      expect(() => c.parseS3Key('globex/payments/api/file.gz')).toThrow(
+        /parseS3Key.*org prefix "acme/,
+      )
+    })
+
+    it('throws when domain does not match', () => {
+      const c = new DerropsConventions({ org: 'acme', domain: 'payments' })
+      expect(() => c.parseS3Key('acme/identity/api/file.gz')).toThrow(
+        /parseS3Key.*domain prefix "payments/,
+      )
+    })
+
+    it('throws when service does not match', () => {
+      const c = new DerropsConventions({ org: 'acme', domain: 'payments', service: 'api' })
+      expect(() => c.parseS3Key('acme/payments/wrong-service/file.gz')).toThrow(
+        /parseS3Key.*service prefix "api/,
+      )
+    })
+  })
+
+  describe('parseS3Key() — instance: round-trips with s3Prefix()', () => {
+    const c = new DerropsConventions({ org: 'acme', domain: 'logs', service: 'ingest' })
+
+    it('year prefix round-trips', () => {
+      const prefix = c.s3Prefix({ date: new Date('2024-03-15T00:00:00Z'), granularity: 'year' })
       const parsed = c.parseS3Key(prefix)
+      expect(parsed.partition).toBe('2024')
+      expect(parsed).not.toHaveProperty('key')
+    })
+
+    it('month prefix round-trips', () => {
+      const prefix = c.s3Prefix({ date: new Date('2024-03-15T00:00:00Z'), granularity: 'month' })
+      const parsed = c.parseS3Key(prefix)
+      expect(parsed.partition).toBe('2024/03')
+    })
+
+    it('day prefix round-trips', () => {
+      const prefix = c.s3Prefix({ date: new Date('2024-03-15T00:00:00Z'), granularity: 'day' })
+      const parsed = c.parseS3Key(prefix)
+      expect(parsed.partition).toBe('2024/03/15')
+    })
+
+    it('hour prefix round-trips', () => {
+      const prefix = c.s3Prefix({ date: new Date('2024-03-15T14:30:00Z'), granularity: 'hour' })
+      const parsed = c.parseS3Key(prefix)
+      expect(parsed.partition).toBe('2024/03/15/14')
+    })
+
+    it('plain prefix (no date) round-trips with no partition', () => {
+      const prefix = c.s3Prefix()
+      const parsed = c.parseS3Key(prefix)
+      expect(parsed).toEqual({ org: 'acme', domain: 'logs', service: 'ingest' })
+    })
+
+    it('tenant prefix round-trips', () => {
+      const ct = c.with({ tenant: 't-xyz' })
+      const prefix = ct.s3Prefix({
+        date: new Date('2024-03-15T00:00:00Z'),
+        granularity: 'day',
+        tenant: 't-xyz',
+      })
+      const parsed = ct.parseS3Key(prefix)
+      expect(parsed.tenant).toBe('t-xyz')
       expect(parsed.partition).toBe('2024/03/15')
     })
   })

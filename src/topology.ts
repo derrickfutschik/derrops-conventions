@@ -131,26 +131,18 @@ function validateKindAllocations(
   }
 }
 
-/** Normalise legacy shorthand fields into structured slot-based form. */
+/** Convert the flat global arrays into the internal slot-based form. */
 function normalizeTopologyOptions(options: TopologyOptions): {
   vpcCidr: string
   globalAzAllocations: AzAllocation[]
   defaultKinds: KindAllocation[]
   domainConfigs: Record<string, DomainAllocationConfig>
 } {
-  const { vpcCidr, azs, kinds, azAllocations, defaultKinds, domains = {} } = options
-
-  const globalAzAllocations: AzAllocation[] =
-    azAllocations ?? (azs ?? []).map((az, i) => ({ slot: i, az }))
-
-  const resolvedDefaultKinds: KindAllocation[] =
-    defaultKinds ??
-    (kinds ?? ['private', 'public', 'isolated']).map((name, i) => ({ slot: i, name }))
-
+  const { vpcCidr, azs, kinds = ['private', 'public', 'isolated'], domains = {} } = options
   return {
     vpcCidr,
-    globalAzAllocations,
-    defaultKinds: resolvedDefaultKinds,
+    globalAzAllocations: azs.map((az, i) => ({ slot: i, az })),
+    defaultKinds: kinds.map((name, i) => ({ slot: i, name })),
     domainConfigs: domains,
   }
 }

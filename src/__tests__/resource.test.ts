@@ -16,8 +16,6 @@ describe('resource() — core properties', () => {
     const name = base.name({ type: 'lambdaFunction', key: 'handler' })
     const r = base.resource({ type: 'lambdaFunction', key: 'handler' })
     expect(r.name).toBe(name)
-
-    console.log(JSON.stringify(r, null, 2))
   })
 
   it('arn is the first entry in arns', () => {
