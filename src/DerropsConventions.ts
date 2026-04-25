@@ -5,6 +5,7 @@ import type {
   SegmentConstraints,
   ConstrainedSegments,
   ParsedSegments,
+  ParsedS3Uri,
 } from './types.js'
 import { RESOURCE_TYPES } from './resource-types.js'
 import type { ResourceType } from './resource-types.js'
@@ -1026,6 +1027,18 @@ export class DerropsConventions<
       }
     }
 
+    // For s3Bucket, add structural schema tags encoding the prefix and object-name conventions.
+    // These are full segment-key templates (not filtered to set values) so any parser can
+    // reconstruct all three layers of a full S3 URI from bucket tags alone.
+    if (resolvedType === 's3Bucket') {
+      const prefixConfig = RESOURCE_TYPES['s3KeyPrefix']
+      const objNameConfig = RESOURCE_TYPES['s3ObjectName']
+      result[this.keyPrefix + applyTagKeyCasing('s3-prefix-segment', this.keyCasing)] =
+        prefixConfig.segments!.join(prefixConfig.segmentDelimiter)
+      result[this.keyPrefix + applyTagKeyCasing('s3-object-name-segment', this.keyCasing)] =
+        objNameConfig.segments!.join(objNameConfig.segmentDelimiter)
+    }
+
     for (const rule of this.tagRules) {
       Object.assign(result, rule(merged))
     }
@@ -1579,6 +1592,62 @@ export class DerropsConventions<
   }
 
   /**
+   * Parse a full S3 URI or ARN into layered segments, validated against this instance's defaults.
+   *
+   * Returns a `ParsedS3Uri` with four views: `bucket`, `prefix`, `obj`, and `all`.
+   * Throws if any parsed segment conflicts with a known instance default.
+   *
+   * Supported schemes: `s3://` and `arn:aws:s3:::`.
+   *
+   * @example
+   * const c = new DerropsConventions({ org: 'acme', env: 'prod', region: 'ap-southeast-2' })
+   * c.parseS3Uri('s3://ap-southeast-2--prod--acme--logs--ingest/acme/logs/ingest/2024/03/15/log.gz')
+   * // → {
+   * //   bucket: { region: 'ap-southeast-2', env: 'prod', org: 'acme', domain: 'logs', service: 'ingest' },
+   * //   prefix: { org: 'acme', domain: 'logs', service: 'ingest', partition: '2024/03/15' },
+   * //   obj:    { key: 'log.gz' },
+   * //   all:    { region: 'ap-southeast-2', env: 'prod', org: 'acme', domain: 'logs', service: 'ingest', partition: '2024/03/15', key: 'log.gz' },
+   * // }
+   */
+  parseS3Uri(
+    uri: string,
+    options?: { tags?: Record<string, string> },
+  ): ParsedS3Uri {
+    const { bucket: bucketName, key: objectKey } = DerropsConventions._splitS3Uri(uri)
+
+    // Parse bucket name segments (region, env, org, domain, service)
+    const bucketSegments = DerropsConventions.parse(bucketName, 's3Bucket', options)
+
+    // Validate bucket segments against known instance defaults
+    for (const [key, knownValue] of Object.entries(this.defaults) as [keyof Segments, string][]) {
+      const parsedValue = bucketSegments[key as SegmentKey]
+      if (parsedValue !== undefined && parsedValue !== knownValue) {
+        throw new Error(
+          `parseS3Uri(): segment "${key}" in URI is "${parsedValue}" but instance default is "${knownValue}"`,
+        )
+      }
+    }
+
+    if (!objectKey) {
+      return { bucket: bucketSegments, prefix: {}, obj: {}, all: { ...bucketSegments } }
+    }
+
+    // Use the instance's parseS3Key so that all instance defaults (including tenant)
+    // are used when stripping the known prefix from the object key.
+    const keyResult = this.parseS3Key(objectKey)
+    const { key, ...prefixOnly } = keyResult
+    const prefixSegments: ParsedSegments = prefixOnly
+    const objSegments: ParsedSegments = key !== undefined ? { key } : {}
+
+    return {
+      bucket: bucketSegments,
+      prefix: prefixSegments,
+      obj: objSegments,
+      all: { ...bucketSegments, ...prefixSegments, ...objSegments },
+    }
+  }
+
+  /**
    * Parse an S3 object key back into its constituent segments without any instance context.
    *
    * Equivalent to `DerropsConventions.parse(key, 's3ObjectKey', options)`.
@@ -1597,6 +1666,60 @@ export class DerropsConventions<
     options?: { tags?: Record<string, string> },
   ): ParsedSegments {
     return DerropsConventions.parse(key, 's3ObjectKey', options)
+  }
+
+  /**
+   * Parse a full S3 URI or ARN into layered segments without any instance context.
+   *
+   * Returns a `ParsedS3Uri` with four views:
+   * - `bucket` — segments from the bucket name (region, env, org, domain, service)
+   * - `prefix` — segments from the key prefix (org, domain, service, [tenant], [partition])
+   * - `obj` — segments from the object filename ([key])
+   * - `all` — all segments merged
+   *
+   * `bucket` and `prefix` share org/domain/service (intentional — shows what each layer contributed).
+   * Supported schemes: `s3://` and `arn:aws:s3:::`.
+   *
+   * @example
+   * DerropsConventions.parseS3Uri(
+   *   's3://ap-southeast-2--prod--acme--logs--ingest/acme/logs/ingest/2024/03/15/14/access.log.gz',
+   * )
+   * // → {
+   * //   bucket: { region: 'ap-southeast-2', env: 'prod', org: 'acme', domain: 'logs', service: 'ingest' },
+   * //   prefix: { org: 'acme', domain: 'logs', service: 'ingest', partition: '2024/03/15/14' },
+   * //   obj:    { key: 'access.log.gz' },
+   * //   all:    { region: ..., env: ..., org: ..., domain: ..., service: ..., partition: ..., key: ... },
+   * // }
+   */
+  static parseS3Uri(
+    uri: string,
+    options?: { tags?: Record<string, string> },
+  ): ParsedS3Uri {
+    const { bucket: bucketName, key: objectKey } = DerropsConventions._splitS3Uri(uri)
+
+    // Parse the bucket name → region, env, org, domain, service
+    const bucketSegments = DerropsConventions.parse(bucketName, 's3Bucket', options)
+
+    // Build empty layers for bucket-only URIs
+    if (!objectKey) {
+      return { bucket: bucketSegments, prefix: {}, obj: {}, all: { ...bucketSegments } }
+    }
+
+    // Use a temporary convention seeded from the bucket segments to strip the known prefix
+    const tempConv = new DerropsConventions(bucketSegments as Segments)
+    const keyResult = tempConv.parseS3Key(objectKey)
+
+    // Split the key result into prefix layer (everything except 'key') and obj layer ('key' only)
+    const { key, ...prefixOnly } = keyResult
+    const prefixSegments: ParsedSegments = prefixOnly
+    const objSegments: ParsedSegments = key !== undefined ? { key } : {}
+
+    return {
+      bucket: bucketSegments,
+      prefix: prefixSegments,
+      obj: objSegments,
+      all: { ...bucketSegments, ...prefixSegments, ...objSegments },
+    }
   }
 
   /** List all registered resource type keys. */
@@ -1755,6 +1878,25 @@ export class DerropsConventions<
   }
 
   // ── Private ───────────────────────────────────────────────────────────────
+
+  private static _splitS3Uri(uri: string): { bucket: string; key: string } {
+    let path: string
+    if (uri.startsWith('s3://')) {
+      path = uri.slice(5)
+    } else if (uri.startsWith('arn:aws:s3:::')) {
+      path = uri.slice('arn:aws:s3:::'.length)
+    } else {
+      throw new Error(
+        `parseS3Uri(): unsupported URI scheme — expected "s3://" or "arn:aws:s3:::" but got "${uri.slice(0, 30)}..."`,
+      )
+    }
+    const slashIdx = path.indexOf('/')
+    if (slashIdx === -1) return { bucket: path, key: '' }
+    const bucket = path.slice(0, slashIdx)
+    const key = path.slice(slashIdx + 1)
+    // Treat a trailing-slash-only key (bucket URI like 's3://bucket/') as no key
+    return { bucket, key: key === '' ? '' : key }
+  }
 
   private static _defaultSegmentOrder(config: ResourceTypeConfig): SegmentKey[] {
     if (config.segments) return config.segments

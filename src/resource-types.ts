@@ -40,6 +40,23 @@ export const RESOURCE_TYPES = {
     segmentDelimiter: '/',
     wordDelimiter: '-',
   },
+  s3KeyPrefix: {
+    // Path prefix within an S3 bucket: org/domain/service[/tenant][/partition]
+    // Compose with s3ObjectName (append '/' + key value) to form a complete object key.
+    // 'partition' carries multi-part date paths like '2024/03/15/14'.
+    global: false,
+    segmentDelimiter: '/',
+    wordDelimiter: '-',
+    segments: ['org', 'domain', 'service', 'tenant', 'partition'] as const,
+  },
+  s3ObjectName: {
+    // The filename component of an S3 key (the 'key' segment only).
+    // segmentDelimiter '--' is never exercised (single segment) but must differ from wordDelimiter '-'.
+    global: false,
+    segmentDelimiter: '--',
+    wordDelimiter: '-',
+    segments: ['key'] as const,
+  },
 
   // ── CloudWatch ───────────────────────────────────────────────────────────
   cloudwatchLogsGroup: {

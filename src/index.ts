@@ -30,6 +30,7 @@ export type {
   SegmentKey,
   Segments,
   ParsedSegments,
+  ParsedS3Uri,
   ResourceTypeConfig,
   SegmentConstraints,
   ConstrainedSegments,

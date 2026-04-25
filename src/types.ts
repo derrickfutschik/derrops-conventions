@@ -64,6 +64,23 @@ export interface Segments {
 /** Segments extracted by parsing a resource name back through the convention. */
 export type ParsedSegments = Partial<Record<SegmentKey, string>>
 
+/**
+ * Structured result of `parseS3Uri()` — segments differentiated by which S3 layer they came from.
+ *
+ * `bucket` and `prefix` share org/domain/service (the redundancy is intentional —
+ * it shows exactly what each layer contributed). `all` is the convenience merge.
+ */
+export interface ParsedS3Uri {
+  /** Segments extracted from the bucket name (region, env, org, domain, service). */
+  bucket: ParsedSegments
+  /** Segments extracted from the key prefix path (org, domain, service, [tenant], [partition]). */
+  prefix: ParsedSegments
+  /** Segments extracted from the object filename ([key]). */
+  obj: ParsedSegments
+  /** All segments merged — bucket + prefix + obj. */
+  all: ParsedSegments
+}
+
 /** Maps a subset of segment keys to narrowed string literal unions. */
 export type SegmentConstraints = Partial<Record<SegmentKey, string>>
 
