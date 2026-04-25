@@ -6,6 +6,8 @@ import type {
   ConstrainedSegments,
   ParsedSegments,
   ParsedS3Uri,
+  S3ResourceLayers,
+  S3Resource,
 } from './types.js'
 import { RESOURCE_TYPES } from './resource-types.js'
 import type { ResourceType } from './resource-types.js'
@@ -943,6 +945,162 @@ export class DerropsConventions<
   }
 
   /**
+   * Build a fully-described S3 resource from this convention.
+   *
+   * Returns an `S3Resource` with every naming layer (`bucketName`, `prefix`, `objectName`,
+   * `objectKey`), every reference format (`uri`, `arn`, `url`), the layered `segments`
+   * breakdown, and a complete `tags` record ready to apply to the bucket.
+   *
+   * **Layer control via `layers`:** pass a `S3ResourceLayers` object to override which
+   * segments appear in each naming layer. When a layer array is supplied it *replaces* the
+   * default for that layer; omit it to keep the convention default.
+   *
+   * Default layers:
+   * - `bucket` → region, env, org, domain, service  (the `s3Bucket` type, `--` delimiter)
+   * - `prefix` → org, domain, service, tenant, partition  (`/` delimiter)
+   * - `obj`    → key  (`-` delimiter)
+   *
+   * @example
+   * // Default: org/domain/service appears in both bucket and prefix
+   * c.s3Resource({ partition: '2024/03/15', key: 'log.gz' })
+   *
+   * // No redundancy — prefix carries only the partition
+   * c.s3Resource({ partition: '2024/03/15', key: 'log.gz',
+   *   layers: { prefix: ['partition'] }
+   * })
+   *
+   * // Custom bucket boundary
+   * c.s3Resource({ partition: '2024/03/15', key: 'log.gz',
+   *   layers: {
+   *     bucket: ['region', 'env', 'org'],
+   *     prefix: ['domain', 'service', 'partition'],
+   *   }
+   * })
+   */
+  s3Resource(
+    options: {
+      key?: string
+      date?: Date
+      granularity?: DatePartitionGranularity
+      partition?: string
+      tenant?: string
+      layers?: S3ResourceLayers
+    } = {},
+  ): S3Resource {
+    const { key, date, granularity, partition: rawPartition, tenant, layers } = options
+
+    const partition =
+      date !== undefined && granularity !== undefined
+        ? DerropsConventions.datePartition(date, granularity)
+        : rawPartition
+
+    const resolvedTenant = tenant ?? this.defaults.tenant
+
+    // Full pool of every segment value available for this call.
+    // Layer configs pick which of these appear in each naming layer.
+    const pool: Partial<Record<SegmentKey, string>> = {
+      region: this.defaults.region,
+      env: this.defaults.env,
+      org: this.defaults.org,
+      apex: this.defaults.apex,
+      domain: this.defaults.domain,
+      service: this.defaults.service,
+      entity: this.defaults.entity,
+      tenant: resolvedTenant,
+      partition,
+      key,
+      purpose: this.defaults.purpose,
+      kind: this.defaults.kind,
+      az: this.defaults.az,
+      num: this.defaults.num,
+      consumer: this.defaults.consumer,
+      target: this.defaults.target,
+      version: this.defaults.version,
+    }
+
+    // Helper: extract ordered, defined values from the pool for a given segment list.
+    const pick = (segKeys: SegmentKey[]): string[] =>
+      segKeys.map((k) => pool[k]).filter((v): v is string => v !== undefined && v !== '')
+
+    // Helper: build ParsedSegments from a segment key list.
+    const segsOf = (segKeys: SegmentKey[]): ParsedSegments =>
+      Object.fromEntries(
+        segKeys.filter((k) => pool[k] !== undefined).map((k) => [k, pool[k]]),
+      ) as ParsedSegments
+
+    // ── Bucket layer ──────────────────────────────────────────────────────────
+    let bucketName: string
+    let bucketSegs: ParsedSegments
+
+    if (layers?.bucket) {
+      // Custom bucket: manually join with '--', applying s3Bucket word normalization
+      bucketName = pick(layers.bucket)
+        .map((v) => this.normalize(v, '-'))
+        .join('--')
+      bucketSegs = segsOf(layers.bucket)
+    } else {
+      // Default: use the s3Bucket resource type
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      bucketName = this.name({ type: 's3Bucket' } as any)
+      bucketSegs = segsOf(['region', 'env', 'org', 'domain', 'service'])
+    }
+
+    // ── Prefix layer ──────────────────────────────────────────────────────────
+    const prefixSegKeys: SegmentKey[] = layers?.prefix ?? (
+      RESOURCE_TYPES['s3KeyPrefix'].segments as SegmentKey[]
+    )
+    const prefixParts = pick(prefixSegKeys).map((v) => this.normalize(v, '-'))
+    const prefixBase = prefixParts.join('/')
+    const prefix = prefixBase ? `${prefixBase}/` : ''
+    const prefixSegs = segsOf(prefixSegKeys)
+
+    // ── Object layer ──────────────────────────────────────────────────────────
+    const objSegKeys: SegmentKey[] = layers?.obj ?? ['key']
+    const objParts = pick(objSegKeys).map((v) => this.normalize(v, '-'))
+    const objectName = objParts.join('-')
+    const objSegs = segsOf(objSegKeys)
+
+    // ── Compose key and reference formats ─────────────────────────────────────
+    const objectKey = objectName ? `${prefix}${objectName}` : prefixBase
+
+    const region = this.defaults.region
+    const uri = `s3://${bucketName}/${objectKey}`
+    const arn = `arn:aws:s3:::${bucketName}/${objectKey}`
+    const url = region
+      ? `https://${bucketName}.s3.${region}.amazonaws.com/${objectKey}`
+      : `https://${bucketName}.s3.amazonaws.com/${objectKey}`
+
+    const segments: ParsedS3Uri = {
+      bucket: bucketSegs,
+      prefix: prefixSegs,
+      obj: objSegs,
+      all: { ...bucketSegs, ...prefixSegs, ...objSegs },
+    }
+
+    // ── Tags ──────────────────────────────────────────────────────────────────
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const tags: Record<string, string> = { ...this.tags({ type: 's3Bucket' } as any) }
+
+    const layerValues = (segs: ParsedSegments): string =>
+      Object.entries(segs)
+        .map(([k, v]) => `${k}=${v}`)
+        .join(',')
+
+    const bv = layerValues(bucketSegs)
+    const pv = layerValues(prefixSegs)
+    const ov = layerValues(objSegs)
+
+    if (bv) tags[this.keyPrefix + applyTagKeyCasing('segment-values', this.keyCasing)] = bv
+    if (pv)
+      tags[this.keyPrefix + applyTagKeyCasing('s3-prefix-segment-values', this.keyCasing)] = pv
+    if (ov)
+      tags[this.keyPrefix + applyTagKeyCasing('s3-object-name-segment-values', this.keyCasing)] =
+        ov
+
+    return { bucketName, prefix, objectName, objectKey, uri, arn, url, segments, tags }
+  }
+
+  /**
    * Generate the standard AWS resource tags for this resource.
    *
    * Returns a `Record<string, string>` keyed by the conventional tag names from the Derrops
@@ -1632,12 +1790,29 @@ export class DerropsConventions<
       return { bucket: bucketSegments, prefix: {}, obj: {}, all: { ...bucketSegments } }
     }
 
-    // Use the instance's parseS3Key so that all instance defaults (including tenant)
-    // are used when stripping the known prefix from the object key.
-    const keyResult = this.parseS3Key(objectKey)
-    const { key, ...prefixOnly } = keyResult
-    const prefixSegments: ParsedSegments = prefixOnly
-    const objSegments: ParsedSegments = key !== undefined ? { key } : {}
+    // Prefer segment-value tags (from s3Resource().tags) — accurate even for custom layers
+    const prefixValTag = options?.tags
+      ? DerropsConventions._findTagByName(options.tags, 's3-prefix-segment-values')
+      : undefined
+    const objValTag = options?.tags
+      ? DerropsConventions._findTagByName(options.tags, 's3-object-name-segment-values')
+      : undefined
+
+    let prefixSegments: ParsedSegments
+    let objSegments: ParsedSegments
+
+    if (prefixValTag !== undefined || objValTag !== undefined) {
+      prefixSegments = prefixValTag
+        ? DerropsConventions._parseSegmentValues(prefixValTag)
+        : {}
+      objSegments = objValTag ? DerropsConventions._parseSegmentValues(objValTag) : {}
+    } else {
+      // Fall back to instance-aware path parsing (uses instance tenant for stripping)
+      const keyResult = this.parseS3Key(objectKey)
+      const { key, ...prefixOnly } = keyResult
+      prefixSegments = prefixOnly
+      objSegments = key !== undefined ? { key } : {}
+    }
 
     return {
       bucket: bucketSegments,
@@ -1697,22 +1872,63 @@ export class DerropsConventions<
   ): ParsedS3Uri {
     const { bucket: bucketName, key: objectKey } = DerropsConventions._splitS3Uri(uri)
 
-    // Parse the bucket name → region, env, org, domain, service
+    // Parse the bucket name — aided by the `segment` tag when present
     const bucketSegments = DerropsConventions.parse(bucketName, 's3Bucket', options)
 
-    // Build empty layers for bucket-only URIs
     if (!objectKey) {
       return { bucket: bucketSegments, prefix: {}, obj: {}, all: { ...bucketSegments } }
     }
 
-    // Use a temporary convention seeded from the bucket segments to strip the known prefix
-    const tempConv = new DerropsConventions(bucketSegments as Segments)
-    const keyResult = tempConv.parseS3Key(objectKey)
+    // When `s3Resource().tags` are provided they encode the exact segments for each layer
+    // via `segment-values`, `s3-prefix-segment-values`, and `s3-object-name-segment-values`.
+    // Using these is more reliable than path parsing because they survive custom `layers` configs
+    // where org/domain/service may not appear in the key path at all.
+    const prefixValTag = options?.tags
+      ? DerropsConventions._findTagByName(options.tags, 's3-prefix-segment-values')
+      : undefined
+    const objValTag = options?.tags
+      ? DerropsConventions._findTagByName(options.tags, 's3-object-name-segment-values')
+      : undefined
 
-    // Split the key result into prefix layer (everything except 'key') and obj layer ('key' only)
-    const { key, ...prefixOnly } = keyResult
-    const prefixSegments: ParsedSegments = prefixOnly
-    const objSegments: ParsedSegments = key !== undefined ? { key } : {}
+    if (prefixValTag !== undefined || objValTag !== undefined) {
+      const prefixSegments = prefixValTag
+        ? DerropsConventions._parseSegmentValues(prefixValTag)
+        : {}
+      const objSegments = objValTag ? DerropsConventions._parseSegmentValues(objValTag) : {}
+      return {
+        bucket: bucketSegments,
+        prefix: prefixSegments,
+        obj: objSegments,
+        all: { ...bucketSegments, ...prefixSegments, ...objSegments },
+      }
+    }
+
+    // Fall back to path-based parsing using a temporary convention seeded from bucket segments.
+    // If the key path doesn't start with the bucket's known prefix (possible when custom layers
+    // move segments out of the bucket), catch the error and do a best-effort split.
+    const tempConv = new DerropsConventions(bucketSegments as Segments)
+    let prefixSegments: ParsedSegments
+    let objSegments: ParsedSegments
+    try {
+      const keyResult = tempConv.parseS3Key(objectKey)
+      const { key, ...prefixOnly } = keyResult
+      prefixSegments = prefixOnly
+      objSegments = key !== undefined ? { key } : {}
+    } catch {
+      const isPrefix = objectKey.endsWith('/')
+      const clean = isPrefix ? objectKey.slice(0, -1) : objectKey
+      const lastSlash = clean.lastIndexOf('/')
+      if (isPrefix) {
+        prefixSegments = clean ? { partition: clean } : {}
+        objSegments = {}
+      } else if (lastSlash === -1) {
+        prefixSegments = {}
+        objSegments = { key: clean }
+      } else {
+        prefixSegments = { partition: clean.slice(0, lastSlash) }
+        objSegments = { key: clean.slice(lastSlash + 1) }
+      }
+    }
 
     return {
       bucket: bucketSegments,
@@ -1896,6 +2112,37 @@ export class DerropsConventions<
     const key = path.slice(slashIdx + 1)
     // Treat a trailing-slash-only key (bucket URI like 's3://bucket/') as no key
     return { bucket, key: key === '' ? '' : key }
+  }
+
+  /** Parse a `key=val,key=val` tag value into a `ParsedSegments` dict. */
+  private static _parseSegmentValues(str: string): ParsedSegments {
+    return Object.fromEntries(
+      str
+        .split(',')
+        .map((pair) => {
+          const eq = pair.indexOf('=')
+          return eq === -1 ? [] : [pair.slice(0, eq), pair.slice(eq + 1)]
+        })
+        .filter(([k]) => k),
+    ) as ParsedSegments
+  }
+
+  /**
+   * Find a tag value by canonical base name, ignoring prefix (e.g. `slaops:`) and casing variants.
+   * Normalises by stripping `-` / `_` and lowercasing before comparison, so
+   * `slaops:s3-prefix-segment-values`, `S3PrefixSegmentValues`, and
+   * `s3_prefix_segment_values` all resolve to the same entry.
+   */
+  private static _findTagByName(
+    tags: Record<string, string>,
+    name: string,
+  ): string | undefined {
+    const target = name.toLowerCase().replace(/[-_]/g, '')
+    for (const [key, value] of Object.entries(tags)) {
+      const baseKey = key.includes(':') ? key.split(':').pop()! : key
+      if (baseKey.toLowerCase().replace(/[-_]/g, '') === target) return value
+    }
+    return undefined
   }
 
   private static _defaultSegmentOrder(config: ResourceTypeConfig): SegmentKey[] {

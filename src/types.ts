@@ -65,6 +65,83 @@ export interface Segments {
 export type ParsedSegments = Partial<Record<SegmentKey, string>>
 
 /**
+ * Controls which segments appear in each naming layer of `s3Resource()`.
+ *
+ * When a layer array is supplied it *replaces* the default segment list for that layer.
+ * Omit a layer to keep the convention default.
+ *
+ * | Layer    | Default segments                              | Delimiter |
+ * | -------- | --------------------------------------------- | --------- |
+ * | `bucket` | region, env, org, domain, service (s3Bucket)  | `--`      |
+ * | `prefix` | org, domain, service, tenant, partition        | `/`       |
+ * | `obj`    | key                                           | `-`       |
+ *
+ * @example
+ * // No redundancy — prefix carries only the date partition
+ * c.s3Resource({ partition: '2024/03/15', key: 'log.gz',
+ *   layers: { prefix: ['partition'] }
+ * })
+ *
+ * // Custom bucket boundary — org in bucket, domain+service in prefix
+ * c.s3Resource({ partition: '2024/03/15', key: 'log.gz',
+ *   layers: {
+ *     bucket: ['region', 'env', 'org'],
+ *     prefix: ['domain', 'service', 'partition'],
+ *   }
+ * })
+ */
+export interface S3ResourceLayers {
+  /** Segments to include in the bucket name, joined with `--`. */
+  bucket?: SegmentKey[]
+  /** Segments to include in the key prefix, joined with `/`. */
+  prefix?: SegmentKey[]
+  /** Segments to include in the object (file) name, joined with `-`. */
+  obj?: SegmentKey[]
+}
+
+/**
+ * A fully-described S3 resource produced by `s3Resource()`.
+ *
+ * Bundles every reference format (name, URI, ARN, URL) alongside the structured segment
+ * breakdown and tags, so callers never need to reassemble pieces from separate calls.
+ */
+export interface S3Resource {
+  // ── Naming layers ──────────────────────────────────────────────────────────
+  /** Bucket name — `region--env--org--domain--service`. */
+  bucketName: string
+  /** Key prefix path, always ending with `/`. Empty string when no prefix segments are set. */
+  prefix: string
+  /** Object filename (the `key` segment value). Empty string when no key was specified. */
+  objectName: string
+  /** Full S3 object key — `prefix + objectName`. When no key was given this equals `prefix` without the trailing slash. */
+  objectKey: string
+
+  // ── Reference formats ──────────────────────────────────────────────────────
+  /** `s3://bucket/objectKey` */
+  uri: string
+  /** `arn:aws:s3:::bucket/objectKey` */
+  arn: string
+  /** `https://bucket.s3.region.amazonaws.com/objectKey` (virtual-hosted URL). Region omitted when not set on the convention. */
+  url: string
+
+  // ── Segments ───────────────────────────────────────────────────────────────
+  /** Layered segment breakdown — `bucket`, `prefix`, `obj`, and merged `all`. */
+  segments: ParsedS3Uri
+
+  // ── Tags ───────────────────────────────────────────────────────────────────
+  /**
+   * Tags suitable for applying to the S3 bucket resource.
+   *
+   * Includes the standard visible segment tags, all three schema tags
+   * (`segment`, `s3-prefix-segment`, `s3-object-name-segment`), and
+   * per-layer segment-value tags with the runtime values for this specific
+   * resource instance (`segment-values`, `s3-prefix-segment-values`,
+   * `s3-object-name-segment-values`).
+   */
+  tags: Record<string, string>
+}
+
+/**
  * Structured result of `parseS3Uri()` — segments differentiated by which S3 layer they came from.
  *
  * `bucket` and `prefix` share org/domain/service (the redundancy is intentional —

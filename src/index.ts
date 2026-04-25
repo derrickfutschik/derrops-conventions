@@ -31,6 +31,8 @@ export type {
   Segments,
   ParsedSegments,
   ParsedS3Uri,
+  S3ResourceLayers,
+  S3Resource,
   ResourceTypeConfig,
   SegmentConstraints,
   ConstrainedSegments,
