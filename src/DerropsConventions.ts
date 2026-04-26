@@ -1820,6 +1820,27 @@ export class DerropsConventions<
     return new PolicyBuilder()
   }
 
+  // ── CloudFormation ────────────────────────────────────────────────────────
+
+  /**
+   * Generate a CloudFormation cross-stack export name for the given export key.
+   *
+   * Produces a globally-unique, stable `--`-delimited name from the active segments
+   * (org, domain, service) plus the export key. Pass this to `CfnOutput.exportName`
+   * and `Fn.importValue()` at import sites.
+   *
+   * @example
+   * c.cfnExport('vpc-id')      // 'acme--payments--api--vpc-id'
+   * c.cfnExport('bucket-arn')  // 'acme--payments--api--bucket-arn'
+   */
+  cfnExport(exportKey: string): string {
+    const parts = (['org', 'domain', 'service'] as const)
+      .map((k) => this.defaults[k])
+      .filter((v): v is string => v !== undefined && v.length > 0)
+    parts.push(exportKey.toLowerCase().replace(/\s+/g, '-'))
+    return parts.join('--')
+  }
+
   // ── Dependency modelling ──────────────────────────────────────────────────
 
   /**
