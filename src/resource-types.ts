@@ -942,6 +942,38 @@ export const RESOURCE_TYPES = {
     segments: ['org', 'domain', 'entity', 'tenant'],
   },
 
+  // ── KMS ──────────────────────────────────────────────────────────────────
+  kmsAlias: {
+    // KMS key alias — name() returns 'org/domain/service/key'; alias ARN adds the 'alias/' prefix.
+    // Use .resource() to obtain the ARN for IAM policy grants.
+    // Alias display name (for --key-id flag): prepend 'alias/' to the name() result.
+    global: false,
+    segmentDelimiter: '/',
+    wordDelimiter: '-',
+    iamService: 'kms',
+    consoleLabel: 'kms',
+    arn: { service: 'kms', includeRegion: true, includeAccount: true, resourcePrefix: 'alias/' },
+    permissions: {
+      read: ['kms:Decrypt', 'kms:GenerateDataKey', 'kms:GenerateDataKeyWithoutPlaintext', 'kms:DescribeKey'],
+      readWrite: [
+        'kms:Decrypt',
+        'kms:Encrypt',
+        'kms:GenerateDataKey',
+        'kms:GenerateDataKeyWithoutPlaintext',
+        'kms:ReEncrypt*',
+        'kms:DescribeKey',
+      ],
+      manage: ['kms:*'],
+    },
+  },
+  kmsKey: {
+    // Descriptive name/tag for a KMS key — used in key metadata and CDK resource IDs.
+    // KMS key ARNs use a UUID key-id, not a derivable name; use kmsAlias for policy grants.
+    global: false,
+    segmentDelimiter: '--',
+    wordDelimiter: '-',
+  },
+
   // ── Config / Secrets ─────────────────────────────────────────────────────
   ssmParam: {
     // leading '/' from name acts as separator after 'parameter' in the ARN
