@@ -35,6 +35,8 @@ export type {
   S3Resource,
   CostExplorerTagFilter,
   CostExplorerFilter,
+  ValidationResult,
+  LintReport,
   ResourceTypeConfig,
   SegmentConstraints,
   ConstrainedSegments,

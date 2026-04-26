@@ -64,6 +64,26 @@ export interface Segments {
 /** Segments extracted by parsing a resource name back through the convention. */
 export type ParsedSegments = Partial<Record<SegmentKey, string>>
 
+/** Result of validating a single resource name against a convention. */
+export interface ValidationResult {
+  /** Whether the name fully matches the convention (parses cleanly and all known segments agree). */
+  valid: boolean
+  /** Human-readable error messages when `valid` is false. */
+  errors: string[]
+  /** Segments extracted from the name. */
+  parsed: ParsedSegments
+  /** Resource type used for parsing. */
+  type: import('./resource-types.js').ResourceType
+}
+
+/** Batch lint report from `DerropsConventions.lint()`. */
+export interface LintReport {
+  passed: ValidationResult[]
+  failed: ValidationResult[]
+  /** Summary line: `'X/Y passed'` */
+  summary: string
+}
+
 /**
  * AWS Cost Explorer tag-based filter expression.
  * Pass to `CostExplorer.getCostAndUsage({ Filter: costFilter })`.
