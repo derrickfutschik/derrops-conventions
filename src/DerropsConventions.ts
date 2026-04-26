@@ -800,6 +800,50 @@ export class DerropsConventions<
   }
 
   /**
+   * Return a new instance with any combination of segment values overridden.
+   *
+   * Unlike `.with()`, this method accepts any `Partial<Segments>` without TypeScript
+   * constraint narrowing — useful when you want to project the convention to a different
+   * context at runtime without needing a per-segment helper method.
+   *
+   * The returned instance does **not** register as a child in `_children` (it is a
+   * projection, not a domain/service hierarchy node).
+   *
+   * @example
+   * // Project to production to read the prod bucket name from a dev convention
+   * const devConv = new DerropsConventions({ org: 'acme', domain: 'logs', service: 'ingest', env: 'dev' })
+   * devConv.for({ env: 'prod' }).name({ type: 's3Bucket' })
+   * // → 'ap-southeast-2--prod--acme--logs--ingest'
+   *
+   * // Override multiple segments at once
+   * orgConv.for({ domain: 'payments', service: 'api', env: 'staging' }).name({ type: 'lambdaFunction' })
+   */
+  for(segments: Partial<Segments>): DerropsConventions<C, TType> {
+    const derived = new DerropsConventions<C>(
+      { ...this.defaults, ...segments } as ConstrainedSegments<C>,
+      this.defaultType as ResourceType | undefined,
+    )
+    derived.order = [...this.order]
+    derived.visibleTags = [...this.visibleTags]
+    derived.keyPrefix = this.keyPrefix
+    derived.keyCasing = this.keyCasing
+    derived.tagRules = [...this.tagRules]
+    derived.tagAugmentors = [...this.tagAugmentors]
+    derived.tagKeyMax = this.tagKeyMax
+    derived.tagValueMax = this.tagValueMax
+    derived.tagCountMax = this.tagCountMax
+    derived.tagPolicies = [...this.tagPolicies]
+    derived.storedArnContext = this.storedArnContext
+    derived.apexMapFn = this.apexMapFn
+    derived.apexZoneMap = this.apexZoneMap
+    derived.visibleDimensions = [...this.visibleDimensions]
+    derived.storedConstraints = { ...this.storedConstraints }
+    derived._emitSegmentValues = this._emitSegmentValues
+    // Not registered in _children — a projection is not a hierarchy node.
+    return derived as unknown as DerropsConventions<C, TType>
+  }
+
+  /**
    * Opt this instance in to emitting a `segment-values` tag from `tags()`.
    *
    * The tag stores all active segment key-value pairs in `key=value,...` format,
