@@ -65,7 +65,7 @@ export interface OrgNetworkTopology {
 
 function ipToInt(ip: string): number {
   const [a, b, c, d] = ip.split('.').map(Number)
-  return (a! * 16777216) + (b! * 65536) + (c! * 256) + d!
+  return a! * 16777216 + b! * 65536 + c! * 256 + d!
 }
 
 function intToIp(n: number): string {
@@ -219,7 +219,9 @@ export function buildNetworkTopology(
   validateKindAllocations('default kinds', defaultKinds, globalAzAllocations)
 
   for (const [domain, config] of Object.entries(domainConfigs)) {
-    const setCount = [config.kinds, config.includeKinds, config.additionalKinds].filter(Boolean).length
+    const setCount = [config.kinds, config.includeKinds, config.additionalKinds].filter(
+      Boolean,
+    ).length
     if (setCount > 1) {
       throw new Error(
         `Domain "${domain}": only one of "kinds", "includeKinds", or "additionalKinds" may be set`,

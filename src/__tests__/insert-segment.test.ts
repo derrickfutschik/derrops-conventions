@@ -17,38 +17,50 @@ describe('insertSegment()', () => {
 
     it("'last' appends after all segments", () => {
       expect(
-        base.with({}).insertSegment('suffix', 'x', 'last').name({ type: 'lambdaFunction', key: 'fn' }),
+        base
+          .with({})
+          .insertSegment('suffix', 'x', 'last')
+          .name({ type: 'lambdaFunction', key: 'fn' }),
       ).toBe('acme--payments--checkout-api--fn--x')
     })
 
     it("'first' prepends before all segments", () => {
       expect(
-        base.with({}).insertSegment('accountId', ACCOUNT_ID, 'first').name({ type: 'lambdaFunction', key: 'fn' }),
+        base
+          .with({})
+          .insertSegment('accountId', ACCOUNT_ID, 'first')
+          .name({ type: 'lambdaFunction', key: 'fn' }),
       ).toBe(`${ACCOUNT_ID}--acme--payments--checkout-api--fn`)
     })
 
     it('{ before: anchor } inserts immediately before the anchor', () => {
       expect(
-        base.with({}).insertSegment('accountId', ACCOUNT_ID, { before: 'org' }).name({ type: 'lambdaFunction', key: 'fn' }),
+        base
+          .with({})
+          .insertSegment('accountId', ACCOUNT_ID, { before: 'org' })
+          .name({ type: 'lambdaFunction', key: 'fn' }),
       ).toBe(`${ACCOUNT_ID}--acme--payments--checkout-api--fn`)
     })
 
     it('{ after: anchor } inserts immediately after the anchor', () => {
       expect(
-        base.with({}).insertSegment('tier', 'gold', { after: 'org' }).name({ type: 'lambdaFunction', key: 'fn' }),
+        base
+          .with({})
+          .insertSegment('tier', 'gold', { after: 'org' })
+          .name({ type: 'lambdaFunction', key: 'fn' }),
       ).toBe('acme--gold--payments--checkout-api--fn')
     })
 
     it('throws when { before } anchor is not in the current order', () => {
-      expect(() =>
-        base.with({}).insertSegment('x', 'y', { before: 'nonexistent' }),
-      ).toThrow(/anchor segment "nonexistent" not found/)
+      expect(() => base.with({}).insertSegment('x', 'y', { before: 'nonexistent' })).toThrow(
+        /anchor segment "nonexistent" not found/,
+      )
     })
 
     it('throws when { after } anchor is not in the current order', () => {
-      expect(() =>
-        base.with({}).insertSegment('x', 'y', { after: 'nonexistent' }),
-      ).toThrow(/anchor segment "nonexistent" not found/)
+      expect(() => base.with({}).insertSegment('x', 'y', { after: 'nonexistent' })).toThrow(
+        /anchor segment "nonexistent" not found/,
+      )
     })
   })
 
@@ -56,25 +68,34 @@ describe('insertSegment()', () => {
 
   describe('calling insertSegment twice with same key', () => {
     it('updates the value', () => {
-      const c = base.with({})
+      const c = base
+        .with({})
         .insertSegment('accountId', '111111111111', { before: 'org' })
         .insertSegment('accountId', ACCOUNT_ID, { before: 'org' })
-      expect(c.name({ type: 'lambdaFunction', key: 'fn' })).toBe(`${ACCOUNT_ID}--acme--payments--checkout-api--fn`)
+      expect(c.name({ type: 'lambdaFunction', key: 'fn' })).toBe(
+        `${ACCOUNT_ID}--acme--payments--checkout-api--fn`,
+      )
     })
 
     it('repositions the segment to the new position', () => {
-      const c = base.with({})
+      const c = base
+        .with({})
         .insertSegment('tier', 'gold', { after: 'service' })
         .insertSegment('tier', 'gold', { before: 'org' })
-      expect(c.name({ type: 'lambdaFunction', key: 'fn' })).toBe('gold--acme--payments--checkout-api--fn')
+      expect(c.name({ type: 'lambdaFunction', key: 'fn' })).toBe(
+        'gold--acme--payments--checkout-api--fn',
+      )
     })
   })
 
   // ── S3 object keys (the primary use case) ───────────────────────────────────
 
   describe('s3ObjectKey with accountId prefix', () => {
-    const svc = new DerropsConventions({ org: 'acme', domain: 'payments', service: 'checkout-api' })
-      .insertSegment('accountId', ACCOUNT_ID, { before: 'org' })
+    const svc = new DerropsConventions({
+      org: 'acme',
+      domain: 'payments',
+      service: 'checkout-api',
+    }).insertSegment('accountId', ACCOUNT_ID, { before: 'org' })
 
     it('prepends account ID before org in s3ObjectKey', () => {
       expect(svc.name({ type: 's3ObjectKey', key: 'schema.sql' })).toBe(
@@ -83,9 +104,9 @@ describe('insertSegment()', () => {
     })
 
     it('prepends account ID in s3LogKey with partition', () => {
-      expect(
-        svc.name({ type: 's3LogKey', partition: '2024/01/15/14', key: 'events-001.gz' }),
-      ).toBe(`${ACCOUNT_ID}/acme/payments/checkout-api/2024/01/15/14/events-001.gz`)
+      expect(svc.name({ type: 's3LogKey', partition: '2024/01/15/14', key: 'events-001.gz' })).toBe(
+        `${ACCOUNT_ID}/acme/payments/checkout-api/2024/01/15/14/events-001.gz`,
+      )
     })
 
     it('s3Prefix() includes account ID prefix', () => {
@@ -174,30 +195,40 @@ describe('insertSegment()', () => {
 
     it('index 0 prepends before all segments', () => {
       expect(
-        base.with({}).insertSegmentAt('accountId', ACCOUNT_ID, 0).name({ type: 's3ObjectKey', key: 'f.json' }),
+        base
+          .with({})
+          .insertSegmentAt('accountId', ACCOUNT_ID, 0)
+          .name({ type: 's3ObjectKey', key: 'f.json' }),
       ).toBe(`${ACCOUNT_ID}/acme/payments/checkout-api/f.json`)
     })
 
     it('index beyond order length appends at end', () => {
       expect(
-        base.with({}).insertSegmentAt('suffix', 'x', 999).name({ type: 'lambdaFunction', key: 'fn' }),
+        base
+          .with({})
+          .insertSegmentAt('suffix', 'x', 999)
+          .name({ type: 'lambdaFunction', key: 'fn' }),
       ).toBe('acme--payments--checkout-api--fn--x')
     })
 
     it('negative index is clamped to 0 (prepend)', () => {
       expect(
-        base.with({}).insertSegmentAt('accountId', ACCOUNT_ID, -5).name({ type: 's3ObjectKey', key: 'f.json' }),
+        base
+          .with({})
+          .insertSegmentAt('accountId', ACCOUNT_ID, -5)
+          .name({ type: 's3ObjectKey', key: 'f.json' }),
       ).toBe(`${ACCOUNT_ID}/acme/payments/checkout-api/f.json`)
     })
 
     it('works with s3Prefix()', () => {
-      expect(
-        base.with({}).insertSegmentAt('accountId', ACCOUNT_ID, 0).s3Prefix(),
-      ).toBe(`${ACCOUNT_ID}/acme/payments/checkout-api/`)
+      expect(base.with({}).insertSegmentAt('accountId', ACCOUNT_ID, 0).s3Prefix()).toBe(
+        `${ACCOUNT_ID}/acme/payments/checkout-api/`,
+      )
     })
 
     it('second call updates value and repositions', () => {
-      const c = base.with({})
+      const c = base
+        .with({})
         .insertSegmentAt('accountId', '111111111111', 0)
         .insertSegmentAt('accountId', ACCOUNT_ID, 0)
       expect(c.name({ type: 's3ObjectKey', key: 'f.json' })).toBe(
@@ -222,10 +253,13 @@ describe('insertSegment()', () => {
 
   describe('compound: insertSegment + moveSegment', () => {
     it('can add a segment then reposition it separately via moveSegment', () => {
-      const c = base.with({})
-        .insertSegment('tier', 'gold')      // appended last
-        .moveSegment('tier', 'domain')       // now before domain
-      expect(c.name({ type: 'lambdaFunction', key: 'fn' })).toBe('acme--gold--payments--checkout-api--fn')
+      const c = base
+        .with({})
+        .insertSegment('tier', 'gold') // appended last
+        .moveSegment('tier', 'domain') // now before domain
+      expect(c.name({ type: 'lambdaFunction', key: 'fn' })).toBe(
+        'acme--gold--payments--checkout-api--fn',
+      )
     })
   })
 
@@ -234,13 +268,19 @@ describe('insertSegment()', () => {
   describe('non-s3 resource types', () => {
     it('custom segment participates in lambdaFunction names', () => {
       expect(
-        base.with({}).insertSegment('env-label', 'prod', { after: 'org' }).name({ type: 'lambdaFunction', key: 'fn' }),
+        base
+          .with({})
+          .insertSegment('env-label', 'prod', { after: 'org' })
+          .name({ type: 'lambdaFunction', key: 'fn' }),
       ).toBe('acme--prod--payments--checkout-api--fn')
     })
 
     it('custom segment participates in dynamoDb names', () => {
       expect(
-        base.with({}).insertSegment('env-label', 'prod', { after: 'org' }).name({ type: 'dynamoDb', key: 'orders' }),
+        base
+          .with({})
+          .insertSegment('env-label', 'prod', { after: 'org' })
+          .name({ type: 'dynamoDb', key: 'orders' }),
       ).toBe('acme--prod--payments--checkout-api--orders')
     })
   })

@@ -56,16 +56,22 @@ describe('DerropsConventions — S3 URI convention', () => {
     })
 
     it('schema tag keys respect tagPrefix', () => {
-      const c = new DerropsConventions({ org: 'acme', domain: 'logs', service: 'ingest' })
-        .tagPrefix('myapp:')
+      const c = new DerropsConventions({
+        org: 'acme',
+        domain: 'logs',
+        service: 'ingest',
+      }).tagPrefix('myapp:')
       const tags = c.tags({ type: 's3Bucket' })
       expect(tags).toHaveProperty('myapp:s3-prefix-segment')
       expect(tags).toHaveProperty('myapp:s3-object-name-segment')
     })
 
     it('schema tag keys respect pascal tagKeyCasing', () => {
-      const c = new DerropsConventions({ org: 'acme', domain: 'logs', service: 'ingest' })
-        .tagKeyCasing('pascal')
+      const c = new DerropsConventions({
+        org: 'acme',
+        domain: 'logs',
+        service: 'ingest',
+      }).tagKeyCasing('pascal')
       const tags = c.tags({ type: 's3Bucket' })
       expect(tags).toHaveProperty('S3PrefixSegment')
       expect(tags).toHaveProperty('S3ObjectNameSegment')
@@ -74,8 +80,8 @@ describe('DerropsConventions — S3 URI convention', () => {
     it('all three segment tags are present together', () => {
       const c = makeConv()
       const tags = c.tags({ type: 's3Bucket' })
-      expect(tags).toHaveProperty('slaops:segment')                // bucket name convention
-      expect(tags).toHaveProperty('slaops:s3-prefix-segment')      // prefix convention
+      expect(tags).toHaveProperty('slaops:segment') // bucket name convention
+      expect(tags).toHaveProperty('slaops:s3-prefix-segment') // prefix convention
       expect(tags).toHaveProperty('slaops:s3-object-name-segment') // object name convention
     })
 
@@ -222,25 +228,19 @@ describe('DerropsConventions — S3 URI convention', () => {
     })
 
     it('year partition: partition = year', () => {
-      const result = DerropsConventions.parseS3Uri(
-        `s3://${bucket}/acme/logs/ingest/2024/annual.gz`,
-      )
+      const result = DerropsConventions.parseS3Uri(`s3://${bucket}/acme/logs/ingest/2024/annual.gz`)
       expect(result.prefix.partition).toBe('2024')
       expect(result.obj.key).toBe('annual.gz')
     })
 
     it('no partition: object directly under service prefix', () => {
-      const result = DerropsConventions.parseS3Uri(
-        `s3://${bucket}/acme/logs/ingest/schema.json`,
-      )
+      const result = DerropsConventions.parseS3Uri(`s3://${bucket}/acme/logs/ingest/schema.json`)
       expect(result.prefix).not.toHaveProperty('partition')
       expect(result.obj.key).toBe('schema.json')
     })
 
     it('prefix URI (trailing slash): partition present, obj empty', () => {
-      const result = DerropsConventions.parseS3Uri(
-        `s3://${bucket}/acme/logs/ingest/2024/03/15/`,
-      )
+      const result = DerropsConventions.parseS3Uri(`s3://${bucket}/acme/logs/ingest/2024/03/15/`)
       expect(result.prefix.partition).toBe('2024/03/15')
       expect(result.obj).toEqual({})
     })
@@ -271,9 +271,7 @@ describe('DerropsConventions — S3 URI convention', () => {
         env: 'prod',
         region: 'ap-southeast-2',
       })
-      const result = c.parseS3Uri(
-        `s3://${bucket}/acme/payments/api/t-xyz/2024/03/15/tx.json`,
-      )
+      const result = c.parseS3Uri(`s3://${bucket}/acme/payments/api/t-xyz/2024/03/15/tx.json`)
       expect(result.prefix.tenant).toBe('t-xyz')
       expect(result.prefix.partition).toBe('2024/03/15')
       expect(result.obj.key).toBe('tx.json')
@@ -333,18 +331,14 @@ describe('DerropsConventions — S3 URI convention', () => {
     it('throws when org in bucket name conflicts with instance', () => {
       const c = new DerropsConventions({ org: 'acme', env: 'prod', region: 'ap-southeast-2' })
       expect(() =>
-        c.parseS3Uri(
-          's3://ap-southeast-2--prod--globex--logs--ingest/globex/logs/ingest/log.gz',
-        ),
+        c.parseS3Uri('s3://ap-southeast-2--prod--globex--logs--ingest/globex/logs/ingest/log.gz'),
       ).toThrow(/parseS3Uri.*"org".*"acme"/)
     })
 
     it('throws when env in bucket name conflicts with instance', () => {
       const c = new DerropsConventions({ org: 'acme', env: 'prod', region: 'ap-southeast-2' })
       expect(() =>
-        c.parseS3Uri(
-          's3://ap-southeast-2--dev--acme--logs--ingest/acme/logs/ingest/log.gz',
-        ),
+        c.parseS3Uri('s3://ap-southeast-2--dev--acme--logs--ingest/acme/logs/ingest/log.gz'),
       ).toThrow(/parseS3Uri.*"env".*"prod"/)
     })
 
@@ -378,10 +372,29 @@ describe('DerropsConventions — S3 URI convention', () => {
 
       const result = DerropsConventions.parseS3Uri(uri)
 
-      expect(result.bucket).toMatchObject({ region: 'ap-southeast-2', env: 'prod', org: 'acme', domain: 'logs', service: 'ingest' })
-      expect(result.prefix).toMatchObject({ org: 'acme', domain: 'logs', service: 'ingest', partition: '2024/03/15/14' })
+      expect(result.bucket).toMatchObject({
+        region: 'ap-southeast-2',
+        env: 'prod',
+        org: 'acme',
+        domain: 'logs',
+        service: 'ingest',
+      })
+      expect(result.prefix).toMatchObject({
+        org: 'acme',
+        domain: 'logs',
+        service: 'ingest',
+        partition: '2024/03/15/14',
+      })
       expect(result.obj).toEqual({ key: 'access.log.gz' })
-      expect(result.all).toMatchObject({ region: 'ap-southeast-2', env: 'prod', org: 'acme', domain: 'logs', service: 'ingest', partition: '2024/03/15/14', key: 'access.log.gz' })
+      expect(result.all).toMatchObject({
+        region: 'ap-southeast-2',
+        env: 'prod',
+        org: 'acme',
+        domain: 'logs',
+        service: 'ingest',
+        partition: '2024/03/15/14',
+        key: 'access.log.gz',
+      })
     })
 
     it('day partition round-trip', () => {
@@ -427,7 +440,12 @@ describe('DerropsConventions — S3 URI convention', () => {
       const result = DerropsConventions.parseS3Uri(uri)
       expect(result.prefix).not.toHaveProperty('partition')
       expect(result.obj.key).toBe('schema.json')
-      expect(result.all).toMatchObject({ org: 'acme', domain: 'logs', service: 'ingest', key: 'schema.json' })
+      expect(result.all).toMatchObject({
+        org: 'acme',
+        domain: 'logs',
+        service: 'ingest',
+        key: 'schema.json',
+      })
     })
 
     it('tenant + day partition round-trip', () => {
@@ -498,16 +516,16 @@ describe('DerropsConventions — S3 URI convention', () => {
   describe('s3KeyPrefix and s3ObjectName resource types', () => {
     it('s3KeyPrefix generates org/domain/service/tenant/partition prefix path', () => {
       const c = new DerropsConventions({ org: 'acme', domain: 'logs', service: 'ingest' })
-      expect(
-        c.name({ type: 's3KeyPrefix', partition: '2024/03/15' }),
-      ).toBe('acme/logs/ingest/2024/03/15')
+      expect(c.name({ type: 's3KeyPrefix', partition: '2024/03/15' })).toBe(
+        'acme/logs/ingest/2024/03/15',
+      )
     })
 
     it('s3KeyPrefix with tenant', () => {
       const c = new DerropsConventions({ org: 'acme', domain: 'logs', service: 'ingest' })
-      expect(
-        c.name({ type: 's3KeyPrefix', tenant: 't-xyz', partition: '2024/03/15' }),
-      ).toBe('acme/logs/ingest/t-xyz/2024/03/15')
+      expect(c.name({ type: 's3KeyPrefix', tenant: 't-xyz', partition: '2024/03/15' })).toBe(
+        'acme/logs/ingest/t-xyz/2024/03/15',
+      )
     })
 
     it('s3KeyPrefix without partition — stops at service', () => {

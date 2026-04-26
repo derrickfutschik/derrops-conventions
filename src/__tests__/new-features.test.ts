@@ -64,9 +64,7 @@ describe('KMS resource types', () => {
 
   describe('kmsKey', () => {
     it('generates -- delimited descriptive name', () => {
-      expect(base().name({ type: 'kmsKey', key: 'cmk' })).toBe(
-        'acme--payments--checkout-api--cmk',
-      )
+      expect(base().name({ type: 'kmsKey', key: 'cmk' })).toBe('acme--payments--checkout-api--cmk')
     })
 
     it('has no ARN config (naming-only type)', () => {
@@ -98,9 +96,7 @@ describe('cloudwatchResource()', () => {
 
   it('namespace matches name({ type: cloudwatchMetricNamespace })', () => {
     const c = base()
-    expect(c.cloudwatchResource().namespace).toBe(
-      c.name({ type: 'cloudwatchMetricNamespace' }),
-    )
+    expect(c.cloudwatchResource().namespace).toBe(c.name({ type: 'cloudwatchMetricNamespace' }))
   })
 
   it('logGroup matches name({ type: cloudwatchLogsGroup })', () => {
@@ -230,7 +226,12 @@ describe('for()', () => {
 
   it('can override multiple segments at once', () => {
     const c = new DerropsConventions({ org: 'acme', env: 'dev', region: 'us-east-1' })
-    const derived = c.for({ env: 'prod', region: 'ap-southeast-2', domain: 'logs', service: 'ingest' })
+    const derived = c.for({
+      env: 'prod',
+      region: 'ap-southeast-2',
+      domain: 'logs',
+      service: 'ingest',
+    })
     expect(derived.name({ type: 's3Bucket' })).toBe('ap-southeast-2--prod--acme--logs--ingest')
   })
 
@@ -247,8 +248,11 @@ describe('for()', () => {
 
   it('inherits tagKeyCasing from parent', () => {
     // Parent has pascal casing — the derived instance's existing visible tags also use pascal.
-    const c = new DerropsConventions({ org: 'acme', domain: 'logs', service: 'ingest' })
-      .tagKeyCasing('pascal')
+    const c = new DerropsConventions({
+      org: 'acme',
+      domain: 'logs',
+      service: 'ingest',
+    }).tagKeyCasing('pascal')
     const derived = c.for({ domain: 'payments' })
     // Domain was already a visible tag; pascal casing is preserved on the derived instance.
     expect(derived.tags()).toHaveProperty('Domain', 'payments')
@@ -256,8 +260,11 @@ describe('for()', () => {
 
   it('can project to a different env (env promotion pattern)', () => {
     const dev = new DerropsConventions({
-      org: 'acme', domain: 'logs', service: 'ingest',
-      env: 'dev', region: 'ap-southeast-2',
+      org: 'acme',
+      domain: 'logs',
+      service: 'ingest',
+      env: 'dev',
+      region: 'ap-southeast-2',
     })
     const prodBucket = dev.for({ env: 'prod' }).name({ type: 's3Bucket' })
     expect(prodBucket).toBe('ap-southeast-2--prod--acme--logs--ingest')
@@ -492,7 +499,7 @@ describe('dependsOn() + dependencies() + policyFor()', () => {
   describe('dependsOn()', () => {
     it('is chainable', () => {
       const api = new DerropsConventions({ org: 'acme', domain: 'payments', service: 'api' })
-      const db  = new DerropsConventions({ org: 'acme', domain: 'payments', service: 'db' })
+      const db = new DerropsConventions({ org: 'acme', domain: 'payments', service: 'db' })
       expect(api.dependsOn(db, ['dynamoDb'])).toBe(api)
     })
 
@@ -515,7 +522,7 @@ describe('dependsOn() + dependencies() + policyFor()', () => {
 
     it('includes the owner in nodes when a dependency is declared', () => {
       const api = new DerropsConventions({ org: 'acme', domain: 'payments', service: 'api' })
-      const db  = new DerropsConventions({ org: 'acme', domain: 'payments', service: 'db' })
+      const db = new DerropsConventions({ org: 'acme', domain: 'payments', service: 'db' })
       api.dependsOn(db, ['dynamoDb'])
       const { nodes } = api.dependencies()
       expect(nodes).toContain(api)
@@ -524,7 +531,7 @@ describe('dependsOn() + dependencies() + policyFor()', () => {
 
     it('records the correct edge with from, owner, and resources', () => {
       const api = new DerropsConventions({ org: 'acme', domain: 'payments', service: 'api' })
-      const db  = new DerropsConventions({ org: 'acme', domain: 'payments', service: 'db' })
+      const db = new DerropsConventions({ org: 'acme', domain: 'payments', service: 'db' })
       api.dependsOn(db, ['dynamoDb', 'sqsQueue'])
       const { edges } = api.dependencies()
       expect(edges[0]?.from).toBe(api)

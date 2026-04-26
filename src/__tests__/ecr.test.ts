@@ -42,9 +42,7 @@ describe('imageTag()', () => {
 
 describe('ecrUri()', () => {
   it('full URI with env + version + key tag', () => {
-    expect(
-      base.with({ env: 'prod', version: 'v1.2.3', key: 'abc123f' }).ecrUri(),
-    ).toBe(
+    expect(base.with({ env: 'prod', version: 'v1.2.3', key: 'abc123f' }).ecrUri()).toBe(
       '123456789012.dkr.ecr.ap-southeast-2.amazonaws.com/slaops/platform/api:prod--v1.2.3--abc123f',
     )
   })
@@ -56,9 +54,7 @@ describe('ecrUri()', () => {
 
   it('omits tag portion (no colon) when no tag segments are set', () => {
     const uri = base.ecrUri()
-    expect(uri).toBe(
-      '123456789012.dkr.ecr.ap-southeast-2.amazonaws.com/slaops/platform/api',
-    )
+    expect(uri).toBe('123456789012.dkr.ecr.ap-southeast-2.amazonaws.com/slaops/platform/api')
     expect(uri).not.toContain(':')
   })
 

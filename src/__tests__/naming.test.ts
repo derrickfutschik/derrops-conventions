@@ -280,7 +280,6 @@ describe('DerropsConventions — naming', () => {
           '/acme/payments/checkout-api/stripe-webhook-secret',
         )
       })
-
     })
   })
 
@@ -482,7 +481,6 @@ describe('DerropsConventions — naming', () => {
     it('wafWebAcl appends --waf', () => {
       expect(c.name({ type: 'wafWebAcl' })).toBe('acme--payments--api--waf')
     })
-
   })
 
   describe('new segment keys — kind, az, purpose, num, consumer, target, version', () => {
@@ -704,9 +702,7 @@ describe('DerropsConventions — naming', () => {
 
     describe('vpcEndpoint (domain → AWS service)', () => {
       it('s3 endpoint', () => {
-        expect(c.name({ type: 'vpcEndpoint', service: 's3' })).toBe(
-          'acme--payments--s3--endpoint',
-        )
+        expect(c.name({ type: 'vpcEndpoint', service: 's3' })).toBe('acme--payments--s3--endpoint')
       })
 
       it('dynamodb endpoint', () => {

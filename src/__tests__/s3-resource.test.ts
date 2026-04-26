@@ -12,20 +12,19 @@ const fullConv = () =>
     service: 'ingest',
     env: 'prod',
     region: 'ap-southeast-2',
-  }).tagPrefix('slaops:').tagKeys('org', 'domain', 'service', 'environment')
+  })
+    .tagPrefix('slaops:')
+    .tagKeys('org', 'domain', 'service', 'environment')
 
 /** Convention without region/env (domain-scoped only) */
-const domainConv = () =>
-  new DerropsConventions({ org: 'acme', domain: 'payments', service: 'api' })
+const domainConv = () => new DerropsConventions({ org: 'acme', domain: 'payments', service: 'api' })
 
 describe('DerropsConventions — s3Resource()', () => {
   // ── Bucket name construction ───────────────────────────────────────────────
 
   describe('bucket name', () => {
     it('includes region, env, org, domain, service with -- delimiter', () => {
-      expect(fullConv().s3Resource().bucketName).toBe(
-        'ap-southeast-2--prod--acme--logs--ingest',
-      )
+      expect(fullConv().s3Resource().bucketName).toBe('ap-southeast-2--prod--acme--logs--ingest')
     })
 
     it('hyphenated service name is preserved in bucket name', () => {
@@ -359,9 +358,7 @@ describe('DerropsConventions — s3Resource()', () => {
 
       it('prefix segment schema tag (full template, always all keys)', () => {
         const r = fullConv().s3Resource()
-        expect(r.tags['slaops:s3-prefix-segment']).toBe(
-          'org/domain/service/tenant/partition',
-        )
+        expect(r.tags['slaops:s3-prefix-segment']).toBe('org/domain/service/tenant/partition')
       })
 
       it('object name schema tag', () => {
@@ -441,8 +438,11 @@ describe('DerropsConventions — s3Resource()', () => {
 
     describe('tag key prefix and casing', () => {
       it('tag keys respect tagPrefix', () => {
-        const c = new DerropsConventions({ org: 'acme', domain: 'logs', service: 'ingest' })
-          .tagPrefix('app:')
+        const c = new DerropsConventions({
+          org: 'acme',
+          domain: 'logs',
+          service: 'ingest',
+        }).tagPrefix('app:')
         const r = c.s3Resource({ key: 'log.gz' })
         expect(r.tags).toHaveProperty('app:segment')
         expect(r.tags).toHaveProperty('app:s3-prefix-segment')
@@ -452,8 +452,11 @@ describe('DerropsConventions — s3Resource()', () => {
       })
 
       it('tag keys respect pascal casing', () => {
-        const c = new DerropsConventions({ org: 'acme', domain: 'logs', service: 'ingest' })
-          .tagKeyCasing('pascal')
+        const c = new DerropsConventions({
+          org: 'acme',
+          domain: 'logs',
+          service: 'ingest',
+        }).tagKeyCasing('pascal')
         const r = c.s3Resource({ key: 'log.gz' })
         expect(r.tags).toHaveProperty('Segment')
         expect(r.tags).toHaveProperty('S3PrefixSegment')
@@ -536,9 +539,7 @@ describe('DerropsConventions — s3Resource()', () => {
         key: 'part-00001.parquet',
       })
       expect(r.prefix).toBe('acme/analytics/events/year=2024/month=03/day=15/')
-      expect(r.objectKey).toBe(
-        'acme/analytics/events/year=2024/month=03/day=15/part-00001.parquet',
-      )
+      expect(r.objectKey).toBe('acme/analytics/events/year=2024/month=03/day=15/part-00001.parquet')
     })
 
     it('all four date granularities produce the correct s3Resource', () => {
@@ -644,9 +645,7 @@ describe('DerropsConventions — s3Resource()', () => {
       })
       expect(r.prefix).toBe('')
       expect(r.objectKey).toBe('manifest.json')
-      expect(r.uri).toBe(
-        's3://ap-southeast-2--prod--acme--logs--ingest/manifest.json',
-      )
+      expect(r.uri).toBe('s3://ap-southeast-2--prod--acme--logs--ingest/manifest.json')
     })
 
     it('layers.prefix omits segments not in the pool', () => {
@@ -826,7 +825,7 @@ describe('DerropsConventions — s3Resource()', () => {
         key: 'f.gz',
         layers: {
           bucket: ['region', 'env', 'org', 'domain', 'service'],
-          prefix: ['service', 'partition'],  // service repeated
+          prefix: ['service', 'partition'], // service repeated
         },
       })
       // bucket: ap-southeast-2--prod--acme--logs--ingest   prefix: ingest/2024/03/
@@ -835,7 +834,7 @@ describe('DerropsConventions — s3Resource()', () => {
       // service appears in both layers
       expect(parsed.bucket.service).toBe('ingest')
       expect(parsed.prefix.service).toBe('ingest')
-      expect(parsed.all.service).toBe('ingest')  // merged once in all
+      expect(parsed.all.service).toBe('ingest') // merged once in all
       expect(parsed.prefix.partition).toBe('2024/03')
       expect(parsed.obj.key).toBe('f.gz')
     })
@@ -846,8 +845,8 @@ describe('DerropsConventions — s3Resource()', () => {
         key: 'report.gz',
         layers: {
           bucket: ['region', 'env', 'org', 'domain', 'service'],
-          prefix: ['env', 'partition'],   // env repeated in prefix
-          obj: ['env', 'key'],            // env also in object name
+          prefix: ['env', 'partition'], // env repeated in prefix
+          obj: ['env', 'key'], // env also in object name
         },
       })
       // prefix: prod/   objectName: prod-report.gz
@@ -857,14 +856,14 @@ describe('DerropsConventions — s3Resource()', () => {
       expect(parsed.prefix.env).toBe('prod')
       expect(parsed.obj.env).toBe('prod')
       expect(parsed.obj.key).toBe('report.gz')
-      expect(parsed.all.env).toBe('prod')  // still just one entry in all
+      expect(parsed.all.env).toBe('prod') // still just one entry in all
     })
 
     it('parse: partition-only prefix — segments appear only in their intended layer', () => {
       const r = fullConv().s3Resource({
         partition: '2024/03/15',
         key: 'log.gz',
-        layers: { prefix: ['partition'] },  // bucket keeps its default; prefix has only partition
+        layers: { prefix: ['partition'] }, // bucket keeps its default; prefix has only partition
       })
       // bucket: ap-southeast-2--prod--acme--logs--ingest   prefix: 2024/03/15/
       const parsed = DerropsConventions.parseS3Uri(r.uri, { tags: r.tags })
@@ -892,7 +891,11 @@ describe('DerropsConventions — s3Resource()', () => {
 
     it('parse: full round-trip with all four date granularities and custom bucket', () => {
       const c = new DerropsConventions({
-        org: 'acme', domain: 'logs', service: 'ingest', env: 'prod', region: 'ap-southeast-2',
+        org: 'acme',
+        domain: 'logs',
+        service: 'ingest',
+        env: 'prod',
+        region: 'ap-southeast-2',
       })
       const date = new Date('2024-03-15T14:30:00Z')
       const customLayers = {
@@ -950,7 +953,7 @@ describe('DerropsConventions — s3Resource()', () => {
     it('layers.obj omits segments not in pool', () => {
       const r = fullConv().s3Resource({
         key: 'data.gz',
-        layers: { obj: ['tenant', 'key'] },  // tenant not set
+        layers: { obj: ['tenant', 'key'] }, // tenant not set
       })
       expect(r.objectName).toBe('data.gz')
     })
@@ -972,9 +975,7 @@ describe('DerropsConventions — s3Resource()', () => {
       expect(r.prefix).toBe('logs/ingest/t-abc/2024/03/')
       expect(r.objectName).toBe('f.gz')
       expect(r.objectKey).toBe('logs/ingest/t-abc/2024/03/f.gz')
-      expect(r.uri).toBe(
-        's3://ap-southeast-2--prod--acme/logs/ingest/t-abc/2024/03/f.gz',
-      )
+      expect(r.uri).toBe('s3://ap-southeast-2--prod--acme/logs/ingest/t-abc/2024/03/f.gz')
       // No segment appears in more than its intended layer
       expect(r.segments.bucket).not.toHaveProperty('domain')
       expect(r.segments.prefix).not.toHaveProperty('region')
@@ -989,7 +990,7 @@ describe('DerropsConventions — s3Resource()', () => {
         key: 'f.gz',
         layers: {
           bucket: ['region', 'env', 'org', 'service'],
-          prefix: ['service', 'partition'],   // service repeated
+          prefix: ['service', 'partition'], // service repeated
         },
       })
       expect(r.bucketName).toContain('ingest')
@@ -1004,9 +1005,7 @@ describe('DerropsConventions — s3Resource()', () => {
       const r = fullConv().s3Resource({
         layers: { bucket: ['region', 'env', 'org'] },
       })
-      expect(r.tags['slaops:segment-values']).toBe(
-        'region=ap-southeast-2,env=prod,org=acme',
-      )
+      expect(r.tags['slaops:segment-values']).toBe('region=ap-southeast-2,env=prod,org=acme')
     })
 
     it('s3-prefix-segment-values reflects custom prefix layer', () => {

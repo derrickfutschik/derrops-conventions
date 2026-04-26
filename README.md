@@ -754,7 +754,8 @@ orgConvention.with({ domain: 'payments' }).domainNetworkLayer(['1a', '1b', '1c']
 // }
 
 // Service layer — provision with each service deployment
-orgConvention.with({ domain: 'payments', service: 'checkout-api' })
+orgConvention
+  .with({ domain: 'payments', service: 'checkout-api' })
   .serviceNetworkLayer(['web', 'db', 'internal'])
 // → {
 //   securityGroups: {
@@ -769,11 +770,11 @@ orgConvention.with({ domain: 'payments', service: 'checkout-api' })
 
 Three standard tiers. Each gets a `/22` block within its domain's `/20`, with one `/24` per availability zone within that `/22`.
 
-| Kind | Routing | `mapPublicIpOnLaunch` | Typical residents |
-|---|---|---|---|
-| `private` | Outbound via NAT gateway — no direct inbound | `false` | Application servers, ECS tasks, Lambda in VPC |
-| `public` | Internet Gateway — direct inbound and outbound | `true` | Load balancers, NAT gateways, bastion hosts |
-| `isolated` | No internet route in either direction | `false` | Databases (RDS, Aurora), OpenSearch, ElastiCache |
+| Kind       | Routing                                        | `mapPublicIpOnLaunch` | Typical residents                                |
+| ---------- | ---------------------------------------------- | --------------------- | ------------------------------------------------ |
+| `private`  | Outbound via NAT gateway — no direct inbound   | `false`               | Application servers, ECS tasks, Lambda in VPC    |
+| `public`   | Internet Gateway — direct inbound and outbound | `true`                | Load balancers, NAT gateways, bastion hosts      |
+| `isolated` | No internet route in either direction          | `false`               | Databases (RDS, Aurora), OpenSearch, ElastiCache |
 
 The flow is one-way: `internet ↔ public → private → isolated`. Resources in `isolated` can only be reached from within the VPC.
 
@@ -878,24 +879,16 @@ export class VpcStack extends Stack {
           cfnSubnet.overrideLogicalId(subnet.name)
           domainC.applyTags((k, v) => Tags.of(cfnSubnet).add(k, v))
 
-          new ec2.CfnSubnetRouteTableAssociation(
-            this,
-            `${subnet.name}--rta`,
-            {
-              subnetId: cfnSubnet.ref,
-              routeTableId: routeTableRefs[kind]!,
-            },
-          )
+          new ec2.CfnSubnetRouteTableAssociation(this, `${subnet.name}--rta`, {
+            subnetId: cfnSubnet.ref,
+            routeTableId: routeTableRefs[kind]!,
+          })
 
           // NACLs — associate each subnet with the domain NACL
-          new ec2.CfnSubnetNetworkAclAssociation(
-            this,
-            `${subnet.name}--nacl`,
-            {
-              subnetId: cfnSubnet.ref,
-              networkAclId: nacl.ref,
-            },
-          )
+          new ec2.CfnSubnetNetworkAclAssociation(this, `${subnet.name}--nacl`, {
+            subnetId: cfnSubnet.ref,
+            networkAclId: nacl.ref,
+          })
         }
       }
     }
@@ -984,9 +977,9 @@ const plan = orgC.topology({
 const plan = orgC.topology({
   vpcCidr: '10.0.0.0/16',
   azAllocations: [
-    { slot: 0, az: '1a' },    // existing — CIDR unchanged
-    { slot: 1, az: '1b' },    // existing — CIDR unchanged
-    { slot: 2, az: '1c' },    // new — provisioned on next deploy
+    { slot: 0, az: '1a' }, // existing — CIDR unchanged
+    { slot: 1, az: '1b' }, // existing — CIDR unchanged
+    { slot: 2, az: '1c' }, // new — provisioned on next deploy
   ],
   defaultKinds: [
     { slot: 0, name: 'private' },
@@ -1018,7 +1011,7 @@ const plan = orgC.topology({
   azs: ['1a', '1b', '1c'],
   defaultKinds: [
     { slot: 0, name: 'private' },
-    { slot: 1, name: 'public' },    // new
+    { slot: 1, name: 'public' }, // new
     { slot: 2, name: 'isolated' },
   ],
 })
@@ -1040,16 +1033,16 @@ if (report.warnings.length) {
 
 The `purpose` segment on `ec2SecurityGroup` encodes the access role — what the security group protects, not who calls it. Standard values:
 
-| `purpose` | Inbound traffic |
-|-----------|----------------|
-| `web` | HTTP/HTTPS from ALB or internet |
-| `internal` | Intra-domain service-to-service |
-| `db` | Database protocols (PostgreSQL 5432, MySQL 3306) |
-| `cache` | Cache protocols (Redis 6379) |
-| `search` | OpenSearch/Elasticsearch (9200, 443) |
-| `relay` | Outbound relay / egress |
-| `bastion` | SSH from operator IP ranges |
-| `worker` | Background processing |
+| `purpose`  | Inbound traffic                                  |
+| ---------- | ------------------------------------------------ |
+| `web`      | HTTP/HTTPS from ALB or internet                  |
+| `internal` | Intra-domain service-to-service                  |
+| `db`       | Database protocols (PostgreSQL 5432, MySQL 3306) |
+| `cache`    | Cache protocols (Redis 6379)                     |
+| `search`   | OpenSearch/Elasticsearch (9200, 443)             |
+| `relay`    | Outbound relay / egress                          |
+| `bastion`  | SSH from operator IP ranges                      |
+| `worker`   | Background processing                            |
 
 The security group IS the named access object. `acme--payments--checkout-api--db` says exactly: "database-tier access control for checkout-api in the payments domain of the acme org."
 

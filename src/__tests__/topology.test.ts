@@ -68,7 +68,9 @@ describe('constraints() — runtime constraint store', () => {
   it('existing domain() type-narrowing behaviour is unchanged', () => {
     // Compile-time check: no runtime assertion needed, but calling it must not throw
     const c = new DerropsConventions({ org: 'acme' }).domain(['payments', 'identity'])
-    expect(() => c.name({ type: 'lambdaFunction', domain: 'payments', service: 'api' })).not.toThrow()
+    expect(() =>
+      c.name({ type: 'lambdaFunction', domain: 'payments', service: 'api' }),
+    ).not.toThrow()
   })
 })
 
@@ -117,9 +119,7 @@ describe('topology() — names and CIDRs', () => {
     })
 
     it('public subnet names', () => {
-      expect(result.domains.payments?.subnets.public?.[0]?.name).toBe(
-        'acme--payments--public--1a',
-      )
+      expect(result.domains.payments?.subnets.public?.[0]?.name).toBe('acme--payments--public--1a')
     })
 
     it('isolated subnet names', () => {
@@ -237,8 +237,16 @@ describe('topology() — CIDR stability', () => {
   const orgC = new DerropsConventions({ org: 'acme' }).domain(['payments', 'identity'])
 
   it('appending a kind to the global list does not change existing kind CIDRs', () => {
-    const baseline = orgC.topology({ vpcCidr: '10.0.0.0/16', azs: ['1a'], kinds: ['private', 'isolated'] })
-    const extended = orgC.topology({ vpcCidr: '10.0.0.0/16', azs: ['1a'], kinds: ['private', 'isolated', 'public'] })
+    const baseline = orgC.topology({
+      vpcCidr: '10.0.0.0/16',
+      azs: ['1a'],
+      kinds: ['private', 'isolated'],
+    })
+    const extended = orgC.topology({
+      vpcCidr: '10.0.0.0/16',
+      azs: ['1a'],
+      kinds: ['private', 'isolated', 'public'],
+    })
     // position 0 (private) and position 1 (isolated) unchanged
     expect(extended.domains.payments?.subnets.private?.[0]?.cidr).toBe(
       baseline.domains.payments?.subnets.private?.[0]?.cidr,
@@ -286,7 +294,7 @@ describe('topology() — CIDR stability', () => {
         payments: {
           kinds: [
             { slot: 0, name: 'private' },
-            { slot: 1, name: 'public' },   // inserted at slot 1 — fills the reserved gap
+            { slot: 1, name: 'public' }, // inserted at slot 1 — fills the reserved gap
             { slot: 2, name: 'isolated' },
           ],
         },
@@ -352,7 +360,10 @@ describe('topology() — per-domain kind control', () => {
       azs: ['1a'],
       domains: {
         payments: {
-          kinds: [{ slot: 0, name: 'private' }, { slot: 1, name: 'public' }],
+          kinds: [
+            { slot: 0, name: 'private' },
+            { slot: 1, name: 'public' },
+          ],
         },
         identity: {
           kinds: [{ slot: 0, name: 'private' }],
@@ -393,7 +404,10 @@ describe('topology() — includeKinds filter', () => {
       },
     })
     expect(Object.keys(r.domains.identity?.subnets ?? {}).sort()).toEqual(['isolated', 'private'])
-    expect(Object.keys(r.domains.identity?.routeTables ?? {}).sort()).toEqual(['isolated', 'private'])
+    expect(Object.keys(r.domains.identity?.routeTables ?? {}).sort()).toEqual([
+      'isolated',
+      'private',
+    ])
   })
 
   it('slots are preserved from defaultKinds so CIDRs are unchanged', () => {
@@ -674,7 +688,7 @@ describe('topology() — appending to an existing deployment', () => {
 
     const extended = orgC.topology({
       vpcCidr: '10.0.0.0/16',
-      azs: ['1a', '1b', '1c'],   // new AZ appended
+      azs: ['1a', '1b', '1c'], // new AZ appended
       kinds: ['private', 'public', 'isolated'],
     })
 
@@ -703,7 +717,7 @@ describe('topology() — appending to an existing deployment', () => {
     const extended = orgC.topology({
       vpcCidr: '10.0.0.0/16',
       azs: ['1a', '1b'],
-      kinds: ['private', 'isolated', 'public'],   // new kind tier appended
+      kinds: ['private', 'isolated', 'public'], // new kind tier appended
     })
 
     const before = collectSubnets(initial)

@@ -6,17 +6,16 @@ describe('DerropsConventions — parse()', () => {
 
   describe('DerropsConventions.parse() — static', () => {
     it('parses a standard non-global name (lambdaFunction)', () => {
-      expect(
-        DerropsConventions.parse('acme--payments--checkout-api', 'lambdaFunction'),
-      ).toEqual({ org: 'acme', domain: 'payments', service: 'checkout-api' })
+      expect(DerropsConventions.parse('acme--payments--checkout-api', 'lambdaFunction')).toEqual({
+        org: 'acme',
+        domain: 'payments',
+        service: 'checkout-api',
+      })
     })
 
     it('parses a global name including region and env (s3Bucket)', () => {
       expect(
-        DerropsConventions.parse(
-          'ap-southeast-2--prod--acme--payments--uploads',
-          's3Bucket',
-        ),
+        DerropsConventions.parse('ap-southeast-2--prod--acme--payments--uploads', 's3Bucket'),
       ).toEqual({
         region: 'ap-southeast-2',
         env: 'prod',
@@ -27,9 +26,11 @@ describe('DerropsConventions — parse()', () => {
     })
 
     it('strips the leading delimiter (ssmParam)', () => {
-      expect(
-        DerropsConventions.parse('/acme/payments/checkout-api', 'ssmParam'),
-      ).toEqual({ org: 'acme', domain: 'payments', service: 'checkout-api' })
+      expect(DerropsConventions.parse('/acme/payments/checkout-api', 'ssmParam')).toEqual({
+        org: 'acme',
+        domain: 'payments',
+        service: 'checkout-api',
+      })
     })
 
     it('strips the suffix (dynamoDbGsi)', () => {
@@ -89,9 +90,13 @@ describe('DerropsConventions — parse()', () => {
     })
 
     it('handles extra segments in name via segment tag', () => {
-      const result = DerropsConventions.parse('acme--payments--api--t-xyz--my-key', 'lambdaFunction', {
-        tags: { segment: 'org--domain--service--tenant--key' },
-      })
+      const result = DerropsConventions.parse(
+        'acme--payments--api--t-xyz--my-key',
+        'lambdaFunction',
+        {
+          tags: { segment: 'org--domain--service--tenant--key' },
+        },
+      )
       expect(result).toEqual({
         org: 'acme',
         domain: 'payments',
@@ -165,9 +170,9 @@ describe('DerropsConventions — parse()', () => {
 
     it('throws when a parsed segment conflicts with a known instance default', () => {
       const c = new DerropsConventions({ org: 'acme' })
-      expect(() =>
-        c.parse('globex--payments--checkout-api', { type: 'lambdaFunction' }),
-      ).toThrow(/segment "org" in name is "globex" but instance default is "acme"/)
+      expect(() => c.parse('globex--payments--checkout-api', { type: 'lambdaFunction' })).toThrow(
+        /segment "org" in name is "globex" but instance default is "acme"/,
+      )
     })
 
     it('passes caller-provided tags through to the static parser', () => {
