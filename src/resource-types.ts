@@ -106,6 +106,56 @@ export const RESOURCE_TYPES = {
     segments: ['org', 'domain'],
     iamService: 'cloudwatch',
   },
+  cloudwatchAlarm: {
+    // CloudWatch alarm name: org--domain--service--key (key = metric descriptor, e.g. 'error-rate')
+    global: false,
+    segmentDelimiter: '--',
+    wordDelimiter: '-',
+    iamService: 'cloudwatch',
+    consoleLabel: 'cloudwatch',
+    arn: { service: 'cloudwatch', includeRegion: true, includeAccount: true, resourcePrefix: 'alarm:' },
+    permissions: {
+      read: ['cloudwatch:Describe*', 'cloudwatch:Get*', 'cloudwatch:List*'],
+      readWrite: ['cloudwatch:Describe*', 'cloudwatch:Get*', 'cloudwatch:List*', 'cloudwatch:PutMetricAlarm', 'cloudwatch:DeleteAlarms', 'cloudwatch:SetAlarmState'],
+      manage: ['cloudwatch:*'],
+    },
+  },
+  cloudwatchCompositeAlarm: {
+    // Composite alarm that aggregates multiple alarms for a service
+    global: false,
+    segmentDelimiter: '--',
+    wordDelimiter: '-',
+    iamService: 'cloudwatch',
+    consoleLabel: 'cloudwatch',
+    arn: { service: 'cloudwatch', includeRegion: true, includeAccount: true, resourcePrefix: 'alarm:' },
+    permissions: {
+      read: ['cloudwatch:Describe*', 'cloudwatch:Get*', 'cloudwatch:List*'],
+      readWrite: ['cloudwatch:Describe*', 'cloudwatch:Get*', 'cloudwatch:List*', 'cloudwatch:PutCompositeAlarm', 'cloudwatch:DeleteAlarms'],
+      manage: ['cloudwatch:*'],
+    },
+  },
+  cloudwatchDashboard: {
+    // CloudWatch dashboard name: org--domain--service (one dashboard per service by default)
+    global: false,
+    segmentDelimiter: '--',
+    wordDelimiter: '-',
+    iamService: 'cloudwatch',
+    consoleLabel: 'cloudwatch',
+    arn: { service: 'cloudwatch', includeRegion: false, includeAccount: false, resourcePrefix: 'dashboard/' },
+    permissions: {
+      read: ['cloudwatch:GetDashboard', 'cloudwatch:ListDashboards'],
+      readWrite: ['cloudwatch:GetDashboard', 'cloudwatch:ListDashboards', 'cloudwatch:PutDashboard', 'cloudwatch:DeleteDashboards'],
+      manage: ['cloudwatch:*'],
+    },
+  },
+  cloudwatchLogMetricFilter: {
+    // Log metric filter name tied to a log group and metric name
+    global: false,
+    segmentDelimiter: '--',
+    wordDelimiter: '-',
+    iamService: 'logs',
+    // Log metric filters don't have their own ARN — they're sub-resources of a log group.
+  },
 
   // ── ECR / ECS ────────────────────────────────────────────────────────────
   ecr: {

@@ -1313,6 +1313,39 @@ export class DerropsConventions<
     return result
   }
 
+  /**
+   * Build a bundle of all CloudWatch observability resource names for this service.
+   *
+   * Returns names for the metric namespace, log group, dashboard, and — when `key`
+   * is provided — an alarm name. All names are derived from the same convention so
+   * they share a consistent identity without any manual string construction.
+   *
+   * @example
+   * const obs = c.cloudwatchResource({ key: 'error-rate' })
+   * obs.namespace   // 'acme/payments'
+   * obs.logGroup    // '/acme/payments/checkout-api'
+   * obs.dashboard   // 'acme--payments--checkout-api'
+   * obs.alarm       // 'acme--payments--checkout-api--error-rate'
+   * obs.dimensions  // [{ Name: 'Service', Value: 'checkout-api' }]
+   */
+  cloudwatchResource(options?: { key?: string }): {
+    namespace: string
+    logGroup: string
+    dashboard: string
+    alarm: string | undefined
+    dimensions: Array<{ Name: string; Value: string }>
+  } {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const n = (opts: object) => this.name(opts as any)
+    const namespace = n({ type: 'cloudwatchMetricNamespace' })
+    const logGroup = n({ type: 'cloudwatchLogsGroup' })
+    const dashboard = n({ type: 'cloudwatchDashboard' })
+    const alarm = options?.key
+      ? n({ type: 'cloudwatchAlarm', key: options.key })
+      : undefined
+    return { namespace, logGroup, dashboard, alarm, dimensions: this.dimensions() }
+  }
+
   // ── Network topology ──────────────────────────────────────────────────────
 
   /**
