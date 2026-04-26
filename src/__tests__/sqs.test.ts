@@ -92,9 +92,7 @@ describe('SQS — sqsPair()', () => {
 
   it('queue ARN is a valid SQS ARN', () => {
     const { queue } = base.sqsPair({ key: 'ingest' })
-    expect(queue.arn).toBe(
-      'arn:aws:sqs:ap-southeast-2:123456789012:slaops--platform--api--ingest',
-    )
+    expect(queue.arn).toBe('arn:aws:sqs:ap-southeast-2:123456789012:slaops--platform--api--ingest')
   })
 
   it('dlq ARN is a valid SQS ARN with --dlq suffix', () => {
@@ -112,8 +110,8 @@ describe('SQS — sqsPair()', () => {
 
   it('queue logicalId and dlq logicalId are distinct PascalCase strings', () => {
     const { queue, dlq } = base.sqsPair({ key: 'events' })
-    expect(queue.logicalId).toBe('SlaopsPlatformApiEventsSQSQueue')
-    expect(dlq.logicalId).toBe('SlaopsPlatformApiEventsDlqSQSQueue')
+    expect(queue.logicalId).toBe('PlatformApiEventsSQSQueue')
+    expect(dlq.logicalId).toBe('PlatformApiEventsDlqSQSQueue')
     expect(queue.logicalId).not.toBe(dlq.logicalId)
   })
 

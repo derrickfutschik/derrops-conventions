@@ -10,15 +10,15 @@ const base = new DerropsConventions({
 }).arnContext({ accountId: '123456789012' })
 
 describe('CDK — logicalId on Resource', () => {
-  it('type suffix is appended from localId', () => {
+  it('org is excluded — starts from domain', () => {
     expect(base.resource({ type: 'dynamoDb', key: 'orders' }).logicalId).toBe(
-      'SlaopsPlatformApiOrdersDynamoDBTable',
+      'PlatformApiOrdersDynamoDBTable',
     )
   })
 
   it('lambdaFunction gets LambdaFunction suffix', () => {
     expect(base.resource({ type: 'lambdaFunction', key: 'handler' }).logicalId).toBe(
-      'SlaopsPlatformApiHandlerLambdaFunction',
+      'PlatformApiHandlerLambdaFunction',
     )
   })
 
@@ -29,12 +29,14 @@ describe('CDK — logicalId on Resource', () => {
       service: 'order-service',
     }).arnContext({ accountId: '123456789012' })
     expect(c.resource({ type: 'lambdaFunction', key: 'handler' }).logicalId).toBe(
-      'SlaopsPlatformOrderServiceHandlerLambdaFunction',
+      'PlatformOrderServiceHandlerLambdaFunction',
     )
   })
 
-  it('omits missing segments naturally — only defined segments appear', () => {
-    const c = new DerropsConventions({ service: 'api' }).arnContext({ accountId: '123456789012' })
+  it('org-only instance — logicalId still works (no segments to omit)', () => {
+    const c = new DerropsConventions({ org: 'slaops', service: 'api' }).arnContext({
+      accountId: '123456789012',
+    })
     expect(c.resource({ type: 'lambdaFunction', key: 'handler' }).logicalId).toBe(
       'ApiHandlerLambdaFunction',
     )
@@ -42,27 +44,27 @@ describe('CDK — logicalId on Resource', () => {
 
   it('DLQ name --dlq becomes Dlq in PascalCase, followed by SQSQueue suffix', () => {
     expect(base.resource({ type: 'sqsDlq', key: 'events' }).logicalId).toBe(
-      'SlaopsPlatformApiEventsDlqSQSQueue',
+      'PlatformApiEventsDlqSQSQueue',
     )
   })
 
-  it('s3Bucket global name includes region + env, gets S3Bucket suffix', () => {
+  it('s3Bucket global name: org excluded, region + env remain (global type)', () => {
     expect(base.resource({ type: 's3Bucket', key: 'artefacts' }).logicalId).toBe(
-      'ApSoutheast2ProdSlaopsPlatformApiArtefactsS3Bucket',
+      'ApSoutheast2ProdPlatformApiArtefactsS3Bucket',
     )
   })
 
-  it('scope the instance to get a shorter logical ID', () => {
-    const scoped = base.with({ org: undefined, domain: undefined })
+  it('scope to domain only for shorter logical ID', () => {
+    const scoped = base.with({ domain: undefined })
     expect(scoped.resource({ type: 'dynamoDb', key: 'orders' }).logicalId).toBe(
       'ApiOrdersDynamoDBTable',
     )
   })
 
-  it('logicalId is stable — same resource produces same string', () => {
-    const a = base.resource({ type: 'dynamoDb', key: 'sessions' }).logicalId
-    const b = base.resource({ type: 'dynamoDb', key: 'sessions' }).logicalId
-    expect(a).toBe(b)
+  it('name still includes org — logicalId is separate from name', () => {
+    const r = base.resource({ type: 'dynamoDb', key: 'orders' })
+    expect(r.name).toContain('slaops')
+    expect(r.logicalId).not.toContain('Slaops')
   })
 
   it('different types produce different logicalIds even with the same key', () => {

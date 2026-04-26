@@ -77,9 +77,11 @@ export class ResourceImpl<T extends ResourceType> implements Resource<T> {
   readonly dns: string | undefined
   readonly console: string | undefined
   private readonly config: ResourceTypeConfig
+  private readonly logicalName: string
 
   constructor(
     name: string,
+    logicalName: string,
     arns: string[],
     type: T,
     tags: Record<string, string>,
@@ -88,6 +90,7 @@ export class ResourceImpl<T extends ResourceType> implements Resource<T> {
     consoleUrl: string | undefined,
   ) {
     this.name = name
+    this.logicalName = logicalName
     this.arn = arns[0]!
     this.arns = arns
     this.type = type
@@ -132,7 +135,7 @@ export class ResourceImpl<T extends ResourceType> implements Resource<T> {
   }
 
   get logicalId(): string {
-    const base = this.name
+    const base = this.logicalName
       .split(/[^a-zA-Z0-9]+/)
       .filter(Boolean)
       .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
