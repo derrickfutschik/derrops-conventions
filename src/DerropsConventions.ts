@@ -310,7 +310,7 @@ export class DerropsConventions<
   TType extends ResourceType | undefined = undefined,
 > {
   private readonly defaults: Segments
-  private order: SegmentKey[]
+  private order: Array<SegmentKey | string>
   private defaultType: ResourceType | undefined
   private visibleTags: TagKey[]
   private keyPrefix: string
@@ -327,6 +327,7 @@ export class DerropsConventions<
   private visibleDimensions: DimensionKey[]
   private storedConstraints: Partial<Record<SegmentKey, readonly string[]>>
   private _emitSegmentValues: boolean
+  private extraSegments: Record<string, string>
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private _dependencies: Array<{ owner: DerropsConventions<any, any>; resources: ResourceType[] }>
   /**
@@ -365,6 +366,7 @@ export class DerropsConventions<
     this.visibleDimensions = [...DEFAULT_DIMENSION_KEYS]
     this.storedConstraints = {}
     this._emitSegmentValues = false
+    this.extraSegments = {}
     this._dependencies = []
     this._children = []
   }
@@ -582,7 +584,7 @@ export class DerropsConventions<
    *
    * Chainable — returns `this`.
    */
-  segmentOrder(...segments: SegmentKey[]): this {
+  segmentOrder(...segments: Array<SegmentKey | string>): this {
     this.order = segments
     return this
   }
@@ -605,13 +607,104 @@ export class DerropsConventions<
    * svc.with({}).moveSegment('tenant', 'domain').name({ type: 's3Bucket', key: 'data' })
    * // → 'ap-southeast-2--prod--acme--t-a3f8b2--payments--checkout--data'
    */
-  moveSegment(segment: SegmentKey, before: SegmentKey): this {
+  moveSegment(segment: SegmentKey | string, before: SegmentKey | string): this {
     const order = this.order.filter((s) => s !== segment)
     const idx = order.indexOf(before)
     if (idx === -1)
       throw new Error(`moveSegment: segment "${before}" not found in current segment order`)
     order.splice(idx, 0, segment)
     this.order = order
+    return this
+  }
+
+  /**
+   * Register a custom segment key-value pair and insert it into the naming order.
+   *
+   * Custom segments extend naming beyond the standard `Segments` interface. They participate
+   * in `name()` and `s3Prefix()` but are NOT emitted by `tags()` — they are infrastructure
+   * identifiers, not ownership labels.
+   *
+   * `position` controls placement:
+   * - Omitted or `'last'` — appended after all current segments.
+   * - `'first'` — prepended before all current segments.
+   * - `{ before: anchor }` — inserted immediately before the named segment.
+   * - `{ after: anchor }` — inserted immediately after the named segment.
+   *
+   * Calling `insertSegment` twice with the same key updates the value and repositions it.
+   * Propagates through `.with()` and `.for()`.
+   *
+   * Chainable — returns `this`.
+   *
+   * @example
+   * // Cross-account S3 sync: prepend source account ID before org
+   * svcConvention
+   *   .insertSegment('accountId', sourceAccountId, { before: 'org' })
+   *   .s3Prefix({ date: new Date(), granularity: 'hour' })
+   * // → '123456789012/acme/payments/checkout-api/2024/01/15/14/'
+   *
+   * // Append a custom suffix segment
+   * convention
+   *   .insertSegment('region-code', 'apse2', { after: 'service' })
+   *   .name({ type: 'lambdaFunction', key: 'handler' })
+   * // → 'acme--payments--checkout-api--apse2--handler'
+   */
+  insertSegment(
+    key: string,
+    value: string,
+    position?: 'first' | 'last' | { before: SegmentKey | string } | { after: SegmentKey | string },
+  ): this {
+    this.extraSegments[key] = value
+    this.order = this.order.filter((s) => s !== key)
+
+    if (!position || position === 'last') {
+      this.order.push(key)
+    } else if (position === 'first') {
+      this.order.unshift(key)
+    } else if ('before' in position) {
+      const idx = this.order.indexOf(position.before)
+      if (idx === -1)
+        throw new Error(
+          `insertSegment: anchor segment "${position.before}" not found in current order`,
+        )
+      this.order.splice(idx, 0, key)
+    } else {
+      const idx = this.order.indexOf(position.after)
+      if (idx === -1)
+        throw new Error(
+          `insertSegment: anchor segment "${position.after}" not found in current order`,
+        )
+      this.order.splice(idx + 1, 0, key)
+    }
+
+    return this
+  }
+
+  /**
+   * Register a custom segment key-value pair and insert it at an absolute position in
+   * the naming order. Useful when the target index is known (e.g. `0` for always-first)
+   * without needing to name an anchor segment.
+   *
+   * `index` is optional — omit it to append at the end. When provided, it is clamped to
+   * `[0, order.length]`. Calling with the same key twice updates the value and repositions it.
+   * Propagates through `.with()` and `.for()`.
+   *
+   * Chainable — returns `this`.
+   *
+   * @example
+   * // Cross-account S3 sync: account ID always first
+   * svcConvention
+   *   .insertSegmentAt('accountId', sourceAccountId, 0)
+   *   .s3Prefix({ date: new Date(), granularity: 'hour' })
+   * // → '123456789012/acme/payments/checkout-api/2024/01/15/14/'
+   */
+  insertSegmentAt(key: string, value: string, index?: number): this {
+    this.extraSegments[key] = value
+    this.order = this.order.filter((s) => s !== key)
+    if (index === undefined) {
+      this.order.push(key)
+    } else {
+      this.order.splice(Math.max(0, Math.min(index, this.order.length)), 0, key)
+    }
     return this
   }
 
@@ -799,6 +892,7 @@ export class DerropsConventions<
       (type ?? this.defaultType) as ResourceType | undefined,
     )
     derived.order = [...this.order]
+    derived.extraSegments = { ...this.extraSegments }
     derived.visibleTags = [...this.visibleTags]
     derived.keyPrefix = this.keyPrefix
     derived.keyCasing = this.keyCasing
@@ -845,6 +939,7 @@ export class DerropsConventions<
       this.defaultType as ResourceType | undefined,
     )
     derived.order = [...this.order]
+    derived.extraSegments = { ...this.extraSegments }
     derived.visibleTags = [...this.visibleTags]
     derived.keyPrefix = this.keyPrefix
     derived.keyCasing = this.keyCasing
@@ -1256,7 +1351,7 @@ export class DerropsConventions<
     // for this resource type, joined by that type's delimiter. Lets libraries reverse-engineer
     // which position in the name corresponds to which segment.
     const resolvedType = typeOverride ?? this.defaultType
-    let activeSegmentOrder: SegmentKey[]
+    let activeSegmentOrder: Array<SegmentKey | string>
     let segmentDelimiter: string
     if (resolvedType) {
       const config: ResourceTypeConfig = RESOURCE_TYPES[resolvedType]
@@ -1271,7 +1366,7 @@ export class DerropsConventions<
     }
     const segmentPattern = activeSegmentOrder
       .filter((key) => {
-        const v = merged[key]
+        const v = (merged as Record<string, string | undefined>)[key] ?? this.extraSegments[key]
         return v !== undefined && v.length > 0
       })
       .join(segmentDelimiter)
@@ -1282,10 +1377,13 @@ export class DerropsConventions<
     if (this._emitSegmentValues) {
       const segmentValues = activeSegmentOrder
         .filter((key) => {
-          const v = merged[key]
+          const v = (merged as Record<string, string | undefined>)[key] ?? this.extraSegments[key]
           return v !== undefined && v.length > 0
         })
-        .map((key) => `${key}=${merged[key]}`)
+        .map((key) => {
+          const v = (merged as Record<string, string | undefined>)[key] ?? this.extraSegments[key]
+          return `${key}=${v}`
+        })
         .join(',')
       if (segmentValues) {
         result[this.keyPrefix + applyTagKeyCasing('segment-values', this.keyCasing)] = segmentValues
@@ -2676,7 +2774,7 @@ export class DerropsConventions<
 
     if (!activeOrder.includes('apex')) {
       return activeOrder
-        .map((key) => merged[key])
+        .map((key) => (merged as Record<string, string | undefined>)[key] ?? this.extraSegments[key])
         .filter((v): v is string => v !== undefined && v.length > 0)
         .map((v) => this.normalize(v, config.wordDelimiter))
     }
@@ -2694,14 +2792,14 @@ export class DerropsConventions<
     }
 
     return activeOrder
-      .map((key) => effective[key])
+      .map((key) => (effective as Record<string, string | undefined>)[key] ?? this.extraSegments[key])
       .filter((v): v is string => v !== undefined && v.length > 0)
       .map((v) => this.normalize(v, config.wordDelimiter))
   }
 
-  private effectiveOrder(config: ResourceTypeConfig): SegmentKey[] {
+  private effectiveOrder(config: ResourceTypeConfig): Array<SegmentKey | string> {
     if (config.global) return this.order
-    return this.order.filter((s) => !GLOBAL_ONLY_SEGMENTS.includes(s))
+    return this.order.filter((s) => !(GLOBAL_ONLY_SEGMENTS as string[]).includes(s))
   }
 
   private normalize(value: string, wordDelimiter: string): string {
