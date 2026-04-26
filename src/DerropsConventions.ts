@@ -25,6 +25,8 @@ import { buildConsoleUrl } from './console.js'
 import { buildNetworkTopology, buildCapacityReport } from './topology.js'
 import type { OrgNetworkTopology } from './topology.js'
 import type { TopologyOptions, TopologyCapacityReport } from './topology-types.js'
+import { renderMermaid } from './mermaid.js'
+import type { MermaidOptions } from './mermaid.js'
 
 /**
  * Options passed to `name()`.
@@ -325,6 +327,13 @@ export class DerropsConventions<
   private _emitSegmentValues: boolean
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private _dependencies: Array<{ owner: DerropsConventions<any, any>; resources: ResourceType[] }>
+  /**
+   * Derivatives created via `.with()`. Mutated only by `.with()` for the sole purpose of
+   * letting `toMermaid()` walk the hierarchy. Never read by naming, tag, or policy logic.
+   * Not propagated through `.with()` — each instance owns its own children list.
+   */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  private _children: DerropsConventions<any, any>[] = []
 
 
   constructor(
@@ -355,6 +364,7 @@ export class DerropsConventions<
     this.storedConstraints = {}
     this._emitSegmentValues = false
     this._dependencies = []
+    this._children = []
   }
 
   // ── Segment constraint helpers ────────────────────────────────────────────
@@ -802,6 +812,9 @@ export class DerropsConventions<
     derived.visibleDimensions = [...this.visibleDimensions]
     derived.storedConstraints = { ...this.storedConstraints }
     derived._emitSegmentValues = this._emitSegmentValues
+    // Register the derivative on this instance so toMermaid() can walk the hierarchy.
+    // _children is intentionally NOT copied from `this` — each instance owns its own list.
+    this._children.push(derived)
     return derived as unknown as DerropsConventions<C, T extends ResourceType ? T : TType>
   }
 
@@ -847,6 +860,47 @@ export class DerropsConventions<
     derived._emitSegmentValues = this._emitSegmentValues
     // Not registered in _children — a projection is not a hierarchy node.
     return derived as unknown as DerropsConventions<C, TType>
+  }
+
+  // ── Hierarchy introspection ───────────────────────────────────────────────
+
+  /**
+   * Read-only view of derivatives created via `.with()` on this instance.
+   * Intended for visualisation (`toMermaid()`) and debugging.
+   */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  children(): readonly DerropsConventions<any, any>[] {
+    return this._children
+  }
+
+  /** The raw segment defaults stored on this instance. Used by `toMermaid()`. */
+  segments(): Readonly<Segments> {
+    return this.defaults
+  }
+
+  /** The default resource type set via `.with({ type })`, if any. */
+  defaultResourceType(): ResourceType | undefined {
+    return this.defaultType
+  }
+
+  /** The stored ARN context set via `.arnContext()`, if any. */
+  arnContextValue(): { accountId: string; partition?: string } | undefined {
+    return this.storedArnContext
+  }
+
+  /**
+   * Render this instance and every descendant created via `.with()` as a Mermaid
+   * `flowchart`, with each segment tier expressed as a nested `subgraph`.
+   *
+   * @example
+   * const org = new DerropsConventions({ org: 'slaops' })
+   * const platform = org.with({ domain: 'platform' })
+   * platform.with({ service: 'vpc' })
+   * console.log(org.toMermaid())
+   */
+  toMermaid(options?: MermaidOptions): string {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return renderMermaid(this as unknown as DerropsConventions<any, any>, options)
   }
 
   /**

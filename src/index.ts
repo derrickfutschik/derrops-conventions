@@ -17,6 +17,8 @@ export type {
 } from './topology-types.js'
 export { buildConsoleUrl } from './console.js'
 export type { ConsoleUrlContext } from './console.js'
+export { renderMermaid } from './mermaid.js'
+export type { MermaidOptions } from './mermaid.js'
 export type {
   NameOptions,
   TagOptions,
