@@ -323,6 +323,9 @@ export class DerropsConventions<
   private visibleDimensions: DimensionKey[]
   private storedConstraints: Partial<Record<SegmentKey, readonly string[]>>
   private _emitSegmentValues: boolean
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  private _dependencies: Array<{ owner: DerropsConventions<any, any>; resources: ResourceType[] }>
+
 
   constructor(
     defaults: ConstrainedSegments<C> = {} as ConstrainedSegments<C>,
@@ -351,6 +354,7 @@ export class DerropsConventions<
     this.visibleDimensions = [...DEFAULT_DIMENSION_KEYS]
     this.storedConstraints = {}
     this._emitSegmentValues = false
+    this._dependencies = []
   }
 
   // ── Segment constraint helpers ────────────────────────────────────────────
@@ -1814,6 +1818,96 @@ export class DerropsConventions<
    */
   policyBuilder(): PolicyBuilder {
     return new PolicyBuilder()
+  }
+
+  // ── Dependency modelling ──────────────────────────────────────────────────
+
+  /**
+   * Declare that this service depends on specific resource types owned by another convention.
+   *
+   * Use `policyFor()` on the owner to generate the IAM policy that grants this caller
+   * access to those resources.
+   *
+   * Chainable — returns `this`.
+   *
+   * @example
+   * const api = new DerropsConventions({ org: 'acme', domain: 'payments', service: 'api' })
+   * const db  = new DerropsConventions({ org: 'acme', domain: 'payments', service: 'db' })
+   *
+   * api.dependsOn(db, ['dynamoDb', 's3Bucket'])
+   * db.policyFor(api)  // → IAM policy granting api read/write on db's DynamoDB + S3 resources
+   */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  dependsOn(owner: DerropsConventions<any, any>, resources: ResourceType[]): this {
+    this._dependencies.push({ owner, resources })
+    return this
+  }
+
+  /**
+   * Returns the dependency graph rooted at this instance.
+   *
+   * Performs a breadth-first traversal following `dependsOn()` declarations.
+   * Circular dependencies are detected and not re-visited.
+   */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  dependencies(): { nodes: DerropsConventions<any, any>[]; edges: Array<{ from: DerropsConventions<any, any>; owner: DerropsConventions<any, any>; resources: ResourceType[] }> } {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const visited = new Set<DerropsConventions<any, any>>()
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const queue: DerropsConventions<any, any>[] = [this]
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const nodes: DerropsConventions<any, any>[] = []
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const edges: Array<{ from: DerropsConventions<any, any>; owner: DerropsConventions<any, any>; resources: ResourceType[] }> = []
+
+    while (queue.length > 0) {
+      const node = queue.shift()!
+      if (visited.has(node)) continue
+      visited.add(node)
+      nodes.push(node)
+      for (const dep of node._dependencies) {
+        edges.push({ from: node, owner: dep.owner, resources: dep.resources })
+        if (!visited.has(dep.owner)) queue.push(dep.owner)
+      }
+    }
+
+    return { nodes, edges }
+  }
+
+  /**
+   * Generate an IAM policy that grants `caller` access to the resources it declared
+   * it depends on via `caller.dependsOn(this, resourceTypes)`.
+   *
+   * Requires `.arnContext({ accountId })` to be set on this instance.
+   *
+   * @example
+   * const db = new DerropsConventions({ org: 'acme', domain: 'payments', service: 'db' })
+   *   .arnContext({ accountId: '123456789012', region: 'ap-southeast-2' })
+   * const api = new DerropsConventions({ ... })
+   * api.dependsOn(db, ['dynamoDb'])
+   *
+   * db.policyFor(api)
+   * // → IAM policy: { Statement: [{ Effect: 'Allow', Action: ['dynamodb:Get*', ...], Resource: [...] }] }
+   */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  policyFor(caller: DerropsConventions<any, any>): import('./policy/PolicyBuilder.js').PolicyBuilder {
+    const callerDeps = caller._dependencies.filter((d) => d.owner === this)
+    const builder = new PolicyBuilder()
+
+    for (const dep of callerDeps) {
+      for (const type of dep.resources) {
+        const config = RESOURCE_TYPES[type]
+        if (!(config as ResourceTypeConfig | undefined)?.arn || !(config as ResourceTypeConfig | undefined)?.permissions) continue
+        try {
+          const resource = this.resource({ type } as NameOptions<C, TType>)
+          builder.allow(resource.read())
+        } catch {
+          // Skip resource types that cannot be resolved (missing required segments)
+        }
+      }
+    }
+
+    return builder
   }
 
   // ── Validation ────────────────────────────────────────────────────────────

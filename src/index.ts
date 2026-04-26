@@ -37,6 +37,8 @@ export type {
   CostExplorerFilter,
   ValidationResult,
   LintReport,
+  DependencyEdge,
+  DependencyGraph,
   ResourceTypeConfig,
   SegmentConstraints,
   ConstrainedSegments,

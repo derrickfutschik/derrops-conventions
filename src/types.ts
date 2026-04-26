@@ -64,6 +64,25 @@ export interface Segments {
 /** Segments extracted by parsing a resource name back through the convention. */
 export type ParsedSegments = Partial<Record<SegmentKey, string>>
 
+/**
+ * A declared dependency from one convention's service to specific resource types
+ * owned by another convention.
+ */
+export interface DependencyEdge {
+  /** The convention that owns the resources being depended on. */
+  owner: unknown // typed as unknown to avoid circular import; cast to DerropsConventions at use-site
+  /** The resource types the caller depends on from the owner. */
+  resources: import('./resource-types.js').ResourceType[]
+}
+
+/** Dependency graph rooted at a convention instance. */
+export interface DependencyGraph {
+  /** All convention instances reachable (including the root). */
+  nodes: unknown[]
+  /** Directed edges: `from` depends on `to.owner` for `to.resources`. */
+  edges: Array<{ from: unknown; to: DependencyEdge }>
+}
+
 /** Result of validating a single resource name against a convention. */
 export interface ValidationResult {
   /** Whether the name fully matches the convention (parses cleanly and all known segments agree). */
