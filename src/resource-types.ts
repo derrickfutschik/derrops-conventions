@@ -1012,6 +1012,38 @@ export const RESOURCE_TYPES = {
     },
   },
 
+  // ── Service Discovery (AWS Cloud Map) ────────────────────────────────────
+  cloudMapNamespace: {
+    // Cloud Map namespace — domain-level, e.g. 'payments.acme.local'
+    // Format: domain.org.local (dot-delimited, reversed from DNS convention)
+    global: false,
+    segmentDelimiter: '.',
+    wordDelimiter: '-',
+    segments: ['domain', 'org'],
+    suffix: '.local',
+    iamService: 'servicediscovery',
+    arn: { service: 'servicediscovery', includeRegion: true, includeAccount: true, resourcePrefix: 'namespace/' },
+    permissions: {
+      read: ['servicediscovery:Get*', 'servicediscovery:List*', 'servicediscovery:Discover*'],
+      readWrite: ['servicediscovery:Get*', 'servicediscovery:List*', 'servicediscovery:Discover*', 'servicediscovery:RegisterInstance', 'servicediscovery:DeregisterInstance'],
+      manage: ['servicediscovery:*'],
+    },
+  },
+  cloudMapService: {
+    // Cloud Map service — service segment only (discovery name within a namespace)
+    global: false,
+    segmentDelimiter: '-',
+    wordDelimiter: '-',
+    segments: ['service'],
+    iamService: 'servicediscovery',
+    arn: { service: 'servicediscovery', includeRegion: true, includeAccount: true, resourcePrefix: 'service/' },
+    permissions: {
+      read: ['servicediscovery:Get*', 'servicediscovery:List*', 'servicediscovery:Discover*'],
+      readWrite: ['servicediscovery:Get*', 'servicediscovery:List*', 'servicediscovery:Discover*', 'servicediscovery:RegisterInstance', 'servicediscovery:DeregisterInstance'],
+      manage: ['servicediscovery:*'],
+    },
+  },
+
   // ── Caching / Search ─────────────────────────────────────────────────────
   elastiCacheCluster: {
     global: false,

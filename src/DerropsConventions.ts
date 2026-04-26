@@ -1439,6 +1439,31 @@ export class DerropsConventions<
     }
   }
 
+  // ── Cloud Map ─────────────────────────────────────────────────────────────
+
+  /**
+   * Build the AWS Cloud Map namespace and service names for this convention.
+   *
+   * Namespace maps to the domain-level (`payments.acme.local`).
+   * Service maps to the service-level (`checkout-api`).
+   * FQDN is the fully-qualified discovery address: `service.namespace`.
+   *
+   * @example
+   * c.cloudMapResource()
+   * // → {
+   * //   namespace: 'payments.acme.local',
+   * //   service:   'checkout-api',
+   * //   fqdn:      'checkout-api.payments.acme.local',
+   * // }
+   */
+  cloudMapResource(): { namespace: string; service: string; fqdn: string } {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const n = (opts: object) => this.name(opts as any)
+    const namespace = n({ type: 'cloudMapNamespace' })
+    const service = n({ type: 'cloudMapService' })
+    return { namespace, service, fqdn: `${service}.${namespace}` }
+  }
+
   // ── Cost allocation ───────────────────────────────────────────────────────
 
   /**
