@@ -8,7 +8,7 @@ export type {
   GrantDescriptor,
   IamCondition,
 } from './types.js'
-export type { Resource } from './Resource.js'
+export type { Resource, SqsPair } from './Resource.js'
 export {
   PolicyBuilder,
   rawGrant,

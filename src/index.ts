@@ -71,4 +71,5 @@ export type {
   GrantDescriptor,
   IamCondition,
   Resource,
+  SqsPair,
 } from './policy/index.js'

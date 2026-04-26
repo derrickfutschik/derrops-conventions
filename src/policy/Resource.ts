@@ -22,6 +22,23 @@ export interface Resource<T extends ResourceType = ResourceType> {
   readonly type: T
   /** AWS resource tags from the convention's segment defaults. */
   readonly tags: Record<string, string>
+  /**
+   * PascalCase CDK construct ID derived from the resource name.
+   *
+   * Converts the `--`-delimited name to PascalCase by splitting on any run of
+   * non-alphanumeric characters and capitalising the first letter of each word.
+   * Suitable for use as a CDK construct ID or CloudFormation logical resource ID.
+   *
+   * @example
+   * resource({ type: 'dynamoDb', key: 'orders' }).logicalId
+   * // 'SlaopsPlatformApiOrders'
+   *
+   * // Scope the convention instance for shorter IDs:
+   * svcConvention.with({ org: undefined, domain: undefined })
+   *   .resource({ type: 'dynamoDb', key: 'orders' }).logicalId
+   * // 'ApiOrders'
+   */
+  readonly logicalId: string
 
   /**
    * The FQDN this resource would be addressable at in DNS, if `apex` is configured on the
@@ -113,4 +130,31 @@ export class ResourceImpl<T extends ResourceType> implements Resource<T> {
     }
     return { arns: this.arns, actions }
   }
+
+  get logicalId(): string {
+    return this.name
+      .split(/[^a-zA-Z0-9]+/)
+      .filter(Boolean)
+      .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+      .join('')
+  }
+}
+
+/**
+ * A paired SQS queue and dead-letter queue returned by `DerropsConventions.sqsPair()`.
+ *
+ * Both resources share the same naming segments; the DLQ name is the queue name + `--dlq`.
+ * Use `queue` and `dlq` as full `Resource` objects for IAM policy generation, CDK construct IDs,
+ * and ARN references. `redrivePolicyArn` is a convenience alias for `dlq.arn`.
+ */
+export interface SqsPair {
+  /** The main SQS queue resource. */
+  readonly queue: Resource
+  /** The dead-letter queue resource — name is queue name + `--dlq`. */
+  readonly dlq: Resource
+  /**
+   * ARN of the DLQ — convenience alias for `dlq.arn`.
+   * Pass directly to CDK `redrivePolicy` or CloudFormation `RedrivePolicy`.
+   */
+  readonly redrivePolicyArn: string
 }

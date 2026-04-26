@@ -20,7 +20,7 @@ import { StaticPolicyBuilder } from './policy/StaticPolicyBuilder.js'
 import { DynamicPolicySession } from './policy/DynamicPolicySession.js'
 import { PolicyBuilder } from './policy/PolicyBuilder.js'
 import { ResourceImpl } from './policy/Resource.js'
-import type { Resource } from './policy/Resource.js'
+import type { Resource, SqsPair } from './policy/Resource.js'
 import { buildPolicyArns } from './policy/arn.js'
 import type { ArnContext } from './policy/types.js'
 import { buildConsoleUrl } from './console.js'
@@ -2048,6 +2048,123 @@ export class DerropsConventions<
       .filter((v): v is string => v !== undefined && v.length > 0)
     parts.push(exportKey.toLowerCase().replace(/\s+/g, '-'))
     return parts.join('--')
+  }
+
+  // ── EventBridge ───────────────────────────────────────────────────────────
+
+  /**
+   * Generate the EventBridge event `source` string for this convention.
+   *
+   * Emits a dot-delimited hierarchy from `org.domain.service`. Use the `level` option to
+   * truncate the depth for prefix-match routing patterns in EventBridge rules.
+   *
+   * @example
+   * svc.eventSource()                    // 'slaops.platform.api'
+   * svc.eventSource({ level: 'domain' }) // 'slaops.platform'  ← matches all platform services
+   * svc.eventSource({ level: 'org' })    // 'slaops'           ← matches all slaops events
+   *
+   * // Rule matching all platform-domain events:
+   * { source: [{ prefix: svc.eventSource({ level: 'domain' }) }] }
+   */
+  eventSource(options?: { level?: 'org' | 'domain' | 'service' }): string {
+    const { org, domain, service } = this.defaults
+    const parts = [org, domain, service].filter((v): v is string => v !== undefined && v.length > 0)
+    const depth = options?.level === 'org' ? 1 : options?.level === 'domain' ? 2 : parts.length
+    return parts.slice(0, depth).join('.')
+  }
+
+  /**
+   * Normalise an event action name to PascalCase for use as an EventBridge `detail-type`.
+   *
+   * @example
+   * svc.detailType('request-logged')  // 'RequestLogged'
+   * svc.detailType('RequestLogged')   // 'RequestLogged'
+   * svc.detailType('user signed in')  // 'UserSignedIn'
+   */
+  detailType(action: string): string {
+    return action
+      .split(/[^a-zA-Z0-9]+/)
+      .filter(Boolean)
+      .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+      .join('')
+  }
+
+  // ── ECR ──────────────────────────────────────────────────────────────────
+
+  /**
+   * Generate a `--`-delimited image tag from the `env`, `version`, and `key` segments.
+   * Segments that are not set on this instance are omitted.
+   *
+   * The `key` segment is the natural holder for a git SHA or build ID.
+   *
+   * @example
+   * c.with({ env: 'prod' }).imageTag()                             // 'prod'
+   * c.with({ env: 'prod', version: 'v1.2.3' }).imageTag()         // 'prod--v1.2.3'
+   * c.with({ env: 'prod', version: 'v1.2.3', key: 'abc123f' }).imageTag()
+   * // 'prod--v1.2.3--abc123f'
+   */
+  imageTag(): string {
+    const { env, version, key } = this.defaults
+    return [env, version, key]
+      .filter((v): v is string => v !== undefined && v.length > 0)
+      .join('--')
+  }
+
+  /**
+   * Generate the full ECR image URI: `{accountId}.dkr.ecr.{region}.amazonaws.com/{repo}[:{tag}]`.
+   *
+   * Repository path uses the `ecr` resource type (`/`-delimited `org/domain/service`).
+   * Image tag is produced by `.imageTag()` — omitted from the URI when no tag segments are set.
+   *
+   * Requires `.arnContext({ accountId })` and a `region` segment default.
+   *
+   * @example
+   * c.arnContext({ accountId: '123456789012' })
+   *  .with({ env: 'prod', version: 'v1.2.3', key: 'abc123f' })
+   *  .ecrUri()
+   * // '123456789012.dkr.ecr.ap-southeast-2.amazonaws.com/slaops/platform/api:prod--v1.2.3--abc123f'
+   */
+  ecrUri(): string {
+    const ctx = this.arnContextValue()
+    const accountId = ctx?.accountId
+    const region = this.defaults.region
+    if (!accountId) {
+      throw new Error('ecrUri() requires accountId — set it via .arnContext({ accountId })')
+    }
+    if (!region) {
+      throw new Error(
+        'ecrUri() requires region — set it as a segment default via .with({ region }) or in the constructor',
+      )
+    }
+    // Repo path is org/domain/service only — version/key are tag segments, not path segments.
+    const { org, domain, service } = this.defaults
+    const repo = [org, domain, service]
+      .filter((v): v is string => v !== undefined && v.length > 0)
+      .join('/')
+    const tag = this.imageTag()
+    const registry = `${accountId}.dkr.ecr.${region}.amazonaws.com`
+    return tag ? `${registry}/${repo}:${tag}` : `${registry}/${repo}`
+  }
+
+  // ── SQS ──────────────────────────────────────────────────────────────────
+
+  /**
+   * Generate a paired SQS queue + dead-letter queue as a single bundle.
+   *
+   * Both resources share the same naming segments; the DLQ name is the queue name + `--dlq`.
+   * Returns full `Resource` objects — use `.arn`, `.logicalId`, `.read()`, `.write()` directly
+   * on each. `redrivePolicyArn` is a convenience alias for `dlq.arn`.
+   *
+   * @example
+   * const { queue, dlq, redrivePolicyArn } = svc.sqsPair({ key: 'ingest' })
+   * // queue.name → 'slaops--platform--api--ingest'
+   * // dlq.name   → 'slaops--platform--api--ingest--dlq'
+   * // redrivePolicyArn === dlq.arn
+   */
+  sqsPair(options: Segments): SqsPair {
+    const queue = this.resource({ ...options, type: 'sqsQueue' } as Parameters<typeof this.resource>[0])
+    const dlq = this.resource({ ...options, type: 'sqsDlq' } as Parameters<typeof this.resource>[0])
+    return { queue, dlq, redrivePolicyArn: dlq.arn }
   }
 
   // ── Dependency modelling ──────────────────────────────────────────────────

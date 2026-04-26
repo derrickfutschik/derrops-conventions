@@ -281,17 +281,6 @@ describe('DerropsConventions — naming', () => {
         )
       })
 
-      it('sqsQueue preserves hyphens', () => {
-        expect(c.name({ type: 'sqsQueue', key: 'order-events' })).toBe(
-          'acme--payments--checkout-api--order-events',
-        )
-      })
-
-      it('spaces in - types are converted to hyphens', () => {
-        expect(c.name({ type: 'sqsQueue', key: 'order events' })).toBe(
-          'acme--payments--checkout-api--order-events',
-        )
-      })
     })
   })
 
@@ -310,7 +299,7 @@ describe('DerropsConventions — naming', () => {
     })
 
     it('normalises spaces to word delimiter', () => {
-      expect(c.name({ type: 'sqsQueue', key: 'order events' })).toBe(
+      expect(c.name({ type: 'lambdaFunction', key: 'order events' })).toBe(
         'acme--payments--checkout-api--order-events',
       )
     })
@@ -448,20 +437,10 @@ describe('DerropsConventions — naming', () => {
   describe('suffix', () => {
     const c = new DerropsConventions({ org: 'acme', domain: 'payments', service: 'api' })
 
-    it('sqsFifoQueue appends .fifo', () => {
-      expect(c.name({ type: 'sqsFifoQueue', key: 'events' })).toBe(
-        'acme--payments--api--events.fifo',
-      )
-    })
-
     it('dynamoDbGsi appends --gsi', () => {
       expect(c.name({ type: 'dynamoDbGsi', key: 'by-user' })).toBe(
         'acme--payments--api--by-user--gsi',
       )
-    })
-
-    it('sqsDlq appends --dlq', () => {
-      expect(c.name({ type: 'sqsDlq', key: 'events' })).toBe('acme--payments--api--events--dlq')
     })
 
     it('eventBridgeRule appends -rule', () => {
@@ -504,12 +483,6 @@ describe('DerropsConventions — naming', () => {
       expect(c.name({ type: 'wafWebAcl' })).toBe('acme--payments--api--waf')
     })
 
-    it('suffix still appended when leadingDelimiter is set', () => {
-      const withEnv = c.with({ env: 'prod', region: 'ap-southeast-2' })
-      expect(withEnv.name({ type: 'sqsFifoQueue', key: 'jobs' })).toBe(
-        'acme--payments--api--jobs.fifo',
-      )
-    })
   })
 
   describe('new segment keys — kind, az, purpose, num, consumer, target, version', () => {

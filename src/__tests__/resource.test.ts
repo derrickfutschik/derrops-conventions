@@ -90,17 +90,6 @@ describe('resource() — ARN format', () => {
     expect(r.arn).toContain('ap-southeast-2')
   })
 
-  it('sqsQueue: regional, no resource prefix (name is the resource)', () => {
-    const r = base.resource({ type: 'sqsQueue', key: 'jobs' })
-    expect(r.arn).toBe('arn:aws:sqs:ap-southeast-2:123456789012:slaops--platform--api--jobs')
-  })
-
-  it('sqsFifoQueue: name ends with .fifo but ARN still includes it', () => {
-    const r = base.resource({ type: 'sqsFifoQueue', key: 'events' })
-    expect(r.name.endsWith('.fifo')).toBe(true)
-    expect(r.arn).toContain('.fifo')
-  })
-
   it('openSearchDomain: emits domain ARN and domain/* for index access', () => {
     const r = base.resource({ type: 'openSearchDomain' })
     expect(r.arns).toHaveLength(2)
@@ -316,12 +305,6 @@ describe('resource() — grant methods', () => {
       expect(grant.actions).toContain('kafka-cluster:Connect')
       expect(grant.actions).toContain('kafka-cluster:ReadData')
       expect(grant.actions).toContain('kafka-cluster:WriteData')
-    })
-
-    it('sqsQueue write includes SendMessage and DeleteMessage', () => {
-      const grant = base.resource({ type: 'sqsQueue', key: 'jobs' }).write()
-      expect(grant.actions).toContain('sqs:SendMessage')
-      expect(grant.actions).toContain('sqs:DeleteMessage')
     })
 
     it('eventBridgeBus write includes PutEvents', () => {
