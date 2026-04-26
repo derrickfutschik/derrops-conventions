@@ -64,6 +64,29 @@ export interface Segments {
 /** Segments extracted by parsing a resource name back through the convention. */
 export type ParsedSegments = Partial<Record<SegmentKey, string>>
 
+/** A single resource entry in a tenant provisioning manifest. */
+export interface TenantResource {
+  type: import('./resource-types.js').ResourceType
+  name: string
+  arn: string | undefined
+  tags: Record<string, string>
+}
+
+/** Diff between two tenant manifests — useful for provisioning / deprovisioning. */
+export interface TenantManifestDiff {
+  added: TenantResource[]
+  removed: TenantResource[]
+  unchanged: TenantResource[]
+}
+
+/** Full set of resources that should be provisioned for a single tenant. */
+export interface TenantManifest {
+  tenantId: string
+  resources: TenantResource[]
+  /** Compare against an existing manifest to compute the delta. */
+  diff(existing: TenantManifest): TenantManifestDiff
+}
+
 /**
  * A declared dependency from one convention's service to specific resource types
  * owned by another convention.

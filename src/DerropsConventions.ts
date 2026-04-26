@@ -11,6 +11,8 @@ import type {
   CostExplorerFilter,
   ValidationResult,
   LintReport,
+  TenantManifest,
+  TenantResource,
 } from './types.js'
 import { RESOURCE_TYPES } from './resource-types.js'
 import type { ResourceType } from './resource-types.js'
@@ -1872,6 +1874,61 @@ export class DerropsConventions<
    */
   policyBuilder(): PolicyBuilder {
     return new PolicyBuilder()
+  }
+
+  // ── Tenant provisioning ───────────────────────────────────────────────────
+
+  /**
+   * Generate the full set of resource names and ARNs that should be provisioned for a tenant.
+   *
+   * The tenant ID is injected as the `tenant` segment for every resource type listed.
+   * Resource types without `arn` config (naming-only types) still appear in the manifest
+   * but with `arn: undefined`.
+   *
+   * The returned manifest's `diff(existing)` method computes added / removed / unchanged
+   * resources between two manifest snapshots.
+   *
+   * @example
+   * const manifest = c.tenantManifest('t-xyz', ['dynamoDb', 's3Bucket', 'sqsQueue'])
+   * // manifest.resources → [{ type: 'dynamoDb', name: '...', arn: '...', tags: {...} }, ...]
+   * manifest.diff(previousManifest)
+   * // → { added: [], removed: [], unchanged: [...] }
+   */
+  tenantManifest(tenantId: string, resourceTypes: ResourceType[]): TenantManifest {
+    const tenanted = this.for({ tenant: tenantId })
+    const resources: TenantResource[] = resourceTypes.map((type) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const name = tenanted.name({ type } as any)
+      let arn: string | undefined
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        arn = tenanted.resource({ type } as any).arn
+      } catch {
+        arn = undefined
+      }
+      const tags = tenanted.tags()
+      return { type, name, arn, tags }
+    })
+
+    return {
+      tenantId,
+      resources,
+      diff(existing: TenantManifest) {
+        const existingByType = new Map(existing.resources.map((r) => [r.type, r]))
+        const currentByType = new Map(resources.map((r) => [r.type, r]))
+        const added: TenantResource[] = []
+        const removed: TenantResource[] = []
+        const unchanged: TenantResource[] = []
+        for (const r of resources) {
+          if (!existingByType.has(r.type)) added.push(r)
+          else unchanged.push(r)
+        }
+        for (const r of existing.resources) {
+          if (!currentByType.has(r.type)) removed.push(r)
+        }
+        return { added, removed, unchanged }
+      },
+    }
   }
 
   // ── CloudFormation ────────────────────────────────────────────────────────
