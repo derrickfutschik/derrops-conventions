@@ -132,11 +132,12 @@ export class ResourceImpl<T extends ResourceType> implements Resource<T> {
   }
 
   get logicalId(): string {
-    return this.name
+    const base = this.name
       .split(/[^a-zA-Z0-9]+/)
       .filter(Boolean)
       .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
       .join('')
+    return this.config.localId ? `${base}${this.config.localId}` : base
   }
 }
 

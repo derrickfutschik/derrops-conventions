@@ -317,4 +317,11 @@ export interface ResourceTypeConfig {
    * Set on types that have `arn` defined; omit for naming helpers and sub-resources.
    */
   consoleLabel?: string
+  /**
+   * CDK logical ID suffix identifying the AWS resource type.
+   * Appended to the PascalCase name to form the full `logicalId` on `Resource`.
+   * e.g. `'DynamoDBTable'`, `'LambdaFunction'`, `'S3Bucket'`.
+   * Set on types that have `arn` defined; omit for naming-only helpers.
+   */
+  localId?: string
 }

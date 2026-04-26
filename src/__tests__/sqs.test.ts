@@ -112,8 +112,8 @@ describe('SQS — sqsPair()', () => {
 
   it('queue logicalId and dlq logicalId are distinct PascalCase strings', () => {
     const { queue, dlq } = base.sqsPair({ key: 'events' })
-    expect(queue.logicalId).toBe('SlaopsPlatformApiEvents')
-    expect(dlq.logicalId).toBe('SlaopsPlatformApiEventsDlq')
+    expect(queue.logicalId).toBe('SlaopsPlatformApiEventsSQSQueue')
+    expect(dlq.logicalId).toBe('SlaopsPlatformApiEventsDlqSQSQueue')
     expect(queue.logicalId).not.toBe(dlq.logicalId)
   })
 
