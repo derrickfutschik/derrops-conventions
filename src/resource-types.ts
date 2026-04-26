@@ -243,6 +243,95 @@ export const RESOURCE_TYPES = {
     },
   },
 
+  // ── EKS / Kubernetes ─────────────────────────────────────────────────────
+  eksCluster: {
+    global: false,
+    segmentDelimiter: '--',
+    wordDelimiter: '-',
+    iamService: 'eks',
+    consoleLabel: 'eks',
+    arn: { service: 'eks', includeRegion: true, includeAccount: true, resourcePrefix: 'cluster/' },
+    permissions: {
+      read: ['eks:Describe*', 'eks:List*', 'eks:AccessKubernetesApi'],
+      readWrite: ['eks:Describe*', 'eks:List*', 'eks:AccessKubernetesApi', 'eks:UpdateClusterConfig', 'eks:UpdateClusterVersion'],
+      manage: ['eks:*'],
+    },
+  },
+  eksNodeGroup: {
+    // Managed node group: org--domain--service--purpose
+    global: false,
+    segmentDelimiter: '--',
+    wordDelimiter: '-',
+    iamService: 'eks',
+    arn: { service: 'eks', includeRegion: true, includeAccount: true, resourcePrefix: 'nodegroup/' },
+    permissions: {
+      read: ['eks:Describe*', 'eks:List*'],
+      readWrite: ['eks:Describe*', 'eks:List*', 'eks:UpdateNodegroupConfig', 'eks:UpdateNodegroupVersion'],
+      manage: ['eks:*'],
+    },
+  },
+  eksFargateProfile: {
+    // Fargate profile: org--domain--service--purpose
+    global: false,
+    segmentDelimiter: '--',
+    wordDelimiter: '-',
+    iamService: 'eks',
+    arn: { service: 'eks', includeRegion: true, includeAccount: true, resourcePrefix: 'fargateprofile/' },
+    permissions: {
+      read: ['eks:Describe*', 'eks:List*'],
+      readWrite: ['eks:Describe*', 'eks:List*', 'eks:CreateFargateProfile', 'eks:DeleteFargateProfile'],
+      manage: ['eks:*'],
+    },
+  },
+  eksAddon: {
+    // EKS add-on (e.g. vpc-cni, coredns): org--domain--service--key
+    global: false,
+    segmentDelimiter: '--',
+    wordDelimiter: '-',
+    iamService: 'eks',
+    arn: { service: 'eks', includeRegion: true, includeAccount: true, resourcePrefix: 'addon/' },
+    permissions: {
+      read: ['eks:Describe*', 'eks:List*'],
+      readWrite: ['eks:Describe*', 'eks:List*', 'eks:CreateAddon', 'eks:DeleteAddon', 'eks:UpdateAddon'],
+      manage: ['eks:*'],
+    },
+  },
+  k8sNamespace: {
+    // Kubernetes namespace — maps to the domain segment (DNS-label safe: lowercase + hyphens, max 63 chars)
+    global: false,
+    segmentDelimiter: '-',
+    wordDelimiter: '-',
+    segments: ['domain'],
+  },
+  k8sDeployment: {
+    // Kubernetes Deployment name — maps to service segment
+    global: false,
+    segmentDelimiter: '-',
+    wordDelimiter: '-',
+    segments: ['service'],
+  },
+  k8sService: {
+    // Kubernetes Service name — maps to service segment
+    global: false,
+    segmentDelimiter: '-',
+    wordDelimiter: '-',
+    segments: ['service'],
+  },
+  k8sConfigMap: {
+    // Kubernetes ConfigMap name — service--key
+    global: false,
+    segmentDelimiter: '-',
+    wordDelimiter: '-',
+    segments: ['service', 'key'],
+  },
+  k8sSecret: {
+    // Kubernetes Secret name — service--key
+    global: false,
+    segmentDelimiter: '-',
+    wordDelimiter: '-',
+    segments: ['service', 'key'],
+  },
+
   // ── Databases ────────────────────────────────────────────────────────────
   dynamoDb: {
     global: false,

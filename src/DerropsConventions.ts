@@ -1393,6 +1393,52 @@ export class DerropsConventions<
     return { namespace, logGroup, dashboard, alarm, dimensions: this.dimensions() }
   }
 
+  // ── EKS ───────────────────────────────────────────────────────────────────
+
+  /**
+   * Build a bundle of all EKS + Kubernetes resource names for this service.
+   *
+   * Returns the EKS cluster name, Kubernetes namespace (domain-scoped), deployment,
+   * service, and optional node group / ConfigMap / Secret names — all derived from
+   * the same convention instance.
+   *
+   * @example
+   * const eks = c.eksResource({ nodeGroupPurpose: 'workers' })
+   * eks.cluster       // 'acme--payments--api'
+   * eks.namespace     // 'payments'         (k8s namespace = domain)
+   * eks.deployment    // 'api'              (k8s deployment = service)
+   * eks.service       // 'api'
+   * eks.nodeGroup     // 'acme--payments--api--workers'
+   */
+  eksResource(options?: {
+    /** Purpose label for the EKS node group name (e.g. `'workers'`, `'spot'`). */
+    nodeGroupPurpose?: string
+    /** Key for ConfigMap / Secret names (e.g. `'config'`, `'credentials'`). */
+    key?: string
+  }): {
+    cluster: string
+    namespace: string
+    deployment: string
+    service: string
+    nodeGroup: string | undefined
+    configMap: string | undefined
+    secret: string | undefined
+  } {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const n = (opts: object) => this.name(opts as any)
+    return {
+      cluster: n({ type: 'eksCluster' }),
+      namespace: n({ type: 'k8sNamespace' }),
+      deployment: n({ type: 'k8sDeployment' }),
+      service: n({ type: 'k8sService' }),
+      nodeGroup: options?.nodeGroupPurpose
+        ? n({ type: 'eksNodeGroup', purpose: options.nodeGroupPurpose })
+        : undefined,
+      configMap: options?.key ? n({ type: 'k8sConfigMap', key: options.key }) : undefined,
+      secret: options?.key ? n({ type: 'k8sSecret', key: options.key }) : undefined,
+    }
+  }
+
   // ── Cost allocation ───────────────────────────────────────────────────────
 
   /**
