@@ -65,6 +65,26 @@ export interface Segments {
 export type ParsedSegments = Partial<Record<SegmentKey, string>>
 
 /**
+ * AWS Cost Explorer tag-based filter expression.
+ * Pass to `CostExplorer.getCostAndUsage({ Filter: costFilter })`.
+ */
+export interface CostExplorerTagFilter {
+  Tags: {
+    Key: string
+    Values: string[]
+    MatchOptions: string[]
+  }
+}
+
+/**
+ * Logical AND of tag filters for Cost Explorer — one filter per visible segment tag.
+ * Pass to `CostExplorer.getCostAndUsage({ Filter: { And: costFilter.And } })`.
+ */
+export interface CostExplorerFilter {
+  And: CostExplorerTagFilter[]
+}
+
+/**
  * Controls which segments appear in each naming layer of `s3Resource()`.
  *
  * When a layer array is supplied it *replaces* the default segment list for that layer.

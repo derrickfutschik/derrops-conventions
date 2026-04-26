@@ -33,6 +33,8 @@ export type {
   ParsedS3Uri,
   S3ResourceLayers,
   S3Resource,
+  CostExplorerTagFilter,
+  CostExplorerFilter,
   ResourceTypeConfig,
   SegmentConstraints,
   ConstrainedSegments,

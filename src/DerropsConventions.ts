@@ -8,6 +8,7 @@ import type {
   ParsedS3Uri,
   S3ResourceLayers,
   S3Resource,
+  CostExplorerFilter,
 } from './types.js'
 import { RESOURCE_TYPES } from './resource-types.js'
 import type { ResourceType } from './resource-types.js'
@@ -1344,6 +1345,70 @@ export class DerropsConventions<
       ? n({ type: 'cloudwatchAlarm', key: options.key })
       : undefined
     return { namespace, logGroup, dashboard, alarm, dimensions: this.dimensions() }
+  }
+
+  // ── Cost allocation ───────────────────────────────────────────────────────
+
+  /**
+   * Generate an AWS Cost Explorer tag-based filter that matches resources tagged
+   * by this convention. Returns an `{ And: [...] }` expression — one filter per
+   * visible tag that has a value.
+   *
+   * Pass the result to `CostExplorer.getCostAndUsage({ Filter: costFilter() })`.
+   *
+   * @example
+   * c.tagKeys('org', 'domain', 'service', 'environment').costFilter()
+   * // → { And: [
+   * //     { Tags: { Key: 'slaops:org', Values: ['acme'], MatchOptions: ['EQUALS'] } },
+   * //     { Tags: { Key: 'slaops:domain', Values: ['payments'], MatchOptions: ['EQUALS'] } },
+   * //     ...
+   * //   ] }
+   */
+  costFilter(): CostExplorerFilter {
+    const tagDict = this.tags()
+    const and = Object.entries(tagDict)
+      .filter(([k]) => {
+        const base = k.includes(':') ? k.split(':').pop()! : k
+        const norm = base.toLowerCase().replace(/[-_]/g, '')
+        // Exclude structural/schema tags — only include value tags
+        return !['segment', 's3prefixsegment', 's3objectnamesegment', 'segmentvalues',
+          's3prefixsegmentvalues', 's3objectnamesegmentvalues'].includes(norm)
+      })
+      .map(([key, value]) => ({
+        Tags: { Key: key, Values: [value], MatchOptions: ['EQUALS'] },
+      }))
+    return { And: and }
+  }
+
+  /**
+   * Generate a stable AWS Budgets budget name for this convention scope.
+   *
+   * Produces a `--`-delimited name from the active segments, suitable as the
+   * `BudgetName` in `Budgets.createBudget()`.
+   *
+   * @example
+   * c.budgetName()  // 'acme--payments--checkout-api--prod'
+   */
+  budgetName(): string {
+    const parts = (['org', 'domain', 'service', 'env'] as const)
+      .map((k) => this.defaults[k])
+      .filter((v): v is string => v !== undefined)
+    return parts.join('--')
+  }
+
+  /**
+   * Return the list of tag key names (as registered in AWS Cost Allocation Tags)
+   * that this convention emits. These are the keys you must activate in the AWS
+   * Billing console under Cost Allocation Tags.
+   *
+   * @example
+   * c.tagPrefix('slaops:').tagKeys('org', 'domain', 'service').costAllocationTags()
+   * // → ['slaops:org', 'slaops:domain', 'slaops:service']
+   */
+  costAllocationTags(): string[] {
+    return this.visibleTags.map(
+      (k) => this.keyPrefix + applyTagKeyCasing(k, this.keyCasing),
+    )
   }
 
   // ── Network topology ──────────────────────────────────────────────────────
