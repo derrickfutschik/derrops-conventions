@@ -200,7 +200,7 @@ function resolveAzsForKind(
  */
 export function buildNetworkTopology(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  convention: DerropsConventions<any, any>,
+  convention: DerropsConventions<any, any, any, any>,
   options: TopologyOptions,
 ): OrgNetworkTopology {
   const { vpcCidr, globalAzAllocations, defaultKinds, domainConfigs } =
@@ -299,7 +299,7 @@ export function buildNetworkTopology(
  */
 export function buildCapacityReport(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  convention: DerropsConventions<any, any>,
+  convention: DerropsConventions<any, any, any, any>,
   options: TopologyOptions,
 ): TopologyCapacityReport {
   const { globalAzAllocations, defaultKinds, domainConfigs } = normalizeTopologyOptions(options)
