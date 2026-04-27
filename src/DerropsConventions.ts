@@ -1047,6 +1047,40 @@ export class DerropsConventions<
     return parts.join('.')
   }
 
+  /**
+   * Generate a typed config property object — shorthand for `{ [cfgKey(key)]: value }`.
+   *
+   * Spread the result directly into a config return object to inline a single typed entry.
+   * The return key type matches what `cfgKey()` would produce for the same arguments.
+   *
+   * @example
+   * const oaspecCache = conventions.with({ domain: 'oaspec', service: 'dynamodb-cache' })
+   *
+   * return {
+   *   ...oaspecCache.cfgProp(300, 'ttl-seconds'),
+   *   // equivalent to: { 'oaspec.dynamodb-cache.ttl-seconds': 300 }
+   *
+   *   ...oaspecCache.cfgProp(10_000, 'timeout', 'ms'),
+   *   // equivalent to: { 'oaspec.dynamodb-cache.timeout.ms': 10_000 }
+   * }
+   */
+  cfgProp<V, K extends string>(value: V, key: K): Record<CfgKeyBase<TDomain, TService, K>, V>
+  cfgProp<V, K extends string, Sfx extends string>(
+    value: V,
+    key: K,
+    suffix: Sfx,
+  ): Record<`${CfgKeyBase<TDomain, TService, K>}.${Sfx}`, V>
+  cfgProp(value: unknown, key: string, suffix?: string): Record<string, unknown> {
+    const parts: string[] = []
+    const d = this.defaults.domain
+    const s = this.defaults.service
+    if (d !== undefined) parts.push(d)
+    if (s !== undefined) parts.push(s)
+    parts.push(key)
+    if (suffix !== undefined) parts.push(suffix)
+    return { [parts.join('.')]: value }
+  }
+
   // ── Hierarchy introspection ───────────────────────────────────────────────
 
   /**
