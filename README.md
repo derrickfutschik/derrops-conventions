@@ -1296,3 +1296,17 @@ The package applies the delimiter decision matrix from the conventions guide aut
 
 - [Derrops Guide to Naming Conventions and Segregation](https://blog.slaops.com/blog/derrops-conventions) — principles, segment definitions, delimiter rationale, multi-tenancy placement decisions
 - [AWS Resource Naming Cheatsheet](https://blog.slaops.com/blog/derrops-naming-sheet) — per-service patterns, examples, common pitfalls
+
+## Future planes
+
+- 1.  Cost allocation — .tagRule((s) => ({ 'cost-center': costCenterFor(s.domain) })) stamps every resource at CDK synth time. Pair with .policy() to make a missing cost-center tag a deploy-time error, not a finance-team complaint two months later.
+- 2.  OpenTelemetry / structured logging attribute generation — The same org → domain → service → env segments map directly to OTel service.namespace, service.name, deployment.environment. A .otelAttributes() method would let app code and CDK share the exact same identity.
+- 3.  Runbook / incident response generation — buildConsoleUrl() already exists. A runbook(resources[]) helper could emit a Markdown doc with every resource a service owns, its ARN, and a clickable console link — auto-generated from the same convention instance used to provision.
+- 4.  Drift detection / compliance auditing — parse.test.ts implies a parse path exists (or was tested). If you can parse a raw AWS resource name back into segments, you can scan real AWS resources (via Config or Resource Explorer), compare against the convention, and report
+      non-conformant names.
+- 5.  Feature flag / AppConfig key naming — Flag names like acme--payments--checkout-api--enable-new-checkout-flow-profile are already a supported type. Using the convention for feature flag keys means they're namespaced the same way as the resources they gate — and you can
+      enumerate all flags for a service by querying on a prefix.
+- 6.  S3 data lake partition keys — The partition segment and s3LogKey/s3ObjectKey types are already there. A .partitionedKey({ entity, year, month, day, hour }) wrapper would make consistent Hive-style partition paths (acme/payments/transactions/2024/01/15/14/) derivable without
+      string assembly.
+- 7.  EventBridge event source naming — Custom EventBridge events need a source field. Using naming.name({ type: 'eventBridgeBus' }) as the source means your event filter rules can be derived from the same convention instance that provisioned the bus.
+- 8.  Local dev environment mirroring — Register a custom dockerContainer or localDbName resource type with registerResourceType() so dev naming mirrors prod. Then docker run --name $(naming.name({ type: 'dockerContainer' })) stays in sync with what's in AWS.

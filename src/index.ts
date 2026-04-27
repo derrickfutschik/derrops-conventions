@@ -15,6 +15,8 @@ export type {
   DomainCapacityReport,
   TopologyCapacityReport,
 } from './topology-types.js'
+export { cfgKey } from './config-key.js'
+export type { ConfigDomain } from './config-key.js'
 export { buildConsoleUrl } from './console.js'
 export type { ConsoleUrlContext } from './console.js'
 export { renderMermaid } from './mermaid.js'

@@ -1352,7 +1352,9 @@ export class DerropsConventions<
     let segmentDelimiter: string
     if (resolvedType) {
       const config: ResourceTypeConfig = RESOURCE_TYPES[resolvedType]
-      activeSegmentOrder = config.segments ?? this.effectiveOrder(config)
+      activeSegmentOrder = config.segments
+        ? this.mergeExtraSegmentsIntoFixed(config.segments)
+        : this.effectiveOrder(config)
       segmentDelimiter = config.segmentDelimiter
     } else {
       const extraSegments = (['apex', 'entity'] as SegmentKey[]).filter(
@@ -2897,7 +2899,9 @@ export class DerropsConventions<
   }
 
   private buildSegments(merged: Segments, config: ResourceTypeConfig): string[] {
-    const activeOrder = config.segments ?? this.effectiveOrder(config)
+    const activeOrder = config.segments
+      ? this.mergeExtraSegmentsIntoFixed(config.segments)
+      : this.effectiveOrder(config)
 
     if (!activeOrder.includes('apex')) {
       return activeOrder
@@ -2926,6 +2930,41 @@ export class DerropsConventions<
       )
       .filter((v): v is string => v !== undefined && v.length > 0)
       .map((v) => this.normalize(v, config.wordDelimiter))
+  }
+
+  /**
+   * Merge extra segments (from `insertSegment`/`insertSegmentAt`) into a fixed segment list.
+   * Extra keys are inserted at the position closest to where they appear in `this.order`,
+   * so fixed segments keep their declared relative order and custom segments slot in naturally.
+   */
+  private mergeExtraSegmentsIntoFixed(
+    fixedOrder: readonly SegmentKey[],
+  ): Array<SegmentKey | string> {
+    const extraKeys = Object.keys(this.extraSegments)
+    if (extraKeys.length === 0) return [...fixedOrder]
+
+    const orderedExtras = this.order.filter((k) => extraKeys.includes(k))
+    if (orderedExtras.length === 0) return [...fixedOrder]
+
+    const result: Array<SegmentKey | string> = [...fixedOrder]
+
+    for (const key of orderedExtras) {
+      const keyIdx = this.order.indexOf(key)
+      // Walk back from key's position to find the last predecessor already in result
+      let insertAfterIdx = -1
+      for (let i = keyIdx - 1; i >= 0; i--) {
+        const pred = this.order[i]!
+        const rIdx = result.indexOf(pred)
+        if (rIdx !== -1) {
+          insertAfterIdx = rIdx
+          break
+        }
+      }
+      // insertAfterIdx === -1 means no predecessor found → prepend (splice at 0)
+      result.splice(insertAfterIdx + 1, 0, key)
+    }
+
+    return result
   }
 
   private effectiveOrder(config: ResourceTypeConfig): Array<SegmentKey | string> {

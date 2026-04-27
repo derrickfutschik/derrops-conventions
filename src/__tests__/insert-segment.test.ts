@@ -284,4 +284,73 @@ describe('insertSegment()', () => {
       ).toBe('acme--prod--payments--checkout-api--orders')
     })
   })
+
+  // ── Fixed-segment resource types ──────────────────────────────────────────────
+
+  describe('fixed-segment resource types', () => {
+    // openSearchIndex has segments: ['org', 'domain', 'entity', 'tenant']
+    it('injects custom segment into openSearchIndex after its predecessor', () => {
+      expect(
+        base
+          .with({})
+          .insertSegment('shard', 'hot', { after: 'domain' })
+          .name({ type: 'openSearchIndex', entity: 'transactions' }),
+      ).toBe('acme--payments--hot--transactions')
+    })
+
+    it('prepends custom segment to openSearchIndex when before all fixed segments', () => {
+      expect(
+        base
+          .with({})
+          .insertSegment('accountId', ACCOUNT_ID, { before: 'org' })
+          .name({ type: 'openSearchIndex', entity: 'users' }),
+      ).toBe(`${ACCOUNT_ID}--acme--payments--users`)
+    })
+
+    it('appends custom segment to openSearchIndex when after all fixed segments', () => {
+      expect(
+        base
+          .with({ tenant: 't-abc' })
+          .insertSegment('suffix', 'v2')
+          .name({ type: 'openSearchIndex', entity: 'events' }),
+      ).toBe('acme--payments--events--t-abc--v2')
+    })
+
+    // appSyncDataSource has segments: ['org', 'domain', 'service', 'target']
+    it('injects tier segment between domain and service in appSyncDataSource', () => {
+      expect(
+        base
+          .with({})
+          .insertSegment('tier', 'gold', { after: 'domain' })
+          .name({ type: 'appSyncDataSource', target: 'orders' }),
+      ).toBe('acme--payments--gold--checkout-api--orders')
+    })
+
+    // cloudwatchMetricNamespace has segments: ['org', 'domain']
+    it('prepends accountId to cloudwatchMetricNamespace', () => {
+      expect(
+        base
+          .with({})
+          .insertSegment('accountId', ACCOUNT_ID, { before: 'org' })
+          .name({ type: 'cloudwatchMetricNamespace' }),
+      ).toBe(`${ACCOUNT_ID}/acme/payments`)
+    })
+
+    it('insertSegmentAt index 0 works on fixed-segment type', () => {
+      expect(
+        base
+          .with({})
+          .insertSegmentAt('accountId', ACCOUNT_ID, 0)
+          .name({ type: 'openSearchIndex', entity: 'orders' }),
+      ).toBe(`${ACCOUNT_ID}--acme--payments--orders`)
+    })
+
+    it('propagates through .with() for fixed-segment types', () => {
+      const parent = base.with({}).insertSegment('accountId', ACCOUNT_ID, { before: 'org' })
+      const child = parent.with({ service: 'billing-api' })
+      expect(child.name({ type: 'openSearchIndex', entity: 'invoices' })).toBe(
+        `${ACCOUNT_ID}--acme--payments--invoices`,
+      )
+    })
+  })
 })
