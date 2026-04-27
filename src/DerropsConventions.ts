@@ -291,9 +291,35 @@ function applyTagKeyCasing(key: string, casing: TagKeyCasing): string {
 }
 
 /**
+ * Whether `T` is a concrete string literal (not the broad `string` type).
+ * Used by `cfgKey()` to decide whether the instance's domain/service can
+ * participate in a template-literal return type.
+ * @internal
+ */
+type IsLiteralString<T extends string> = string extends T ? false : true
+
+/**
+ * The base return type of `cfgKey(key)` — resolved to a template literal when
+ * both `TDomain` and `TService` are concrete literals, otherwise `string`.
+ * Extracted so the suffix overload can compose on top: `` `${CfgKeyBase<...>}.${Sfx}` ``
+ * and TypeScript will distribute the template literal over the conditional.
+ * @internal
+ */
+type CfgKeyBase<TDomain extends string, TService extends string, K extends string> =
+  IsLiteralString<TDomain> extends true
+    ? IsLiteralString<TService> extends true
+      ? `${TDomain}.${TService}.${K}`
+      : `${TDomain}.${K}`
+    : string
+
+/**
  * `C` — phantom type encoding which segment values have been narrowed to literal unions.
  * `TType` — phantom type encoding the default resource type (set via `.with({ type })`).
  *           When set, `type` is optional in `name()` and falls back to this value.
+ * `TDomain` — phantom type encoding the currently-set domain default as a literal.
+ *             `string` means "no literal domain set on this instance".
+ * `TService` — phantom type encoding the currently-set service default as a literal.
+ *              `string` means "no literal service set on this instance".
  *
  * @example
  * const naming = new DerropsConventions({ org: 'acme', env: 'dev' })
@@ -308,6 +334,8 @@ function applyTagKeyCasing(key: string, casing: TagKeyCasing): string {
 export class DerropsConventions<
   C extends SegmentConstraints = {},
   TType extends ResourceType | undefined = undefined,
+  TDomain extends string = string,
+  TService extends string = string,
 > {
   private readonly defaults: Segments
   private order: Array<SegmentKey | string>
@@ -329,14 +357,17 @@ export class DerropsConventions<
   private _emitSegmentValues: boolean
   private extraSegments: Record<string, string>
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  private _dependencies: Array<{ owner: DerropsConventions<any, any>; resources: ResourceType[] }>
+  private _dependencies: Array<{
+    owner: DerropsConventions<any, any, any, any>
+    resources: ResourceType[]
+  }>
   /**
    * Derivatives created via `.with()`. Mutated only by `.with()` for the sole purpose of
    * letting `toMermaid()` walk the hierarchy. Never read by naming, tag, or policy logic.
    * Not propagated through `.with()` — each instance owns its own children list.
    */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  private _children: DerropsConventions<any, any>[] = []
+  private _children: DerropsConventions<any, any, any, any>[] = []
 
   constructor(
     defaults: ConstrainedSegments<C> = {} as ConstrainedSegments<C>,
@@ -384,29 +415,34 @@ export class DerropsConventions<
   constrain<K extends SegmentKey, V extends string>(
     key: K,
     ...values: V[]
-  ): DerropsConventions<Omit<C, K> & Record<K, V>, TType> {
+  ): DerropsConventions<Omit<C, K> & Record<K, V>, TType, TDomain, TService> {
     this.storedConstraints = { ...this.storedConstraints, [key]: values }
-    return this as unknown as DerropsConventions<Omit<C, K> & Record<K, V>, TType>
+    return this as unknown as DerropsConventions<
+      Omit<C, K> & Record<K, V>,
+      TType,
+      TDomain,
+      TService
+    >
   }
 
   /** Constrain allowed `region` values. */
   region<V extends string>(
     values: readonly V[],
-  ): DerropsConventions<Omit<C, 'region'> & Record<'region', V>, TType> {
+  ): DerropsConventions<Omit<C, 'region'> & Record<'region', V>, TType, TDomain, TService> {
     return this.constrain('region', ...values)
   }
 
   /** Constrain allowed `env` values. */
   env<V extends string>(
     values: readonly V[],
-  ): DerropsConventions<Omit<C, 'env'> & Record<'env', V>, TType> {
+  ): DerropsConventions<Omit<C, 'env'> & Record<'env', V>, TType, TDomain, TService> {
     return this.constrain('env', ...values)
   }
 
   /** Constrain allowed `org` values. */
   org<V extends string>(
     values: readonly V[],
-  ): DerropsConventions<Omit<C, 'org'> & Record<'org', V>, TType> {
+  ): DerropsConventions<Omit<C, 'org'> & Record<'org', V>, TType, TDomain, TService> {
     return this.constrain('org', ...values)
   }
 
@@ -417,7 +453,7 @@ export class DerropsConventions<
    */
   apex<V extends string>(
     values: readonly V[],
-  ): DerropsConventions<Omit<C, 'apex'> & Record<'apex', V>, TType> {
+  ): DerropsConventions<Omit<C, 'apex'> & Record<'apex', V>, TType, TDomain, TService> {
     return this.constrain('apex', ...values)
   }
 
@@ -493,84 +529,84 @@ export class DerropsConventions<
   /** Constrain allowed `tenant` values. */
   tenant<V extends string>(
     values: readonly V[],
-  ): DerropsConventions<Omit<C, 'tenant'> & Record<'tenant', V>, TType> {
+  ): DerropsConventions<Omit<C, 'tenant'> & Record<'tenant', V>, TType, TDomain, TService> {
     return this.constrain('tenant', ...values)
   }
 
   /** Constrain allowed `domain` values. */
   domain<V extends string>(
     values: readonly V[],
-  ): DerropsConventions<Omit<C, 'domain'> & Record<'domain', V>, TType> {
+  ): DerropsConventions<Omit<C, 'domain'> & Record<'domain', V>, TType, TDomain, TService> {
     return this.constrain('domain', ...values)
   }
 
   /** Constrain allowed `service` values. */
   service<V extends string>(
     values: readonly V[],
-  ): DerropsConventions<Omit<C, 'service'> & Record<'service', V>, TType> {
+  ): DerropsConventions<Omit<C, 'service'> & Record<'service', V>, TType, TDomain, TService> {
     return this.constrain('service', ...values)
   }
 
   /** Constrain allowed `partition` values. */
   partition<V extends string>(
     values: readonly V[],
-  ): DerropsConventions<Omit<C, 'partition'> & Record<'partition', V>, TType> {
+  ): DerropsConventions<Omit<C, 'partition'> & Record<'partition', V>, TType, TDomain, TService> {
     return this.constrain('partition', ...values)
   }
 
   /** Constrain allowed `key` values. */
   key<V extends string>(
     values: readonly V[],
-  ): DerropsConventions<Omit<C, 'key'> & Record<'key', V>, TType> {
+  ): DerropsConventions<Omit<C, 'key'> & Record<'key', V>, TType, TDomain, TService> {
     return this.constrain('key', ...values)
   }
 
   /** Constrain allowed `purpose` values — functional role of a resource, e.g. `'web'`, `'worker'`, `'db'`. */
   purpose<V extends string>(
     values: readonly V[],
-  ): DerropsConventions<Omit<C, 'purpose'> & Record<'purpose', V>, TType> {
+  ): DerropsConventions<Omit<C, 'purpose'> & Record<'purpose', V>, TType, TDomain, TService> {
     return this.constrain('purpose', ...values)
   }
 
   /** Constrain allowed `kind` values — sub-classification within a type, e.g. `'private'`/`'public'` for subnets. */
   kind<V extends string>(
     values: readonly V[],
-  ): DerropsConventions<Omit<C, 'kind'> & Record<'kind', V>, TType> {
+  ): DerropsConventions<Omit<C, 'kind'> & Record<'kind', V>, TType, TDomain, TService> {
     return this.constrain('kind', ...values)
   }
 
   /** Constrain allowed `az` values — availability zone suffix, e.g. `'1a'`, `'1b'`, `'1c'`. */
   az<V extends string>(
     values: readonly V[],
-  ): DerropsConventions<Omit<C, 'az'> & Record<'az', V>, TType> {
+  ): DerropsConventions<Omit<C, 'az'> & Record<'az', V>, TType, TDomain, TService> {
     return this.constrain('az', ...values)
   }
 
   /** Constrain allowed `num` values — ordinal instance number, e.g. `'01'`, `'02'`, `'03'`. */
   num<V extends string>(
     values: readonly V[],
-  ): DerropsConventions<Omit<C, 'num'> & Record<'num', V>, TType> {
+  ): DerropsConventions<Omit<C, 'num'> & Record<'num', V>, TType, TDomain, TService> {
     return this.constrain('num', ...values)
   }
 
   /** Constrain allowed `consumer` values — consuming service or principal, e.g. `'partner-a'`. */
   consumer<V extends string>(
     values: readonly V[],
-  ): DerropsConventions<Omit<C, 'consumer'> & Record<'consumer', V>, TType> {
+  ): DerropsConventions<Omit<C, 'consumer'> & Record<'consumer', V>, TType, TDomain, TService> {
     return this.constrain('consumer', ...values)
   }
 
   /** Constrain allowed `target` values — target resource or data source, e.g. `'user-table'`. */
   target<V extends string>(
     values: readonly V[],
-  ): DerropsConventions<Omit<C, 'target'> & Record<'target', V>, TType> {
+  ): DerropsConventions<Omit<C, 'target'> & Record<'target', V>, TType, TDomain, TService> {
     return this.constrain('target', ...values)
   }
 
   /** Constrain allowed `version` values — version identifier for image tags, e.g. `'1.2.3'`, `'latest'`. */
   version<V extends string>(
     values: readonly V[],
-  ): DerropsConventions<Omit<C, 'version'> & Record<'version', V>, TType> {
+  ): DerropsConventions<Omit<C, 'version'> & Record<'version', V>, TType, TDomain, TService> {
     return this.constrain('version', ...values)
   }
 
@@ -880,9 +916,18 @@ export class DerropsConventions<
    * oaspec.name({})                         // type defaults to 'openSearchIndex'
    * oaspec.name({ type: 'lambdaFunction' }) // override for a single call
    */
-  with<T extends ResourceType | undefined = undefined>(
-    overrides: ConstrainedSegments<C> & { type?: T },
-  ): DerropsConventions<C, T extends ResourceType ? T : TType> {
+  with<
+    T extends ResourceType | undefined = undefined,
+    D extends string = string,
+    S extends string = string,
+  >(
+    overrides: ConstrainedSegments<C> & { type?: T; domain?: D; service?: S },
+  ): DerropsConventions<
+    C,
+    T extends ResourceType ? T : TType,
+    IsLiteralString<D> extends true ? D : TDomain,
+    IsLiteralString<S> extends true ? S : TService
+  > {
     const { type, ...segmentOverrides } = overrides as ConstrainedSegments<C> & {
       type?: ResourceType
     }
@@ -910,7 +955,12 @@ export class DerropsConventions<
     // Register the derivative on this instance so toMermaid() can walk the hierarchy.
     // _children is intentionally NOT copied from `this` — each instance owns its own list.
     this._children.push(derived)
-    return derived as unknown as DerropsConventions<C, T extends ResourceType ? T : TType>
+    return derived as unknown as DerropsConventions<
+      C,
+      T extends ResourceType ? T : TType,
+      IsLiteralString<D> extends true ? D : TDomain,
+      IsLiteralString<S> extends true ? S : TService
+    >
   }
 
   /**
@@ -932,7 +982,7 @@ export class DerropsConventions<
    * // Override multiple segments at once
    * orgConv.for({ domain: 'payments', service: 'api', env: 'staging' }).name({ type: 'lambdaFunction' })
    */
-  for(segments: Partial<Segments>): DerropsConventions<C, TType> {
+  for(segments: Partial<Segments>): DerropsConventions<C, TType, string, string> {
     const derived = new DerropsConventions<C>(
       { ...this.defaults, ...segments } as ConstrainedSegments<C>,
       this.defaultType as ResourceType | undefined,
@@ -955,7 +1005,46 @@ export class DerropsConventions<
     derived.storedConstraints = { ...this.storedConstraints }
     derived._emitSegmentValues = this._emitSegmentValues
     // Not registered in _children — a projection is not a hierarchy node.
-    return derived as unknown as DerropsConventions<C, TType>
+    return derived as unknown as DerropsConventions<C, TType, string, string>
+  }
+
+  // ── Config key generation ─────────────────────────────────────────────────
+
+  /**
+   * Generate a typed application config key using the instance's `domain` and `service`
+   * defaults as the leading segments, joined with `.`.
+   *
+   * The return type is a template literal when both `domain` and `service` were set as
+   * string literals (via `.with()` or `.constrain()`/`.domain()`/`.service()`). When
+   * only `domain` is a literal the key is `domain.key`. When neither is a literal the
+   * return type degrades to `string`.
+   *
+   * Pass an optional `suffix` to append one more dot-separated segment — useful for
+   * sub-keys that share the same domain/service prefix.
+   *
+   * @example
+   * const oaspecCache = conventions.with({ domain: 'oaspec', service: 'dynamodb-cache' })
+   *
+   * oaspecCache.cfgKey('ttl-seconds')
+   * // type:  'oaspec.dynamodb-cache.ttl-seconds'
+   *
+   * oaspecCache.cfgKey('ttl-seconds', 'ms')
+   * // type:  'oaspec.dynamodb-cache.ttl-seconds.ms'
+   */
+  cfgKey<K extends string>(key: K): CfgKeyBase<TDomain, TService, K>
+  cfgKey<K extends string, Sfx extends string>(
+    key: K,
+    suffix: Sfx,
+  ): `${CfgKeyBase<TDomain, TService, K>}.${Sfx}`
+  cfgKey(key: string, suffix?: string): string {
+    const parts: string[] = []
+    const d = this.defaults.domain
+    const s = this.defaults.service
+    if (d !== undefined) parts.push(d)
+    if (s !== undefined) parts.push(s)
+    parts.push(key)
+    if (suffix !== undefined) parts.push(suffix)
+    return parts.join('.')
   }
 
   // ── Hierarchy introspection ───────────────────────────────────────────────
@@ -965,7 +1054,7 @@ export class DerropsConventions<
    * Intended for visualisation (`toMermaid()`) and debugging.
    */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  children(): readonly DerropsConventions<any, any>[] {
+  children(): readonly DerropsConventions<any, any, any, any>[] {
     return this._children
   }
 
@@ -996,7 +1085,7 @@ export class DerropsConventions<
    */
   toMermaid(options?: MermaidOptions): string {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    return renderMermaid(this as unknown as DerropsConventions<any, any>, options)
+    return renderMermaid(this as unknown as DerropsConventions<any, any, any, any>, options)
   }
 
   /**
@@ -2199,7 +2288,7 @@ export class DerropsConventions<
    * db.policyFor(api)  // → IAM policy granting api read/write on db's DynamoDB + S3 resources
    */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  dependsOn(owner: DerropsConventions<any, any>, resources: ResourceType[]): this {
+  dependsOn(owner: DerropsConventions<any, any, any, any>, resources: ResourceType[]): this {
     this._dependencies.push({ owner, resources })
     return this
   }
@@ -2212,23 +2301,23 @@ export class DerropsConventions<
    */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   dependencies(): {
-    nodes: DerropsConventions<any, any>[]
+    nodes: DerropsConventions<any, any, any, any>[]
     edges: Array<{
-      from: DerropsConventions<any, any>
-      owner: DerropsConventions<any, any>
+      from: DerropsConventions<any, any, any, any>
+      owner: DerropsConventions<any, any, any, any>
       resources: ResourceType[]
     }>
   } {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const visited = new Set<DerropsConventions<any, any>>()
+    const visited = new Set<DerropsConventions<any, any, any, any>>()
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const queue: DerropsConventions<any, any>[] = [this]
+    const queue: DerropsConventions<any, any, any, any>[] = [this]
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const nodes: DerropsConventions<any, any>[] = []
+    const nodes: DerropsConventions<any, any, any, any>[] = []
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const edges: Array<{
-      from: DerropsConventions<any, any>
-      owner: DerropsConventions<any, any>
+      from: DerropsConventions<any, any, any, any>
+      owner: DerropsConventions<any, any, any, any>
       resources: ResourceType[]
     }> = []
 
@@ -2263,7 +2352,7 @@ export class DerropsConventions<
    */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   policyFor(
-    caller: DerropsConventions<any, any>,
+    caller: DerropsConventions<any, any, any, any>,
   ): import('./policy/PolicyBuilder.js').PolicyBuilder {
     const callerDeps = caller._dependencies.filter((d) => d.owner === this)
     const builder = new PolicyBuilder()
