@@ -19,298 +19,84 @@ import type { ResourceType } from './resource-types.js'
 import { StaticPolicyBuilder } from './policy/StaticPolicyBuilder.js'
 import { DynamicPolicySession } from './policy/DynamicPolicySession.js'
 import { PolicyBuilder } from './policy/PolicyBuilder.js'
-import { ResourceImpl } from './policy/Resource.js'
 import type { Resource, SqsPair } from './policy/Resource.js'
-import { buildPolicyArns } from './policy/arn.js'
 import type { ArnContext } from './policy/types.js'
-import { buildConsoleUrl } from './console.js'
 import { buildNetworkTopology, buildCapacityReport } from './topology.js'
 import type { OrgNetworkTopology } from './topology.js'
 import type { TopologyOptions, TopologyCapacityReport } from './topology-types.js'
 import { renderMermaid } from './mermaid.js'
 import type { MermaidOptions } from './mermaid.js'
+import type {
+  NameOptions,
+  TagOptions,
+  TagKey,
+  TagKeyCasing,
+  DatePartitionGranularity,
+  DimensionKey,
+  ConventionSpec,
+  MaybeConstrain,
+  IsLiteralString,
+  CfgKeyBase,
+} from './conventions-types.js'
+import {
+  DEFAULT_SEGMENT_ORDER,
+  TAG_FOR_SEGMENT,
+  ALL_TAG_KEYS,
+  DEFAULT_TAG_KEYS,
+  DEFAULT_TAG_CASING,
+  DEFAULT_DIMENSION_KEYS,
+  DEFAULT_TAG_KEY_MAX,
+  DEFAULT_TAG_VALUE_MAX,
+  DEFAULT_TAG_COUNT_MAX,
+} from './conventions-constants.js'
+import { parseResourceName, parseDatePartition, parseRegionCode } from './parsing.js'
+import type { ConventionsContext } from './conventions-context.js'
+import { buildS3Prefix, buildS3Resource } from './s3.js'
+import { buildDimensions, buildCloudwatchResource } from './cloudwatch.js'
+import { buildCostFilter, buildBudgetName, buildCostAllocationTags } from './cost.js'
+import {
+  buildEksResource,
+  buildCloudMapResource,
+  buildSqsPair,
+  buildCfnExport,
+} from './service-bundles.js'
+import { buildImageTag, buildEcrUri } from './ecr.js'
+import { buildEventSource, buildDetailType } from './eventbridge.js'
+import { buildTenantManifest } from './tenant.js'
+import { buildValidate, buildLint } from './validation.js'
+import { buildDependencies, buildPolicyFor } from './dependencies.js'
+import {
+  resolveApex as resolveApexFn,
+  effectiveOrder as effectiveOrderFn,
+  mergeExtraSegments,
+  buildSegments as buildSegmentsFn,
+  resolveArnContext as resolveArnContextFn,
+} from './helpers.js'
+import { buildTags } from './tagging.js'
+import type { TagBuildState } from './tagging.js'
+import {
+  buildOrgNetworkLayer,
+  buildDomainNetworkLayer,
+  buildServiceNetworkLayer,
+} from './network-layers.js'
+import { buildStaticPolicy, buildDynamicPolicy, buildResource } from './iam.js'
+import { buildCfgKey, buildCfgProp } from './config-keys.js'
+import { parseS3KeyFromDefaults, parseS3UriFromDefaults, parseS3UriStatic } from './s3.js'
 
-/**
- * Options passed to `name()`.
- *
- * - Segment fields are narrowed to their allowed literal unions when the instance has been
- *   configured via `.constrain()` / segment helpers.
- * - `type` is required when no default type has been set on the instance via `.with({ type })`,
- *   and optional (overridable) when one has.
- */
-export type NameOptions<
-  C extends SegmentConstraints = {},
-  TType extends ResourceType | undefined = undefined,
-> = ConstrainedSegments<C> &
-  (TType extends ResourceType ? { type?: ResourceType } : { type: ResourceType })
-
-/**
- * Options passed to `tags()` — segment overrides that merge with the instance defaults.
- * Pass `type` to use that resource type's segment ordering and delimiter for the
- * auto-generated `segment` tag. Defaults to the instance's `defaultType` (if set via
- * `.with({ type })`), then falls back to `'--'` delimiter with the full default order.
- */
-export type TagOptions<C extends SegmentConstraints = {}> = ConstrainedSegments<C> & {
-  type?: ResourceType
-}
-
-/** The conventional AWS resource tag keys produced by `tags()`. */
-export type TagKey = 'org' | 'domain' | 'service' | 'environment' | 'tenant'
-
-/**
- * Granularity for `DerropsConventions.datePartition()`.
- * Controls how many path components of `yyyy/mm/dd/hh` are emitted.
- */
-export type DatePartitionGranularity = 'year' | 'month' | 'day' | 'hour'
-
-// ── conventions() factory types ───────────────────────────────────────────────
-
-/** @internal Produce `Record<K, V>` when V is not `never`, else an empty record. */
-type MaybeConstrain<K extends string, V extends string> = [V] extends [never]
-  ? Record<never, never>
-  : Record<K, V>
-
-/**
- * Spec object accepted by `conventions()` and `DerropsConventions.create()`.
- *
- * Pass a **string** for segments that are global defaults (org, env, region, etc.).
- * Pass a **readonly array of string literals** for segments you want to constrain —
- * TypeScript will infer the union type and enforce it on every downstream `name()`,
- * `tags()`, `with()`, and `topology()` call.
- *
- * Segments intentionally not constrainable here: `tenant` (runtime-provisioned),
- * `key`, `partition`, `num`, `consumer`, `target`, `version` (typically per-call).
- *
- * @example
- * const conv = conventions({
- *   org: 'acme',
- *   env: 'prod',
- *   domain: ['payments', 'identity'],   // ← constrained: 'payments' | 'identity'
- *   service: ['checkout-api'],           // ← constrained: 'checkout-api'
- * })
- * conv.name({ type: 'lambdaFunction', domain: 'analytics' }) // TypeScript error ✓
- */
-export interface ConventionSpec<
-  TDomain extends string,
-  TService extends string,
-  TEnv extends string,
-  TKind extends string,
-  TPurpose extends string,
-  TAz extends string,
-> {
-  /** Top-level org identifier, e.g. `'acme'` */
-  org?: string
-  /** AWS region code, e.g. `'ap-southeast-2'` */
-  region?: string
-  /** Registered DNS apex domain, e.g. `'acme.com'` */
-  apex?: string
-  /** Opaque tenant ID — set as default only; constraints are runtime-provisioned */
-  tenant?: string
-  /** Date/time partition path */
-  partition?: string
-  /** Specific resource key */
-  key?: string
-  /** Ordinal instance number */
-  num?: string
-  /** Consuming service or principal */
-  consumer?: string
-  /** Target resource or data source */
-  target?: string
-  /** Version identifier */
-  version?: string
-  /**
-   * Deployment environment.
-   * - `string` → sets a default value
-   * - `readonly string[]` → constrains and narrows the type
-   */
-  env?: readonly TEnv[] | string
-  /**
-   * Business domain bounded context.
-   * - `string` → sets a default value
-   * - `readonly string[]` → constrains and narrows the type
-   */
-  domain?: readonly TDomain[] | string
-  /**
-   * Deployable service unit.
-   * - `string` → sets a default value
-   * - `readonly string[]` → constrains and narrows the type
-   */
-  service?: readonly TService[] | string
-  /**
-   * Subnet or resource sub-classification (`'private'`, `'public'`, `'isolated'`).
-   * - `string` → sets a default value
-   * - `readonly string[]` → constrains and narrows the type
-   */
-  kind?: readonly TKind[] | string
-  /**
-   * Functional purpose for security groups and target groups.
-   * - `string` → sets a default value
-   * - `readonly string[]` → constrains and narrows the type
-   */
-  purpose?: readonly TPurpose[] | string
-  /**
-   * Availability zone suffix (`'1a'`, `'1b'`, `'1c'`).
-   * - `string` → sets a default value
-   * - `readonly string[]` → constrains and narrows the type
-   */
-  az?: readonly TAz[] | string
-}
-
-/**
- * Casing applied to tag keys before they are written to the output dict.
- *
- * The base tag keys are kebab-case words (`org`, `domain`, `service`, `environment`).
- * Casing affects multi-word keys and is most visible when combined with `tagPrefix()`.
- *
- * | Casing    | `environment`   | hypothetical `cost-center` |
- * | --------- | --------------- | -------------------------- |
- * | `kebab`   | `environment`   | `cost-center`              |
- * | `camel`   | `environment`   | `costCenter`               |
- * | `snake`   | `environment`   | `cost_center`              |
- * | `pascal`  | `Environment`   | `CostCenter`               |
- */
-export type TagKeyCasing = 'kebab' | 'camel' | 'snake' | 'pascal'
-
-const REGION_DIRECTION_CODES: Record<string, string> = {
-  north: 'n',
-  south: 's',
-  east: 'e',
-  west: 'w',
-  northeast: 'ne',
-  northwest: 'nw',
-  southeast: 'se',
-  southwest: 'sw',
-  central: 'c',
-  local: 'l',
-  'gov-east': 'ge',
-  'gov-west': 'gw',
-}
-
-const DEFAULT_SEGMENT_ORDER: SegmentKey[] = [
-  'region',
-  'env',
-  'org',
-  'domain',
-  'service',
-  'tenant',
-  'partition',
-  'key',
-  'purpose',
-  'kind',
-  'az',
-  'num',
-  'consumer',
-  'target',
-  'version',
-  // 'apex' is intentionally absent — it only participates in resource types that
-  // declare it explicitly in their segments list (DNS types). Including it in the
-  // default order would pollute names for all other resource types.
-  //
-  // 'entity' is also intentionally absent — it is only meaningful for openSearchIndex
-  // (and any custom type that declares it explicitly). Passing entity to a type that
-  // doesn't list it in its segments has no effect and produces no output.
-]
-
-const GLOBAL_ONLY_SEGMENTS: SegmentKey[] = ['region', 'env']
-
-/**
- * Maps each tag key to the segment it reads from.
- */
-const SEGMENT_FOR_TAG: Record<TagKey, keyof Segments> = {
-  org: 'org',
-  domain: 'domain',
-  service: 'service',
-  environment: 'env',
-  tenant: 'tenant',
-}
-
-/** Reverse map: segment key → tag key (for segments that have a corresponding tag). */
-const TAG_FOR_SEGMENT: Partial<Record<keyof Segments, TagKey>> = {
-  org: 'org',
-  domain: 'domain',
-  service: 'service',
-  env: 'environment',
-  tenant: 'tenant',
-}
-
-/** Canonical ordering for tag keys in `visibleTags`. */
-const ALL_TAG_KEYS: TagKey[] = ['org', 'domain', 'service', 'environment', 'tenant']
-
-const DEFAULT_TAG_KEYS: TagKey[] = ['domain', 'service']
-const DEFAULT_TAG_CASING: TagKeyCasing = 'kebab'
-
-/**
- * The segment keys that can appear as CloudWatch metric Dimensions.
- * Same set as `TagKey` — both read from the same segments — but kept separate
- * so the two concepts can diverge independently.
- */
-export type DimensionKey = 'org' | 'domain' | 'service' | 'environment' | 'tenant'
-
-const SEGMENT_FOR_DIMENSION: Record<DimensionKey, keyof Segments> = {
-  org: 'org',
-  domain: 'domain',
-  service: 'service',
-  environment: 'env',
-  tenant: 'tenant',
-}
-
-const DIMENSION_NAME: Record<DimensionKey, string> = {
-  org: 'Org',
-  domain: 'Domain',
-  service: 'Service',
-  environment: 'Environment',
-  tenant: 'Tenant',
-}
-
-// Default: just Service — namespace already captures Org/Domain via cloudwatchMetricNamespace.
-const DEFAULT_DIMENSION_KEYS: DimensionKey[] = ['service']
-
-// Default limits match AWS tag constraints — https://docs.aws.amazon.com/general/latest/gr/aws_tagging.html
-const DEFAULT_TAG_KEY_MAX = 128
-const DEFAULT_TAG_VALUE_MAX = 256
-const DEFAULT_TAG_COUNT_MAX = 50
-
-function applyTagKeyCasing(key: string, casing: TagKeyCasing): string {
-  const words = key.split('-')
-  switch (casing) {
-    case 'kebab':
-      return key
-    case 'snake':
-      return words.join('_')
-    case 'camel':
-      return (
-        words[0] +
-        words
-          .slice(1)
-          .map((w) => w[0]!.toUpperCase() + w.slice(1))
-          .join('')
-      )
-    case 'pascal':
-      return words.map((w) => w[0]!.toUpperCase() + w.slice(1)).join('')
-  }
-}
-
-/**
- * Whether `T` is a concrete string literal (not the broad `string` type).
- * Used by `cfgKey()` to decide whether the instance's domain/service can
- * participate in a template-literal return type.
- * @internal
- */
-type IsLiteralString<T extends string> = string extends T ? false : true
-
-/**
- * The base return type of `cfgKey(key)` — resolved to a template literal when
- * both `TDomain` and `TService` are concrete literals, otherwise `string`.
- * Extracted so the suffix overload can compose on top: `` `${CfgKeyBase<...>}.${Sfx}` ``
- * and TypeScript will distribute the template literal over the conditional.
- * @internal
- */
-type CfgKeyBase<TDomain extends string, TService extends string, K extends string> =
-  IsLiteralString<TDomain> extends true
-    ? IsLiteralString<TService> extends true
-      ? `${TDomain}.${TService}.${K}`
-      : `${TDomain}.${K}`
-    : string
+// Re-export types that were previously declared here so direct importers of this file
+// continue to work without modification.
+export type {
+  NameOptions,
+  TagOptions,
+  TagKey,
+  TagKeyCasing,
+  DatePartitionGranularity,
+  DimensionKey,
+  ConventionSpec,
+  MaybeConstrain,
+  IsLiteralString,
+  CfgKeyBase,
+} from './conventions-types.js'
 
 /**
  * `C` — phantom type encoding which segment values have been narrowed to literal unions.
@@ -935,23 +721,7 @@ export class DerropsConventions<
       { ...this.defaults, ...segmentOverrides } as ConstrainedSegments<C>,
       (type ?? this.defaultType) as ResourceType | undefined,
     )
-    derived.order = [...this.order]
-    derived.extraSegments = { ...this.extraSegments }
-    derived.visibleTags = [...this.visibleTags]
-    derived.keyPrefix = this.keyPrefix
-    derived.keyCasing = this.keyCasing
-    derived.tagRules = [...this.tagRules]
-    derived.tagAugmentors = [...this.tagAugmentors]
-    derived.tagKeyMax = this.tagKeyMax
-    derived.tagValueMax = this.tagValueMax
-    derived.tagCountMax = this.tagCountMax
-    derived.tagPolicies = [...this.tagPolicies]
-    derived.storedArnContext = this.storedArnContext
-    derived.apexMapFn = this.apexMapFn
-    derived.apexZoneMap = this.apexZoneMap
-    derived.visibleDimensions = [...this.visibleDimensions]
-    derived.storedConstraints = { ...this.storedConstraints }
-    derived._emitSegmentValues = this._emitSegmentValues
+    this._cloneState(derived)
     // Register the derivative on this instance so toMermaid() can walk the hierarchy.
     // _children is intentionally NOT copied from `this` — each instance owns its own list.
     this._children.push(derived)
@@ -987,6 +757,13 @@ export class DerropsConventions<
       { ...this.defaults, ...segments } as ConstrainedSegments<C>,
       this.defaultType as ResourceType | undefined,
     )
+    this._cloneState(derived)
+    // Not registered in _children — a projection is not a hierarchy node.
+    return derived as unknown as DerropsConventions<C, TType, string, string>
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  private _cloneState(derived: DerropsConventions<any, any, any, any>): void {
     derived.order = [...this.order]
     derived.extraSegments = { ...this.extraSegments }
     derived.visibleTags = [...this.visibleTags]
@@ -1004,8 +781,6 @@ export class DerropsConventions<
     derived.visibleDimensions = [...this.visibleDimensions]
     derived.storedConstraints = { ...this.storedConstraints }
     derived._emitSegmentValues = this._emitSegmentValues
-    // Not registered in _children — a projection is not a hierarchy node.
-    return derived as unknown as DerropsConventions<C, TType, string, string>
   }
 
   // ── Config key generation ─────────────────────────────────────────────────
@@ -1037,14 +812,7 @@ export class DerropsConventions<
     suffix: Sfx,
   ): `${CfgKeyBase<TDomain, TService, K>}.${Sfx}`
   cfgKey(key: string, suffix?: string): string {
-    const parts: string[] = []
-    const d = this.defaults.domain
-    const s = this.defaults.service
-    if (d !== undefined) parts.push(d)
-    if (s !== undefined) parts.push(s)
-    parts.push(key)
-    if (suffix !== undefined) parts.push(suffix)
-    return parts.join('.')
+    return buildCfgKey(this.defaults, key, suffix)
   }
 
   /**
@@ -1071,14 +839,7 @@ export class DerropsConventions<
     suffix: Sfx,
   ): Record<`${CfgKeyBase<TDomain, TService, K>}.${Sfx}`, V>
   cfgProp(value: unknown, key: string, suffix?: string): Record<string, unknown> {
-    const parts: string[] = []
-    const d = this.defaults.domain
-    const s = this.defaults.service
-    if (d !== undefined) parts.push(d)
-    if (s !== undefined) parts.push(s)
-    parts.push(key)
-    if (suffix !== undefined) parts.push(suffix)
-    return { [parts.join('.')]: value }
+    return buildCfgProp(this.defaults, value, key, suffix) as Record<string, unknown>
   }
 
   // ── Hierarchy introspection ───────────────────────────────────────────────
@@ -1141,6 +902,37 @@ export class DerropsConventions<
     return this
   }
 
+  // ── ConventionsContext accessor methods ───────────────────────────────────
+  // These satisfy the ConventionsContext interface consumed by domain modules.
+
+  tagKeyPrefix(): string {
+    return this.keyPrefix
+  }
+
+  tagCasing(): TagKeyCasing {
+    return this.keyCasing
+  }
+
+  visibleTagKeys(): readonly TagKey[] {
+    return this.visibleTags
+  }
+
+  visibleDimensionKeys(): readonly DimensionKey[] {
+    return this.visibleDimensions
+  }
+
+  _getDeps(): Array<{ owner: ConventionsContext; resources: ResourceType[] }> {
+    return this._dependencies as Array<{ owner: ConventionsContext; resources: ResourceType[] }>
+  }
+
+  resolveApex(merged: Segments): string | undefined {
+    return resolveApexFn(merged, this.apexZoneMap, this.apexMapFn)
+  }
+
+  resolveArnCtx(override?: Partial<ArnContext>): ArnContext {
+    return resolveArnContextFn(override, this.storedArnContext, this.defaults.region)
+  }
+
   // ── Name generation ───────────────────────────────────────────────────────
 
   /**
@@ -1161,7 +953,14 @@ export class DerropsConventions<
     }
     const config: ResourceTypeConfig = RESOURCE_TYPES[resolvedType]
     const { type: _type, ...overrides } = options as { type?: ResourceType } & Segments
-    const segments = this.buildSegments({ ...this.defaults, ...overrides }, config)
+    const segments = buildSegmentsFn(
+      { ...this.defaults, ...overrides },
+      config,
+      this.extraSegments,
+      this.order,
+      this.apexZoneMap,
+      this.apexMapFn,
+    )
     const joined = segments.join(config.segmentDelimiter)
     const base = config.leadingDelimiter ? `${config.segmentDelimiter}${joined}` : joined
     const prefixed = config.namePrefix ? `${config.namePrefix}${base}` : base
@@ -1254,18 +1053,7 @@ export class DerropsConventions<
       partition?: string
     } = {},
   ): string {
-    const { date, granularity, tenant, partition: rawPartition } = options
-    const partition =
-      date !== undefined && granularity !== undefined
-        ? DerropsConventions.datePartition(date, granularity)
-        : rawPartition
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const base = this.name({
-      type: 's3LogKey',
-      ...(tenant !== undefined && { tenant }),
-      ...(partition !== undefined && { partition }),
-    } as any)
-    return base.endsWith('/') ? base : `${base}/`
+    return buildS3Prefix(this, options)
   }
 
   /**
@@ -1311,115 +1099,7 @@ export class DerropsConventions<
       layers?: S3ResourceLayers
     } = {},
   ): S3Resource {
-    const { key, date, granularity, partition: rawPartition, tenant, layers } = options
-
-    const partition =
-      date !== undefined && granularity !== undefined
-        ? DerropsConventions.datePartition(date, granularity)
-        : rawPartition
-
-    const resolvedTenant = tenant ?? this.defaults.tenant
-
-    // Full pool of every segment value available for this call.
-    // Layer configs pick which of these appear in each naming layer.
-    const pool: Partial<Record<SegmentKey, string>> = {
-      region: this.defaults.region,
-      env: this.defaults.env,
-      org: this.defaults.org,
-      apex: this.defaults.apex,
-      domain: this.defaults.domain,
-      service: this.defaults.service,
-      entity: this.defaults.entity,
-      tenant: resolvedTenant,
-      partition,
-      key,
-      purpose: this.defaults.purpose,
-      kind: this.defaults.kind,
-      az: this.defaults.az,
-      num: this.defaults.num,
-      consumer: this.defaults.consumer,
-      target: this.defaults.target,
-      version: this.defaults.version,
-    }
-
-    // Helper: extract ordered, defined values from the pool for a given segment list.
-    const pick = (segKeys: SegmentKey[]): string[] =>
-      segKeys.map((k) => pool[k]).filter((v): v is string => v !== undefined && v !== '')
-
-    // Helper: build ParsedSegments from a segment key list.
-    const segsOf = (segKeys: SegmentKey[]): ParsedSegments =>
-      Object.fromEntries(
-        segKeys.filter((k) => pool[k] !== undefined).map((k) => [k, pool[k]]),
-      ) as ParsedSegments
-
-    // ── Bucket layer ──────────────────────────────────────────────────────────
-    let bucketName: string
-    let bucketSegs: ParsedSegments
-
-    if (layers?.bucket) {
-      // Custom bucket: manually join with '--', applying s3Bucket word normalization
-      bucketName = pick(layers.bucket)
-        .map((v) => this.normalize(v, '-'))
-        .join('--')
-      bucketSegs = segsOf(layers.bucket)
-    } else {
-      // Default: use the s3Bucket resource type
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      bucketName = this.name({ type: 's3Bucket' } as any)
-      bucketSegs = segsOf(['region', 'env', 'org', 'domain', 'service'])
-    }
-
-    // ── Prefix layer ──────────────────────────────────────────────────────────
-    const prefixSegKeys: SegmentKey[] =
-      layers?.prefix ?? (RESOURCE_TYPES['s3KeyPrefix'].segments as SegmentKey[])
-    const prefixParts = pick(prefixSegKeys).map((v) => this.normalize(v, '-'))
-    const prefixBase = prefixParts.join('/')
-    const prefix = prefixBase ? `${prefixBase}/` : ''
-    const prefixSegs = segsOf(prefixSegKeys)
-
-    // ── Object layer ──────────────────────────────────────────────────────────
-    const objSegKeys: SegmentKey[] = layers?.obj ?? ['key']
-    const objParts = pick(objSegKeys).map((v) => this.normalize(v, '-'))
-    const objectName = objParts.join('-')
-    const objSegs = segsOf(objSegKeys)
-
-    // ── Compose key and reference formats ─────────────────────────────────────
-    const objectKey = objectName ? `${prefix}${objectName}` : prefixBase
-
-    const region = this.defaults.region
-    const uri = `s3://${bucketName}/${objectKey}`
-    const arn = `arn:aws:s3:::${bucketName}/${objectKey}`
-    const url = region
-      ? `https://${bucketName}.s3.${region}.amazonaws.com/${objectKey}`
-      : `https://${bucketName}.s3.amazonaws.com/${objectKey}`
-
-    const segments: ParsedS3Uri = {
-      bucket: bucketSegs,
-      prefix: prefixSegs,
-      obj: objSegs,
-      all: { ...bucketSegs, ...prefixSegs, ...objSegs },
-    }
-
-    // ── Tags ──────────────────────────────────────────────────────────────────
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const tags: Record<string, string> = { ...this.tags({ type: 's3Bucket' } as any) }
-
-    const layerValues = (segs: ParsedSegments): string =>
-      Object.entries(segs)
-        .map(([k, v]) => `${k}=${v}`)
-        .join(',')
-
-    const bv = layerValues(bucketSegs)
-    const pv = layerValues(prefixSegs)
-    const ov = layerValues(objSegs)
-
-    if (bv) tags[this.keyPrefix + applyTagKeyCasing('segment-values', this.keyCasing)] = bv
-    if (pv)
-      tags[this.keyPrefix + applyTagKeyCasing('s3-prefix-segment-values', this.keyCasing)] = pv
-    if (ov)
-      tags[this.keyPrefix + applyTagKeyCasing('s3-object-name-segment-values', this.keyCasing)] = ov
-
-    return { bucketName, prefix, objectName, objectKey, uri, arn, url, segments, tags }
+    return buildS3Resource(this, options)
   }
 
   /**
@@ -1457,105 +1137,23 @@ export class DerropsConventions<
   tags(options: TagOptions<C> = {} as TagOptions<C>): Record<string, string> {
     const typeOverride = (options as { type?: ResourceType }).type
     const merged: Segments = { ...this.defaults, ...(options as Segments) }
-    const result: Record<string, string> = {}
-
-    for (const tagKey of this.visibleTags) {
-      const value = merged[SEGMENT_FOR_TAG[tagKey]]
-      if (value) {
-        const finalKey = this.keyPrefix + applyTagKeyCasing(tagKey, this.keyCasing)
-        result[finalKey] = value
-      }
+    const state: TagBuildState = {
+      defaults: this.defaults,
+      visibleTags: this.visibleTags,
+      keyPrefix: this.keyPrefix,
+      keyCasing: this.keyCasing,
+      defaultType: this.defaultType,
+      order: this.order,
+      extraSegments: this.extraSegments,
+      tagRules: this.tagRules,
+      tagAugmentors: this.tagAugmentors,
+      tagKeyMax: this.tagKeyMax,
+      tagValueMax: this.tagValueMax,
+      tagCountMax: this.tagCountMax,
+      tagPolicies: this.tagPolicies,
+      _emitSegmentValues: this._emitSegmentValues,
     }
-
-    // Auto-generated segment pattern: the segment key names that would appear in a name
-    // for this resource type, joined by that type's delimiter. Lets libraries reverse-engineer
-    // which position in the name corresponds to which segment.
-    const resolvedType = typeOverride ?? this.defaultType
-    let activeSegmentOrder: Array<SegmentKey | string>
-    let segmentDelimiter: string
-    if (resolvedType) {
-      const config: ResourceTypeConfig = RESOURCE_TYPES[resolvedType]
-      activeSegmentOrder = config.segments
-        ? this.mergeExtraSegmentsIntoFixed(config.segments)
-        : this.effectiveOrder(config)
-      segmentDelimiter = config.segmentDelimiter
-    } else {
-      const extraSegments = (['apex', 'entity'] as SegmentKey[]).filter(
-        (k) => !this.order.includes(k),
-      )
-      activeSegmentOrder = [...this.order, ...extraSegments]
-      segmentDelimiter = '--'
-    }
-    const segmentPattern = activeSegmentOrder
-      .filter((key) => {
-        const v = (merged as Record<string, string | undefined>)[key] ?? this.extraSegments[key]
-        return v !== undefined && v.length > 0
-      })
-      .join(segmentDelimiter)
-    if (segmentPattern) {
-      result[this.keyPrefix + applyTagKeyCasing('segment', this.keyCasing)] = segmentPattern
-    }
-
-    if (this._emitSegmentValues) {
-      const segmentValues = activeSegmentOrder
-        .filter((key) => {
-          const v = (merged as Record<string, string | undefined>)[key] ?? this.extraSegments[key]
-          return v !== undefined && v.length > 0
-        })
-        .map((key) => {
-          const v = (merged as Record<string, string | undefined>)[key] ?? this.extraSegments[key]
-          return `${key}=${v}`
-        })
-        .join(',')
-      if (segmentValues) {
-        result[this.keyPrefix + applyTagKeyCasing('segment-values', this.keyCasing)] = segmentValues
-      }
-    }
-
-    // For s3Bucket, add structural schema tags encoding the prefix and object-name conventions.
-    // These are full segment-key templates (not filtered to set values) so any parser can
-    // reconstruct all three layers of a full S3 URI from bucket tags alone.
-    if (resolvedType === 's3Bucket') {
-      const prefixConfig = RESOURCE_TYPES['s3KeyPrefix']
-      const objNameConfig = RESOURCE_TYPES['s3ObjectName']
-      result[this.keyPrefix + applyTagKeyCasing('s3-prefix-segment', this.keyCasing)] =
-        prefixConfig.segments!.join(prefixConfig.segmentDelimiter)
-      result[this.keyPrefix + applyTagKeyCasing('s3-object-name-segment', this.keyCasing)] =
-        objNameConfig.segments!.join(objNameConfig.segmentDelimiter)
-    }
-
-    for (const rule of this.tagRules) {
-      Object.assign(result, rule(merged))
-    }
-
-    for (const augment of this.tagAugmentors) {
-      Object.assign(result, augment({ ...result }))
-    }
-
-    const entries = Object.entries(result)
-
-    if (entries.length > this.tagCountMax) {
-      throw new Error(`tags() produced ${entries.length} tags but maxTags is ${this.tagCountMax}`)
-    }
-
-    for (const [k, v] of entries) {
-      if (k.length > this.tagKeyMax) {
-        throw new Error(`Tag key "${k}" is ${k.length} characters but keyMax is ${this.tagKeyMax}`)
-      }
-      if (v.length > this.tagValueMax) {
-        throw new Error(
-          `Tag value for key "${k}" is ${v.length} characters but valueMax is ${this.tagValueMax}`,
-        )
-      }
-    }
-
-    for (const { fn, message } of this.tagPolicies) {
-      if (!fn(result)) {
-        throw new Error(message)
-      }
-    }
-
-    return result
+    return buildTags(state, merged, typeOverride)
   }
 
   /**
@@ -1631,13 +1229,7 @@ export class DerropsConventions<
    * // → [{ Name: 'Service', Value: 'checkout-api' }, { Name: 'Environment', Value: 'prod' }]
    */
   dimensions(options: TagOptions<C> = {} as TagOptions<C>): Array<{ Name: string; Value: string }> {
-    const merged: Segments = { ...this.defaults, ...(options as Segments) }
-    const result: Array<{ Name: string; Value: string }> = []
-    for (const dimKey of this.visibleDimensions) {
-      const value = merged[SEGMENT_FOR_DIMENSION[dimKey]]
-      if (value) result.push({ Name: DIMENSION_NAME[dimKey], Value: value })
-    }
-    return result
+    return buildDimensions(this, options as Partial<Segments>)
   }
 
   /**
@@ -1662,13 +1254,7 @@ export class DerropsConventions<
     alarm: string | undefined
     dimensions: Array<{ Name: string; Value: string }>
   } {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const n = (opts: object) => this.name(opts as any)
-    const namespace = n({ type: 'cloudwatchMetricNamespace' })
-    const logGroup = n({ type: 'cloudwatchLogsGroup' })
-    const dashboard = n({ type: 'cloudwatchDashboard' })
-    const alarm = options?.key ? n({ type: 'cloudwatchAlarm', key: options.key }) : undefined
-    return { namespace, logGroup, dashboard, alarm, dimensions: this.dimensions() }
+    return buildCloudwatchResource(this, options)
   }
 
   // ── EKS ───────────────────────────────────────────────────────────────────
@@ -1702,19 +1288,7 @@ export class DerropsConventions<
     configMap: string | undefined
     secret: string | undefined
   } {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const n = (opts: object) => this.name(opts as any)
-    return {
-      cluster: n({ type: 'eksCluster' }),
-      namespace: n({ type: 'k8sNamespace' }),
-      deployment: n({ type: 'k8sDeployment' }),
-      service: n({ type: 'k8sService' }),
-      nodeGroup: options?.nodeGroupPurpose
-        ? n({ type: 'eksNodeGroup', purpose: options.nodeGroupPurpose })
-        : undefined,
-      configMap: options?.key ? n({ type: 'k8sConfigMap', key: options.key }) : undefined,
-      secret: options?.key ? n({ type: 'k8sSecret', key: options.key }) : undefined,
-    }
+    return buildEksResource(this, options)
   }
 
   // ── Cloud Map ─────────────────────────────────────────────────────────────
@@ -1735,11 +1309,7 @@ export class DerropsConventions<
    * // }
    */
   cloudMapResource(): { namespace: string; service: string; fqdn: string } {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const n = (opts: object) => this.name(opts as any)
-    const namespace = n({ type: 'cloudMapNamespace' })
-    const service = n({ type: 'cloudMapService' })
-    return { namespace, service, fqdn: `${service}.${namespace}` }
+    return buildCloudMapResource(this)
   }
 
   // ── Cost allocation ───────────────────────────────────────────────────────
@@ -1760,25 +1330,7 @@ export class DerropsConventions<
    * //   ] }
    */
   costFilter(): CostExplorerFilter {
-    const tagDict = this.tags()
-    const and = Object.entries(tagDict)
-      .filter(([k]) => {
-        const base = k.includes(':') ? k.split(':').pop()! : k
-        const norm = base.toLowerCase().replace(/[-_]/g, '')
-        // Exclude structural/schema tags — only include value tags
-        return ![
-          'segment',
-          's3prefixsegment',
-          's3objectnamesegment',
-          'segmentvalues',
-          's3prefixsegmentvalues',
-          's3objectnamesegmentvalues',
-        ].includes(norm)
-      })
-      .map(([key, value]) => ({
-        Tags: { Key: key, Values: [value], MatchOptions: ['EQUALS'] },
-      }))
-    return { And: and }
+    return buildCostFilter(this)
   }
 
   /**
@@ -1791,10 +1343,7 @@ export class DerropsConventions<
    * c.budgetName()  // 'acme--payments--checkout-api--prod'
    */
   budgetName(): string {
-    const parts = (['org', 'domain', 'service', 'env'] as const)
-      .map((k) => this.defaults[k])
-      .filter((v): v is string => v !== undefined)
-    return parts.join('--')
+    return buildBudgetName(this)
   }
 
   /**
@@ -1807,7 +1356,7 @@ export class DerropsConventions<
    * // → ['slaops:org', 'slaops:domain', 'slaops:service']
    */
   costAllocationTags(): string[] {
-    return this.visibleTags.map((k) => this.keyPrefix + applyTagKeyCasing(k, this.keyCasing))
+    return buildCostAllocationTags(this)
   }
 
   // ── Network topology ──────────────────────────────────────────────────────
@@ -1821,11 +1370,7 @@ export class DerropsConventions<
    * // → { vpc: 'acme', transitGateway: 'acme--tgw' }
    */
   orgNetworkLayer(): { vpc: string; transitGateway: string } {
-    const n = (opts: object) => this.name(opts as NameOptions<C, TType>)
-    return {
-      vpc: n({ type: 'vpc' }),
-      transitGateway: n({ type: 'transitGateway' }),
-    }
+    return buildOrgNetworkLayer(this)
   }
 
   /**
@@ -1858,19 +1403,7 @@ export class DerropsConventions<
     routeTables: Record<string, string>
     tgwAttachment: string
   } {
-    const n = (opts: object) => this.name(opts as NameOptions<C, TType>)
-    const subnets: Record<string, string[]> = {}
-    const routeTables: Record<string, string> = {}
-    for (const kind of kinds) {
-      subnets[kind] = azs.map((az) => n({ type: 'subnet', kind, az }))
-      routeTables[kind] = n({ type: 'routeTable', kind })
-    }
-    return {
-      subnets,
-      nacl: n({ type: 'networkAcl' }),
-      routeTables,
-      tgwAttachment: n({ type: 'transitGatewayAttachment' }),
-    }
+    return buildDomainNetworkLayer(this, azs, kinds)
   }
 
   /**
@@ -1895,12 +1428,7 @@ export class DerropsConventions<
    * // }
    */
   serviceNetworkLayer(purposes: string[]): { securityGroups: Record<string, string> } {
-    const n = (opts: object) => this.name(opts as NameOptions<C, TType>)
-    const securityGroups: Record<string, string> = {}
-    for (const purpose of purposes) {
-      securityGroups[purpose] = n({ type: 'ec2SecurityGroup', purpose })
-    }
-    return { securityGroups }
+    return buildServiceNetworkLayer(this, purposes)
   }
 
   // ── Constraints ───────────────────────────────────────────────────────────
@@ -1995,12 +1523,9 @@ export class DerropsConventions<
    *   .buildPolicy()
    */
   staticPolicy(context?: Partial<ArnContext>): StaticPolicyBuilder<C> {
-    const resolved = this.resolveArnContext(context)
-    return new StaticPolicyBuilder(
-      (type, nameOptions) => this.name(nameOptions as NameOptions<C, TType>),
-      resolved,
-      this.defaults,
-    )
+    return buildStaticPolicy(this, context, (type, nameOptions) =>
+      this.name(nameOptions as NameOptions<C, TType>),
+    ) as StaticPolicyBuilder<C>
   }
 
   /**
@@ -2014,13 +1539,12 @@ export class DerropsConventions<
    * const doc = session.buildPolicy()
    */
   dynamicPolicy(context?: Partial<ArnContext>): DynamicPolicySession<C> {
-    const resolved = this.resolveArnContext(context)
-    return new DynamicPolicySession(
+    return buildDynamicPolicy(
+      this,
+      context,
       (options) => this.name(options as NameOptions<C, TType>),
-      resolved,
-      this.defaults,
       () => this.defaultType,
-    )
+    ) as DynamicPolicySession<C>
   }
 
   /**
@@ -2041,55 +1565,7 @@ export class DerropsConventions<
    *   .build()
    */
   resource(options: NameOptions<C, TType>): Resource<ResourceType> {
-    const { type: explicitType, ...segmentOverrides } = options as {
-      type?: ResourceType
-    } & Segments
-    const resolvedType = explicitType ?? (this.defaultType as ResourceType | undefined)
-    if (!resolvedType) {
-      throw new Error(
-        'resource() requires a "type" — either pass it directly or set a default via .with({ type })',
-      )
-    }
-    const config: ResourceTypeConfig = RESOURCE_TYPES[resolvedType]
-    if (!config.arn) {
-      throw new Error(
-        `Resource type "${resolvedType}" has no ARN configuration. ` +
-          `Use .name() for naming-only resource types.`,
-      )
-    }
-    const arnContext = this.resolveArnContext()
-    const resourceName = this.name(options)
-    // logicalName omits org — within a CDK stack the org prefix adds no disambiguation value.
-    const logicalName = this.name({ ...options, org: undefined } as Parameters<typeof this.name>[0])
-    const arns = buildPolicyArns(resourceName, config.arn, arnContext)
-    const tags = this.tags()
-
-    const merged: Segments = { ...this.defaults, ...segmentOverrides }
-    const zone = this.resolveApex(merged)
-    const dns =
-      zone && config.consoleLabel
-        ? [merged.key, merged.service]
-            .filter((v): v is string => Boolean(v))
-            .concat(config.consoleLabel, zone)
-            .join('.')
-        : undefined
-    const consoleUrl = buildConsoleUrl(resolvedType, {
-      name: resourceName,
-      region: merged.region ?? arnContext.region,
-      accountId: arnContext.accountId,
-      arn: arns[0]!,
-    })
-
-    return new ResourceImpl(
-      resourceName,
-      logicalName,
-      arns,
-      resolvedType,
-      tags,
-      config,
-      dns,
-      consoleUrl,
-    )
+    return buildResource(this, options as Record<string, unknown>)
   }
 
   /**
@@ -2128,40 +1604,7 @@ export class DerropsConventions<
    * // → { added: [], removed: [], unchanged: [...] }
    */
   tenantManifest(tenantId: string, resourceTypes: ResourceType[]): TenantManifest {
-    const tenanted = this.for({ tenant: tenantId })
-    const resources: TenantResource[] = resourceTypes.map((type) => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const name = tenanted.name({ type } as any)
-      let arn: string | undefined
-      try {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        arn = tenanted.resource({ type } as any).arn
-      } catch {
-        arn = undefined
-      }
-      const tags = tenanted.tags()
-      return { type, name, arn, tags }
-    })
-
-    return {
-      tenantId,
-      resources,
-      diff(existing: TenantManifest) {
-        const existingByType = new Map(existing.resources.map((r) => [r.type, r]))
-        const currentByType = new Map(resources.map((r) => [r.type, r]))
-        const added: TenantResource[] = []
-        const removed: TenantResource[] = []
-        const unchanged: TenantResource[] = []
-        for (const r of resources) {
-          if (!existingByType.has(r.type)) added.push(r)
-          else unchanged.push(r)
-        }
-        for (const r of existing.resources) {
-          if (!currentByType.has(r.type)) removed.push(r)
-        }
-        return { added, removed, unchanged }
-      },
-    }
+    return buildTenantManifest(this, tenantId, resourceTypes)
   }
 
   // ── CloudFormation ────────────────────────────────────────────────────────
@@ -2178,11 +1621,7 @@ export class DerropsConventions<
    * c.cfnExport('bucket-arn')  // 'acme--payments--api--bucket-arn'
    */
   cfnExport(exportKey: string): string {
-    const parts = (['org', 'domain', 'service'] as const)
-      .map((k) => this.defaults[k])
-      .filter((v): v is string => v !== undefined && v.length > 0)
-    parts.push(exportKey.toLowerCase().replace(/\s+/g, '-'))
-    return parts.join('--')
+    return buildCfnExport(this, exportKey)
   }
 
   // ── EventBridge ───────────────────────────────────────────────────────────
@@ -2202,10 +1641,7 @@ export class DerropsConventions<
    * { source: [{ prefix: svc.eventSource({ level: 'domain' }) }] }
    */
   eventSource(options?: { level?: 'org' | 'domain' | 'service' }): string {
-    const { org, domain, service } = this.defaults
-    const parts = [org, domain, service].filter((v): v is string => v !== undefined && v.length > 0)
-    const depth = options?.level === 'org' ? 1 : options?.level === 'domain' ? 2 : parts.length
-    return parts.slice(0, depth).join('.')
+    return buildEventSource(this, options)
   }
 
   /**
@@ -2217,11 +1653,7 @@ export class DerropsConventions<
    * svc.detailType('user signed in')  // 'UserSignedIn'
    */
   detailType(action: string): string {
-    return action
-      .split(/[^a-zA-Z0-9]+/)
-      .filter(Boolean)
-      .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
-      .join('')
+    return buildDetailType(action)
   }
 
   // ── ECR ──────────────────────────────────────────────────────────────────
@@ -2239,10 +1671,7 @@ export class DerropsConventions<
    * // 'prod--v1.2.3--abc123f'
    */
   imageTag(): string {
-    const { env, version, key } = this.defaults
-    return [env, version, key]
-      .filter((v): v is string => v !== undefined && v.length > 0)
-      .join('--')
+    return buildImageTag(this)
   }
 
   /**
@@ -2260,25 +1689,7 @@ export class DerropsConventions<
    * // '123456789012.dkr.ecr.ap-southeast-2.amazonaws.com/slaops/platform/api:prod--v1.2.3--abc123f'
    */
   ecrUri(): string {
-    const ctx = this.arnContextValue()
-    const accountId = ctx?.accountId
-    const region = this.defaults.region
-    if (!accountId) {
-      throw new Error('ecrUri() requires accountId — set it via .arnContext({ accountId })')
-    }
-    if (!region) {
-      throw new Error(
-        'ecrUri() requires region — set it as a segment default via .with({ region }) or in the constructor',
-      )
-    }
-    // Repo path is org/domain/service only — version/key are tag segments, not path segments.
-    const { org, domain, service } = this.defaults
-    const repo = [org, domain, service]
-      .filter((v): v is string => v !== undefined && v.length > 0)
-      .join('/')
-    const tag = this.imageTag()
-    const registry = `${accountId}.dkr.ecr.${region}.amazonaws.com`
-    return tag ? `${registry}/${repo}:${tag}` : `${registry}/${repo}`
+    return buildEcrUri(this)
   }
 
   // ── SQS ──────────────────────────────────────────────────────────────────
@@ -2297,11 +1708,7 @@ export class DerropsConventions<
    * // redrivePolicyArn === dlq.arn
    */
   sqsPair(options: Segments): SqsPair {
-    const queue = this.resource({ ...options, type: 'sqsQueue' } as Parameters<
-      typeof this.resource
-    >[0])
-    const dlq = this.resource({ ...options, type: 'sqsDlq' } as Parameters<typeof this.resource>[0])
-    return { queue, dlq, redrivePolicyArn: dlq.arn }
+    return buildSqsPair(this, options)
   }
 
   // ── Dependency modelling ──────────────────────────────────────────────────
@@ -2343,30 +1750,7 @@ export class DerropsConventions<
     }>
   } {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const visited = new Set<DerropsConventions<any, any, any, any>>()
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const queue: DerropsConventions<any, any, any, any>[] = [this]
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const nodes: DerropsConventions<any, any, any, any>[] = []
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const edges: Array<{
-      from: DerropsConventions<any, any, any, any>
-      owner: DerropsConventions<any, any, any, any>
-      resources: ResourceType[]
-    }> = []
-
-    while (queue.length > 0) {
-      const node = queue.shift()!
-      if (visited.has(node)) continue
-      visited.add(node)
-      nodes.push(node)
-      for (const dep of node._dependencies) {
-        edges.push({ from: node, owner: dep.owner, resources: dep.resources })
-        if (!visited.has(dep.owner)) queue.push(dep.owner)
-      }
-    }
-
-    return { nodes, edges }
+    return buildDependencies(this) as any
   }
 
   /**
@@ -2385,30 +1769,8 @@ export class DerropsConventions<
    * // → IAM policy: { Statement: [{ Effect: 'Allow', Action: ['dynamodb:Get*', ...], Resource: [...] }] }
    */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  policyFor(
-    caller: DerropsConventions<any, any, any, any>,
-  ): import('./policy/PolicyBuilder.js').PolicyBuilder {
-    const callerDeps = caller._dependencies.filter((d) => d.owner === this)
-    const builder = new PolicyBuilder()
-
-    for (const dep of callerDeps) {
-      for (const type of dep.resources) {
-        const config = RESOURCE_TYPES[type]
-        if (
-          !(config as ResourceTypeConfig | undefined)?.arn ||
-          !(config as ResourceTypeConfig | undefined)?.permissions
-        )
-          continue
-        try {
-          const resource = this.resource({ type } as NameOptions<C, TType>)
-          builder.allow(resource.read())
-        } catch {
-          // Skip resource types that cannot be resolved (missing required segments)
-        }
-      }
-    }
-
-    return builder
+  policyFor(caller: DerropsConventions<any, any, any, any>): PolicyBuilder {
+    return buildPolicyFor(this, caller)
   }
 
   // ── Validation ────────────────────────────────────────────────────────────
@@ -2429,24 +1791,7 @@ export class DerropsConventions<
    * // → { valid: false, errors: ['segment "domain": expected "payments", got "WRONG"'], ... }
    */
   validate(name: string, type: ResourceType): ValidationResult {
-    let parsed: ParsedSegments = {}
-    const errors: string[] = []
-
-    try {
-      parsed = DerropsConventions.parse(name, type)
-    } catch (e) {
-      errors.push(`parse error: ${(e as Error).message}`)
-      return { valid: false, errors, parsed, type }
-    }
-
-    for (const [key, knownValue] of Object.entries(this.defaults) as [keyof Segments, string][]) {
-      const parsedValue = parsed[key as SegmentKey]
-      if (parsedValue !== undefined && parsedValue !== knownValue) {
-        errors.push(`segment "${key}": expected "${knownValue}", got "${parsedValue}"`)
-      }
-    }
-
-    return { valid: errors.length === 0, errors, parsed, type }
+    return buildValidate(this, name, type)
   }
 
   /**
@@ -2461,13 +1806,7 @@ export class DerropsConventions<
    * report.failed[0].errors  // ['segment "domain": expected "payments", got "wrong"']
    */
   lint(names: Partial<Record<ResourceType, string>>): LintReport {
-    const passed: ValidationResult[] = []
-    const failed: ValidationResult[] = []
-    for (const [type, name] of Object.entries(names) as [ResourceType, string][]) {
-      const result = this.validate(name, type)
-      ;(result.valid ? passed : failed).push(result)
-    }
-    return { passed, failed, summary: `${passed.length}/${passed.length + failed.length} passed` }
+    return buildLint(this, names)
   }
 
   // ── Static utilities ──────────────────────────────────────────────────────
@@ -2501,43 +1840,7 @@ export class DerropsConventions<
     type: ResourceType,
     options?: { tags?: Record<string, string> },
   ): ParsedSegments {
-    const config: ResourceTypeConfig = RESOURCE_TYPES[type]
-    const delimiter = config.segmentDelimiter
-
-    let cleanName = name
-    if (config.leadingDelimiter && cleanName.startsWith(delimiter)) {
-      cleanName = cleanName.slice(delimiter.length)
-    }
-    if (config.namePrefix && cleanName.startsWith(config.namePrefix)) {
-      cleanName = cleanName.slice(config.namePrefix.length)
-    }
-    if (config.suffix && cleanName.endsWith(config.suffix)) {
-      cleanName = cleanName.slice(0, -config.suffix.length)
-    }
-
-    const segmentTagValue = options?.tags
-      ? DerropsConventions._findSegmentTag(options.tags)
-      : undefined
-
-    const keyOrder: SegmentKey[] =
-      segmentTagValue !== undefined
-        ? (segmentTagValue.split(delimiter) as SegmentKey[])
-        : DerropsConventions._defaultSegmentOrder(config)
-
-    const parts = cleanName.split(delimiter)
-    const result: ParsedSegments = {}
-    const keyCount = Math.min(keyOrder.length, parts.length)
-    for (let i = 0; i < keyCount; i++) {
-      const key = keyOrder[i]
-      // Last key is greedy: collect any remaining delimiter-bearing parts into it.
-      // This handles values that contain the delimiter (e.g. 'acme.com' for apex in DNS names,
-      // 'acme.com.au' for Route53 wildcard zones).
-      const value =
-        i === keyCount - 1 && parts.length > keyCount ? parts.slice(i).join(delimiter) : parts[i]!
-      if (key && value) result[key] = value
-    }
-
-    return result
+    return parseResourceName(name, type, options)
   }
 
   /**
@@ -2562,55 +1865,7 @@ export class DerropsConventions<
    * //     tenant: 't-xyz', partition: '2024/03/15' }
    */
   parseS3Key(key: string, options?: { tenant?: string }): ParsedSegments {
-    const result: ParsedSegments = {}
-    let remainder = key
-
-    const stripSegment = (label: keyof Segments, value: string): void => {
-      if (remainder.startsWith(value + '/')) {
-        result[label] = value
-        remainder = remainder.slice(value.length + 1)
-      } else if (remainder === value) {
-        result[label] = value
-        remainder = ''
-      } else {
-        throw new Error(
-          `parseS3Key(): key does not match expected ${label} prefix "${value}/" — got "${remainder}"`,
-        )
-      }
-    }
-
-    if (this.defaults.org) stripSegment('org', this.defaults.org)
-    if (this.defaults.domain) stripSegment('domain', this.defaults.domain)
-    if (this.defaults.service) stripSegment('service', this.defaults.service)
-
-    const tenant = options?.tenant ?? this.defaults.tenant
-    if (tenant && remainder.startsWith(tenant + '/')) {
-      result.tenant = tenant
-      remainder = remainder.slice(tenant.length + 1)
-    }
-
-    if (!remainder) return result
-
-    // A trailing slash means this is an S3 prefix (directory), not an object key.
-    // Everything remaining is the partition path; there is no key segment.
-    const isPrefix = remainder.endsWith('/')
-    if (isPrefix) remainder = remainder.slice(0, -1)
-    if (!remainder) return result
-
-    if (isPrefix) {
-      // Entire remainder is the partition path
-      result.partition = remainder
-    } else {
-      const lastSlash = remainder.lastIndexOf('/')
-      if (lastSlash === -1) {
-        result.key = remainder
-      } else {
-        result.partition = remainder.slice(0, lastSlash)
-        result.key = remainder.slice(lastSlash + 1)
-      }
-    }
-
-    return result
+    return parseS3KeyFromDefaults(key, this.defaults, options)
   }
 
   /**
@@ -2632,53 +1887,7 @@ export class DerropsConventions<
    * // }
    */
   parseS3Uri(uri: string, options?: { tags?: Record<string, string> }): ParsedS3Uri {
-    const { bucket: bucketName, key: objectKey } = DerropsConventions._splitS3Uri(uri)
-
-    // Parse bucket name segments (region, env, org, domain, service)
-    const bucketSegments = DerropsConventions.parse(bucketName, 's3Bucket', options)
-
-    // Validate bucket segments against known instance defaults
-    for (const [key, knownValue] of Object.entries(this.defaults) as [keyof Segments, string][]) {
-      const parsedValue = bucketSegments[key as SegmentKey]
-      if (parsedValue !== undefined && parsedValue !== knownValue) {
-        throw new Error(
-          `parseS3Uri(): segment "${key}" in URI is "${parsedValue}" but instance default is "${knownValue}"`,
-        )
-      }
-    }
-
-    if (!objectKey) {
-      return { bucket: bucketSegments, prefix: {}, obj: {}, all: { ...bucketSegments } }
-    }
-
-    // Prefer segment-value tags (from s3Resource().tags) — accurate even for custom layers
-    const prefixValTag = options?.tags
-      ? DerropsConventions._findTagByName(options.tags, 's3-prefix-segment-values')
-      : undefined
-    const objValTag = options?.tags
-      ? DerropsConventions._findTagByName(options.tags, 's3-object-name-segment-values')
-      : undefined
-
-    let prefixSegments: ParsedSegments
-    let objSegments: ParsedSegments
-
-    if (prefixValTag !== undefined || objValTag !== undefined) {
-      prefixSegments = prefixValTag ? DerropsConventions._parseSegmentValues(prefixValTag) : {}
-      objSegments = objValTag ? DerropsConventions._parseSegmentValues(objValTag) : {}
-    } else {
-      // Fall back to instance-aware path parsing (uses instance tenant for stripping)
-      const keyResult = this.parseS3Key(objectKey)
-      const { key, ...prefixOnly } = keyResult
-      prefixSegments = prefixOnly
-      objSegments = key !== undefined ? { key } : {}
-    }
-
-    return {
-      bucket: bucketSegments,
-      prefix: prefixSegments,
-      obj: objSegments,
-      all: { ...bucketSegments, ...prefixSegments, ...objSegments },
-    }
+    return parseS3UriFromDefaults(uri, this.defaults, options)
   }
 
   /**
@@ -2723,72 +1932,7 @@ export class DerropsConventions<
    * // }
    */
   static parseS3Uri(uri: string, options?: { tags?: Record<string, string> }): ParsedS3Uri {
-    const { bucket: bucketName, key: objectKey } = DerropsConventions._splitS3Uri(uri)
-
-    // Parse the bucket name — aided by the `segment` tag when present
-    const bucketSegments = DerropsConventions.parse(bucketName, 's3Bucket', options)
-
-    if (!objectKey) {
-      return { bucket: bucketSegments, prefix: {}, obj: {}, all: { ...bucketSegments } }
-    }
-
-    // When `s3Resource().tags` are provided they encode the exact segments for each layer
-    // via `segment-values`, `s3-prefix-segment-values`, and `s3-object-name-segment-values`.
-    // Using these is more reliable than path parsing because they survive custom `layers` configs
-    // where org/domain/service may not appear in the key path at all.
-    const prefixValTag = options?.tags
-      ? DerropsConventions._findTagByName(options.tags, 's3-prefix-segment-values')
-      : undefined
-    const objValTag = options?.tags
-      ? DerropsConventions._findTagByName(options.tags, 's3-object-name-segment-values')
-      : undefined
-
-    if (prefixValTag !== undefined || objValTag !== undefined) {
-      const prefixSegments = prefixValTag
-        ? DerropsConventions._parseSegmentValues(prefixValTag)
-        : {}
-      const objSegments = objValTag ? DerropsConventions._parseSegmentValues(objValTag) : {}
-      return {
-        bucket: bucketSegments,
-        prefix: prefixSegments,
-        obj: objSegments,
-        all: { ...bucketSegments, ...prefixSegments, ...objSegments },
-      }
-    }
-
-    // Fall back to path-based parsing using a temporary convention seeded from bucket segments.
-    // If the key path doesn't start with the bucket's known prefix (possible when custom layers
-    // move segments out of the bucket), catch the error and do a best-effort split.
-    const tempConv = new DerropsConventions(bucketSegments as Segments)
-    let prefixSegments: ParsedSegments
-    let objSegments: ParsedSegments
-    try {
-      const keyResult = tempConv.parseS3Key(objectKey)
-      const { key, ...prefixOnly } = keyResult
-      prefixSegments = prefixOnly
-      objSegments = key !== undefined ? { key } : {}
-    } catch {
-      const isPrefix = objectKey.endsWith('/')
-      const clean = isPrefix ? objectKey.slice(0, -1) : objectKey
-      const lastSlash = clean.lastIndexOf('/')
-      if (isPrefix) {
-        prefixSegments = clean ? { partition: clean } : {}
-        objSegments = {}
-      } else if (lastSlash === -1) {
-        prefixSegments = {}
-        objSegments = { key: clean }
-      } else {
-        prefixSegments = { partition: clean.slice(0, lastSlash) }
-        objSegments = { key: clean.slice(lastSlash + 1) }
-      }
-    }
-
-    return {
-      bucket: bucketSegments,
-      prefix: prefixSegments,
-      obj: objSegments,
-      all: { ...bucketSegments, ...prefixSegments, ...objSegments },
-    }
+    return parseS3UriStatic(uri, options, (segs) => new DerropsConventions(segs))
   }
 
   /** List all registered resource type keys. */
@@ -2820,20 +1964,7 @@ export class DerropsConventions<
    * })
    */
   static datePartition(date: Date, granularity: DatePartitionGranularity): string {
-    const y = date.getUTCFullYear()
-    const m = String(date.getUTCMonth() + 1).padStart(2, '0')
-    const d = String(date.getUTCDate()).padStart(2, '0')
-    const h = String(date.getUTCHours()).padStart(2, '0')
-    switch (granularity) {
-      case 'year':
-        return `${y}`
-      case 'month':
-        return `${y}/${m}`
-      case 'day':
-        return `${y}/${m}/${d}`
-      case 'hour':
-        return `${y}/${m}/${d}/${h}`
-    }
+    return parseDatePartition(date, granularity)
   }
 
   /**
@@ -2937,183 +2068,7 @@ export class DerropsConventions<
    * })
    */
   static regionCode(region: string): string {
-    const parts = region.split('-')
-    if (parts.length < 2) return region
-    const location = parts[0]!
-    const num = parts[parts.length - 1]!
-    const direction = parts.slice(1, -1).join('-')
-    const abbrev = REGION_DIRECTION_CODES[direction] ?? direction.slice(0, 2)
-    return `${location}${abbrev}${num}`
-  }
-
-  // ── Private ───────────────────────────────────────────────────────────────
-
-  private static _splitS3Uri(uri: string): { bucket: string; key: string } {
-    let path: string
-    if (uri.startsWith('s3://')) {
-      path = uri.slice(5)
-    } else if (uri.startsWith('arn:aws:s3:::')) {
-      path = uri.slice('arn:aws:s3:::'.length)
-    } else {
-      throw new Error(
-        `parseS3Uri(): unsupported URI scheme — expected "s3://" or "arn:aws:s3:::" but got "${uri.slice(0, 30)}..."`,
-      )
-    }
-    const slashIdx = path.indexOf('/')
-    if (slashIdx === -1) return { bucket: path, key: '' }
-    const bucket = path.slice(0, slashIdx)
-    const key = path.slice(slashIdx + 1)
-    // Treat a trailing-slash-only key (bucket URI like 's3://bucket/') as no key
-    return { bucket, key: key === '' ? '' : key }
-  }
-
-  /** Parse a `key=val,key=val` tag value into a `ParsedSegments` dict. */
-  private static _parseSegmentValues(str: string): ParsedSegments {
-    return Object.fromEntries(
-      str
-        .split(',')
-        .map((pair) => {
-          const eq = pair.indexOf('=')
-          return eq === -1 ? [] : [pair.slice(0, eq), pair.slice(eq + 1)]
-        })
-        .filter(([k]) => k),
-    ) as ParsedSegments
-  }
-
-  /**
-   * Find a tag value by canonical base name, ignoring prefix (e.g. `slaops:`) and casing variants.
-   * Normalises by stripping `-` / `_` and lowercasing before comparison, so
-   * `slaops:s3-prefix-segment-values`, `S3PrefixSegmentValues`, and
-   * `s3_prefix_segment_values` all resolve to the same entry.
-   */
-  private static _findTagByName(tags: Record<string, string>, name: string): string | undefined {
-    const target = name.toLowerCase().replace(/[-_]/g, '')
-    for (const [key, value] of Object.entries(tags)) {
-      const baseKey = key.includes(':') ? key.split(':').pop()! : key
-      if (baseKey.toLowerCase().replace(/[-_]/g, '') === target) return value
-    }
-    return undefined
-  }
-
-  private static _defaultSegmentOrder(config: ResourceTypeConfig): SegmentKey[] {
-    if (config.segments) return config.segments
-    if (config.global) return DEFAULT_SEGMENT_ORDER
-    return DEFAULT_SEGMENT_ORDER.filter((s) => !GLOBAL_ONLY_SEGMENTS.includes(s))
-  }
-
-  private static _findSegmentTag(tags: Record<string, string>): string | undefined {
-    for (const [key, value] of Object.entries(tags)) {
-      const baseKey = key.includes(':') ? key.split(':').pop()! : key
-      // Match 'segment' (and any casing: 'Segment') but not 'segment-values' variants
-      if (baseKey.toLowerCase() === 'segment') return value
-    }
-    return undefined
-  }
-
-  private resolveApex(merged: Segments): string | undefined {
-    let apex = merged.apex
-    if (this.apexZoneMap !== undefined && merged.region !== undefined) {
-      apex = this.apexZoneMap[merged.region] ?? apex
-    }
-    if (this.apexMapFn !== undefined && apex !== undefined) {
-      apex = this.apexMapFn({ ...merged, apex })
-    }
-    return apex
-  }
-
-  private buildSegments(merged: Segments, config: ResourceTypeConfig): string[] {
-    const activeOrder = config.segments
-      ? this.mergeExtraSegmentsIntoFixed(config.segments)
-      : this.effectiveOrder(config)
-
-    if (!activeOrder.includes('apex')) {
-      return activeOrder
-        .map(
-          (key) => (merged as Record<string, string | undefined>)[key] ?? this.extraSegments[key],
-        )
-        .filter((v): v is string => v !== undefined && v.length > 0)
-        .map((v) => this.normalize(v, config.wordDelimiter))
-    }
-
-    // Step 1: zone lookup — resolve base domain from region
-    let effective: Segments = merged
-    if (this.apexZoneMap !== undefined && merged.region !== undefined) {
-      const zone = this.apexZoneMap[merged.region]
-      if (zone !== undefined) effective = { ...merged, apex: zone }
-    }
-
-    // Step 2: apex mapping — env qualification or other derivation on top of resolved zone
-    if (this.apexMapFn !== undefined) {
-      effective = { ...effective, apex: this.apexMapFn(effective) }
-    }
-
-    return activeOrder
-      .map(
-        (key) => (effective as Record<string, string | undefined>)[key] ?? this.extraSegments[key],
-      )
-      .filter((v): v is string => v !== undefined && v.length > 0)
-      .map((v) => this.normalize(v, config.wordDelimiter))
-  }
-
-  /**
-   * Merge extra segments (from `insertSegment`/`insertSegmentAt`) into a fixed segment list.
-   * Extra keys are inserted at the position closest to where they appear in `this.order`,
-   * so fixed segments keep their declared relative order and custom segments slot in naturally.
-   */
-  private mergeExtraSegmentsIntoFixed(
-    fixedOrder: readonly SegmentKey[],
-  ): Array<SegmentKey | string> {
-    const extraKeys = Object.keys(this.extraSegments)
-    if (extraKeys.length === 0) return [...fixedOrder]
-
-    const orderedExtras = this.order.filter((k) => extraKeys.includes(k))
-    if (orderedExtras.length === 0) return [...fixedOrder]
-
-    const result: Array<SegmentKey | string> = [...fixedOrder]
-
-    for (const key of orderedExtras) {
-      const keyIdx = this.order.indexOf(key)
-      // Walk back from key's position to find the last predecessor already in result
-      let insertAfterIdx = -1
-      for (let i = keyIdx - 1; i >= 0; i--) {
-        const pred = this.order[i]!
-        const rIdx = result.indexOf(pred)
-        if (rIdx !== -1) {
-          insertAfterIdx = rIdx
-          break
-        }
-      }
-      // insertAfterIdx === -1 means no predecessor found → prepend (splice at 0)
-      result.splice(insertAfterIdx + 1, 0, key)
-    }
-
-    return result
-  }
-
-  private effectiveOrder(config: ResourceTypeConfig): Array<SegmentKey | string> {
-    if (config.global) return this.order
-    return this.order.filter((s) => !(GLOBAL_ONLY_SEGMENTS as string[]).includes(s))
-  }
-
-  private normalize(value: string, wordDelimiter: string): string {
-    const lower = value.toLowerCase().replace(/\s+/g, wordDelimiter)
-    // When the word delimiter isn't '-', also convert hyphens — they are word separators
-    // and must conform to the type's convention (e.g. '_' for RDS/Glue database identifiers).
-    return wordDelimiter !== '-' ? lower.replace(/-/g, wordDelimiter) : lower
-  }
-
-  private resolveArnContext(override?: Partial<ArnContext>): ArnContext {
-    const accountId = override?.accountId ?? this.storedArnContext?.accountId
-    if (!accountId) {
-      throw new Error(
-        'arnContext.accountId is required. Set it via .arnContext({ accountId }) on the instance or pass it directly to .staticPolicy() / .dynamicPolicy().',
-      )
-    }
-    return {
-      partition: override?.partition ?? this.storedArnContext?.partition,
-      region: override?.region ?? this.defaults.region,
-      accountId,
-    }
+    return parseRegionCode(region)
   }
 }
 

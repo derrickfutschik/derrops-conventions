@@ -1,5 +1,5 @@
 export { DerropsConventions, conventions } from './DerropsConventions.js'
-export type { ConventionSpec } from './DerropsConventions.js'
+export type { ConventionSpec } from './conventions-types.js'
 export { buildNetworkTopology, buildCapacityReport } from './topology.js'
 export type {
   SubnetKind,
@@ -27,7 +27,7 @@ export type {
   TagKey,
   TagKeyCasing,
   DatePartitionGranularity,
-} from './DerropsConventions.js'
+} from './conventions-types.js'
 export { RESOURCE_TYPES } from './resource-types.js'
 export type { ResourceType } from './resource-types.js'
 export type {
