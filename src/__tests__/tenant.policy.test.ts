@@ -23,7 +23,7 @@ const ACCOUNT_ID = '123456789012'
 const REGION = 'ap-southeast-2'
 
 const org = new DerropsConventions({
-  org: 'slaops',
+  org: 'derrops',
   region: REGION,
   env: 'prod',
 }).arnContext({ accountId: ACCOUNT_ID })
@@ -102,15 +102,15 @@ describe('pool model — tag conditions', () => {
   const sharedBucket = oaspec.with({ service: 'storage' }).resource({ type: 's3Bucket' })
 
   it('tagCondition produces StringEquals condition for a resource tag', () => {
-    const cond = tagCondition('aws:ResourceTag/slaops:tenant', TENANT_ID)
-    expect(cond).toEqual({ StringEquals: { 'aws:ResourceTag/slaops:tenant': TENANT_ID } })
+    const cond = tagCondition('aws:ResourceTag/derrops:tenant', TENANT_ID)
+    expect(cond).toEqual({ StringEquals: { 'aws:ResourceTag/derrops:tenant': TENANT_ID } })
   })
 
   it('withCondition attaches condition to a grant without mutating the original', () => {
     const original = sharedDomain.read()
     const conditioned = withCondition(
       original,
-      tagCondition('aws:ResourceTag/slaops:tenant', TENANT_ID),
+      tagCondition('aws:ResourceTag/derrops:tenant', TENANT_ID),
     )
     expect(original.condition).toBeUndefined()
     expect(conditioned.condition).toBeDefined()
@@ -123,7 +123,7 @@ describe('pool model — tag conditions', () => {
       .allow(
         withCondition(
           sharedDomain.read(),
-          tagCondition('aws:ResourceTag/slaops:tenant', TENANT_ID),
+          tagCondition('aws:ResourceTag/derrops:tenant', TENANT_ID),
         ),
       )
       .build()
@@ -132,7 +132,7 @@ describe('pool model — tag conditions', () => {
     const stmt = doc.Statement[0]!
     expect(stmt.Effect).toBe('Allow')
     expect(stmt.Condition).toEqual({
-      StringEquals: { 'aws:ResourceTag/slaops:tenant': TENANT_ID },
+      StringEquals: { 'aws:ResourceTag/derrops:tenant': TENANT_ID },
     })
     const resources = stmt.Resource as string[]
     // domain + domain/* — shared domain, not tenant-specific name
@@ -162,19 +162,19 @@ describe('pool model — tag conditions', () => {
   it('withCondition merges two conditions on the same operator', () => {
     const base = withCondition(
       sharedDomain.read(),
-      tagCondition('aws:ResourceTag/slaops:tenant', TENANT_ID),
+      tagCondition('aws:ResourceTag/derrops:tenant', TENANT_ID),
     )
     const combined = withCondition(base, { StringEquals: { 'aws:RequestedRegion': REGION } })
 
     expect(combined.condition!['StringEquals']).toEqual({
-      'aws:ResourceTag/slaops:tenant': TENANT_ID,
+      'aws:ResourceTag/derrops:tenant': TENANT_ID,
       'aws:RequestedRegion': REGION,
     })
   })
 
   it('withCondition merges conditions across different operators', () => {
     const base = withCondition(sharedBucket.write(), s3PrefixCondition(TENANT_ID))
-    const combined = withCondition(base, tagCondition('aws:ResourceTag/slaops:tenant', TENANT_ID))
+    const combined = withCondition(base, tagCondition('aws:ResourceTag/derrops:tenant', TENANT_ID))
 
     expect(combined.condition!['StringLike']).toBeDefined()
     expect(combined.condition!['StringEquals']).toBeDefined()
@@ -183,11 +183,11 @@ describe('pool model — tag conditions', () => {
   it('grants with different conditions produce separate statements (no merging)', () => {
     const tenantA = withCondition(
       sharedDomain.read(),
-      tagCondition('aws:ResourceTag/slaops:tenant', 't-aaaa'),
+      tagCondition('aws:ResourceTag/derrops:tenant', 't-aaaa'),
     )
     const tenantB = withCondition(
       sharedDomain.read(),
-      tagCondition('aws:ResourceTag/slaops:tenant', 't-bbbb'),
+      tagCondition('aws:ResourceTag/derrops:tenant', 't-bbbb'),
     )
 
     const doc = new PolicyBuilder().allow(tenantA, tenantB).build()
@@ -195,7 +195,7 @@ describe('pool model — tag conditions', () => {
     // Same actions, same resources, different conditions → 2 statements
     expect(doc.Statement).toHaveLength(2)
     const conditions = doc.Statement.map(
-      (s) => s.Condition!['StringEquals']!['aws:ResourceTag/slaops:tenant'],
+      (s) => s.Condition!['StringEquals']!['aws:ResourceTag/derrops:tenant'],
     )
     expect(conditions).toContain('t-aaaa')
     expect(conditions).toContain('t-bbbb')
@@ -205,7 +205,7 @@ describe('pool model — tag conditions', () => {
     const table1 = platform.with({ service: 'db' }).resource({ type: 'dynamoDb', key: 'orders' })
     const table2 = platform.with({ service: 'db' }).resource({ type: 'dynamoDb', key: 'sessions' })
 
-    const cond = tagCondition('aws:ResourceTag/slaops:tenant', TENANT_ID)
+    const cond = tagCondition('aws:ResourceTag/derrops:tenant', TENANT_ID)
     const doc = new PolicyBuilder()
       .allow(withCondition(table1.read(), cond), withCondition(table2.read(), cond))
       .build()
@@ -227,30 +227,30 @@ describe('ABAC model — session tag conditions', () => {
     .resource({ type: 'dynamoDb', key: 'events' })
 
   it('sessionTagCondition produces StringEquals with IAM variable referencing principal tag', () => {
-    const cond = sessionTagCondition('slaops:tenant')
+    const cond = sessionTagCondition('derrops:tenant')
     expect(cond).toEqual({
       StringEquals: {
-        'aws:ResourceTag/slaops:tenant': '${aws:PrincipalTag/slaops:tenant}',
+        'aws:ResourceTag/derrops:tenant': '${aws:PrincipalTag/derrops:tenant}',
       },
     })
   })
 
   it('ABAC policy allows read when resource and principal tenant tags match', () => {
     const doc = new PolicyBuilder()
-      .allow(withCondition(sharedTable.read(), sessionTagCondition('slaops:tenant')))
+      .allow(withCondition(sharedTable.read(), sessionTagCondition('derrops:tenant')))
       .build()
 
     expect(doc.Statement).toHaveLength(1)
     const stmt = doc.Statement[0]!
-    expect(stmt.Condition!['StringEquals']!['aws:ResourceTag/slaops:tenant']).toBe(
-      '${aws:PrincipalTag/slaops:tenant}',
+    expect(stmt.Condition!['StringEquals']!['aws:ResourceTag/derrops:tenant']).toBe(
+      '${aws:PrincipalTag/derrops:tenant}',
     )
   })
 
   it('ABAC policy with multiple resources still merges on same session-tag condition', () => {
     const table1 = platform.with({ service: 'svc-a' }).resource({ type: 'dynamoDb', key: 'data' })
     const table2 = platform.with({ service: 'svc-b' }).resource({ type: 'dynamoDb', key: 'data' })
-    const cond = sessionTagCondition('slaops:tenant')
+    const cond = sessionTagCondition('derrops:tenant')
 
     const doc = new PolicyBuilder()
       .allow(withCondition(table1.read(), cond), withCondition(table2.read(), cond))
@@ -300,7 +300,7 @@ describe('resource-based policies — principal access', () => {
           Action: ['s3:GetObject', 's3:PutObject'],
           Resource: sharedBucket.arns[1]!,
           Condition: {
-            StringNotEquals: { 'aws:PrincipalTag/slaops:tenant': TENANT_ID },
+            StringNotEquals: { 'aws:PrincipalTag/derrops:tenant': TENANT_ID },
           },
         },
       ],
@@ -392,7 +392,7 @@ describe('combined — complete tenant execution policy', () => {
       .allow(
         withCondition(
           sharedDomain.read(),
-          tagCondition('aws:ResourceTag/slaops:tenant', TENANT_ID),
+          tagCondition('aws:ResourceTag/derrops:tenant', TENANT_ID),
         ),
       )
       // Pool: S3 with prefix condition
@@ -420,7 +420,7 @@ describe('combined — complete tenant execution policy', () => {
     // OpenSearch with condition
     const esStmt = doc.Statement[2]!
     expect(esStmt.Condition).toBeDefined()
-    expect(esStmt.Condition!['StringEquals']!['aws:ResourceTag/slaops:tenant']).toBe(TENANT_ID)
+    expect(esStmt.Condition!['StringEquals']!['aws:ResourceTag/derrops:tenant']).toBe(TENANT_ID)
 
     // S3 with prefix condition
     const s3Stmt = doc.Statement[3]!

@@ -27,11 +27,11 @@ describe('buildArn', () => {
   it('omits region for IAM (includeRegion: false)', () => {
     expect(
       buildArn(
-        '/slaops/platform',
+        '/derrops/platform',
         { service: 'iam', includeRegion: false, includeAccount: true, resourcePrefix: 'role' },
         ctx,
       ),
-    ).toBe('arn:aws:iam::123456789012:role/slaops/platform')
+    ).toBe('arn:aws:iam::123456789012:role/derrops/platform')
   })
 
   it('omits region and account for S3 (both false)', () => {
@@ -131,7 +131,7 @@ describe('buildPolicyArns', () => {
 
   it('returns two ARNs for openSearchDomain with policyResourceSuffix', () => {
     const arns = buildPolicyArns(
-      'slaops--oaspec',
+      'derrops--oaspec',
       {
         service: 'es',
         includeRegion: true,
@@ -141,8 +141,8 @@ describe('buildPolicyArns', () => {
       },
       ctx,
     )
-    expect(arns[0]).toBe('arn:aws:es:ap-southeast-2:123456789012:domain/slaops--oaspec')
-    expect(arns[1]).toBe('arn:aws:es:ap-southeast-2:123456789012:domain/slaops--oaspec/*')
+    expect(arns[0]).toBe('arn:aws:es:ap-southeast-2:123456789012:domain/derrops--oaspec')
+    expect(arns[1]).toBe('arn:aws:es:ap-southeast-2:123456789012:domain/derrops--oaspec/*')
   })
 })
 
@@ -150,7 +150,7 @@ describe('buildPolicyArns', () => {
 
 describe('StaticPolicyBuilder', () => {
   const c = new DerropsConventions({
-    org: 'slaops',
+    org: 'derrops',
     domain: 'platform',
     service: 'api',
     region: 'ap-southeast-2',
@@ -166,7 +166,7 @@ describe('StaticPolicyBuilder', () => {
     expect(doc.Statement).toHaveLength(1)
     expect(doc.Statement[0]!.Effect).toBe('Allow')
     expect(doc.Statement[0]!.Resource).toBe(
-      'arn:aws:lambda:ap-southeast-2:123456789012:function:slaops--platform--api--handler',
+      'arn:aws:lambda:ap-southeast-2:123456789012:function:derrops--platform--api--handler',
     )
     expect(doc.Statement[0]!.Action).toContain('lambda:Get*')
   })
@@ -181,7 +181,7 @@ describe('StaticPolicyBuilder', () => {
     expect(Array.isArray(stmt.Resource)).toBe(true)
     const resources = stmt.Resource as string[]
     expect(resources).toHaveLength(2)
-    expect(resources[0]).toMatch(/:::slaops--/)
+    expect(resources[0]).toMatch(/:::derrops--/)
     expect(resources[1]).toMatch(/\/\*$/)
   })
 
@@ -193,7 +193,7 @@ describe('StaticPolicyBuilder', () => {
 
     const resources = doc.Statement[0]!.Resource as string[]
     expect(resources).toHaveLength(2)
-    expect(resources[0]).toContain(':domain/slaops--platform--api')
+    expect(resources[0]).toContain(':domain/derrops--platform--api')
     expect(resources[1]).toBe(resources[0] + '/*')
   })
 
@@ -203,7 +203,7 @@ describe('StaticPolicyBuilder', () => {
       .include('dynamoDb', { key: 'orders' }, { permissions: 'readWrite' })
       .buildPolicy()
     const tableArn = doc.Statement[0]!.Resource as string
-    expect(tableArn).toContain('table/slaops--platform--api--orders')
+    expect(tableArn).toContain('table/derrops--platform--api--orders')
 
     const gsiDoc = c
       .staticPolicy()
@@ -211,7 +211,7 @@ describe('StaticPolicyBuilder', () => {
       .buildPolicy()
     const gsiResource = gsiDoc.Statement[0]!.Resource as string[]
     // should point to the table without --gsi, then /index/*
-    expect(gsiResource[0]).toContain('table/slaops--platform--api--orders/index/*')
+    expect(gsiResource[0]).toContain('table/derrops--platform--api--orders/index/*')
     expect(gsiResource[0]).not.toContain('--gsi')
   })
 
@@ -286,7 +286,7 @@ describe('StaticPolicyBuilder', () => {
       .include('ssmDocument', { key: 'deploy-script' }, { permissions: 'read' })
       .buildPolicy()
     expect(doc.Statement[0]!.Resource).toBe(
-      'arn:aws:ssm:ap-southeast-2:123456789012:document/slaops--platform--api--deploy-script',
+      'arn:aws:ssm:ap-southeast-2:123456789012:document/derrops--platform--api--deploy-script',
     )
   })
 
@@ -296,7 +296,7 @@ describe('StaticPolicyBuilder', () => {
       .include('cloudFormationStack', { key: 'infra' }, { permissions: 'read' })
       .buildPolicy()
     const resource = doc.Statement[0]!.Resource as string
-    expect(resource).toMatch(/stack\/slaops--platform--api--infra-stack\/\*$/)
+    expect(resource).toMatch(/stack\/derrops--platform--api--infra-stack\/\*$/)
   })
 
   it('configRule generates correct ARN', () => {
@@ -305,7 +305,7 @@ describe('StaticPolicyBuilder', () => {
       .include('configRule', { key: 'tagged' }, { permissions: 'read' })
       .buildPolicy()
     expect(doc.Statement[0]!.Resource).toBe(
-      'arn:aws:config:ap-southeast-2:123456789012:config-rule/slaops--platform--api--tagged-rule',
+      'arn:aws:config:ap-southeast-2:123456789012:config-rule/derrops--platform--api--tagged-rule',
     )
   })
 
@@ -314,7 +314,7 @@ describe('StaticPolicyBuilder', () => {
       .staticPolicy()
       .include('redshiftCluster', {}, { permissions: 'read' })
       .buildPolicy()
-    expect(doc.Statement[0]!.Resource).toContain('cluster:slaops--platform--api')
+    expect(doc.Statement[0]!.Resource).toContain('cluster:derrops--platform--api')
   })
 
   it('xraySamplingRule generates correct ARN', () => {
@@ -322,7 +322,7 @@ describe('StaticPolicyBuilder', () => {
       .staticPolicy()
       .include('xraySamplingRule', { key: 'low-rate' }, { permissions: 'readWrite' })
       .buildPolicy()
-    expect(doc.Statement[0]!.Resource).toContain('sampling-rule/slaops--platform--api--low-rate')
+    expect(doc.Statement[0]!.Resource).toContain('sampling-rule/derrops--platform--api--low-rate')
   })
 
   it('mskCluster readWrite includes kafka-cluster data-plane actions', () => {
@@ -347,7 +347,7 @@ describe('StaticPolicyBuilder', () => {
 
 describe('DynamicPolicySession', () => {
   const c = new DerropsConventions({
-    org: 'slaops',
+    org: 'derrops',
     domain: 'platform',
     service: 'api',
     region: 'ap-southeast-2',
@@ -360,14 +360,14 @@ describe('DynamicPolicySession', () => {
 
     const doc = session.buildPolicy()
     expect(doc.Statement).toHaveLength(2)
-    expect(doc.Statement[0]!.Resource).toContain('function:slaops--platform--api--handler')
-    expect(doc.Statement[1]!.Resource).toContain('table/slaops--platform--api--orders')
+    expect(doc.Statement[0]!.Resource).toContain('function:derrops--platform--api--handler')
+    expect(doc.Statement[1]!.Resource).toContain('table/derrops--platform--api--orders')
   })
 
   it('returns the generated name', () => {
     const session = c.dynamicPolicy()
     const name = session.name({ type: 'ssmParam', key: 'secret' })
-    expect(name).toBe('/slaops/platform/api/secret')
+    expect(name).toBe('/derrops/platform/api/secret')
   })
 
   it('skips resources with no ARN config', () => {
@@ -396,9 +396,9 @@ describe('DynamicPolicySession', () => {
     const scoped = c.with({ type: 'lambdaFunction' }).arnContext({ accountId: '123456789012' })
     const session = scoped.dynamicPolicy()
     const name = session.name({ key: 'worker' }, { permissions: 'read' })
-    expect(name).toBe('slaops--platform--api--worker')
+    expect(name).toBe('derrops--platform--api--worker')
     const doc = session.buildPolicy()
-    expect(doc.Statement[0]!.Resource).toContain('function:slaops--platform--api--worker')
+    expect(doc.Statement[0]!.Resource).toContain('function:derrops--platform--api--worker')
   })
 
   it('additionalStatements are appended', () => {
@@ -417,7 +417,7 @@ describe('DynamicPolicySession', () => {
     session.name({ type: 'dynamoDbGsi', key: 'orders' }, { permissions: 'read' })
     const doc = session.buildPolicy()
     const resource = doc.Statement[0]!.Resource as string[]
-    expect(resource[0]).toContain('table/slaops--platform--api--orders/index/*')
+    expect(resource[0]).toContain('table/derrops--platform--api--orders/index/*')
     expect(resource[0]).not.toContain('--gsi')
   })
 })
@@ -426,7 +426,7 @@ describe('DynamicPolicySession', () => {
 
 describe('DerropsConventions.resource()', () => {
   const c = new DerropsConventions({
-    org: 'slaops',
+    org: 'derrops',
     domain: 'platform',
     service: 'api',
     region: 'ap-southeast-2',
@@ -434,9 +434,9 @@ describe('DerropsConventions.resource()', () => {
 
   it('returns name, arn, arns, type, tags', () => {
     const r = c.resource({ type: 'lambdaFunction', key: 'handler' })
-    expect(r.name).toBe('slaops--platform--api--handler')
+    expect(r.name).toBe('derrops--platform--api--handler')
     expect(r.arn).toBe(
-      'arn:aws:lambda:ap-southeast-2:123456789012:function:slaops--platform--api--handler',
+      'arn:aws:lambda:ap-southeast-2:123456789012:function:derrops--platform--api--handler',
     )
     expect(r.arns).toHaveLength(1)
     expect(r.type).toBe('lambdaFunction')
@@ -446,7 +446,7 @@ describe('DerropsConventions.resource()', () => {
   it('s3Bucket arns includes bucket and bucket/*', () => {
     const r = c.resource({ type: 's3Bucket', key: 'uploads' })
     expect(r.arns).toHaveLength(2)
-    expect(r.arns[0]).toMatch(/:::ap-southeast-2--slaops--/)
+    expect(r.arns[0]).toMatch(/:::ap-southeast-2--derrops--/)
     expect(r.arns[1]).toMatch(/\/\*$/)
   })
 
@@ -455,7 +455,7 @@ describe('DerropsConventions.resource()', () => {
   })
 
   it('throws when arnContext is not set', () => {
-    const bare = new DerropsConventions({ org: 'slaops', region: 'ap-southeast-2' })
+    const bare = new DerropsConventions({ org: 'derrops', region: 'ap-southeast-2' })
     expect(() => bare.resource({ type: 'lambdaFunction', key: 'h' })).toThrow(/accountId/)
   })
 
@@ -512,7 +512,7 @@ describe('DerropsConventions.resource()', () => {
 
 describe('PolicyBuilder', () => {
   const c = new DerropsConventions({
-    org: 'slaops',
+    org: 'derrops',
     domain: 'platform',
     service: 'api',
     region: 'ap-southeast-2',
@@ -528,8 +528,8 @@ describe('PolicyBuilder', () => {
     expect(doc.Statement[0]!.Effect).toBe('Allow')
     const resources = doc.Statement[0]!.Resource as string[]
     expect(resources).toHaveLength(2)
-    expect(resources[0]).toContain('table/slaops--platform--api--orders')
-    expect(resources[1]).toContain('table/slaops--platform--api--sessions')
+    expect(resources[0]).toContain('table/derrops--platform--api--orders')
+    expect(resources[1]).toContain('table/derrops--platform--api--sessions')
   })
 
   it('does not merge resources with different action sets', () => {
@@ -572,7 +572,7 @@ describe('PolicyBuilder', () => {
     expect(doc.Statement).toHaveLength(1)
     const resources = doc.Statement[0]!.Resource as string[]
     // table ARN
-    expect(resources.some((r) => r.endsWith('table/slaops--platform--api--orders'))).toBe(true)
+    expect(resources.some((r) => r.endsWith('table/derrops--platform--api--orders'))).toBe(true)
     // GSI ARN — strips --gsi suffix, appends /index/*
     expect(resources.some((r) => r.includes('/index/*') && !r.includes('--gsi'))).toBe(true)
   })

@@ -2,7 +2,7 @@ import { describe, it, expect } from '@jest/globals'
 import { DerropsConventions } from '../DerropsConventions.js'
 
 const base = new DerropsConventions({
-  org: 'slaops',
+  org: 'derrops',
   domain: 'platform',
   service: 'api',
   region: 'ap-southeast-2',
@@ -46,7 +46,7 @@ describe('SQS — naming', () => {
 describe('SQS — resource()', () => {
   it('sqsQueue: regional ARN with no resource prefix (queue name is the resource)', () => {
     const r = base.resource({ type: 'sqsQueue', key: 'jobs' })
-    expect(r.arn).toBe('arn:aws:sqs:ap-southeast-2:123456789012:slaops--platform--api--jobs')
+    expect(r.arn).toBe('arn:aws:sqs:ap-southeast-2:123456789012:derrops--platform--api--jobs')
   })
 
   it('sqsFifoQueue: name ends with .fifo and ARN includes it', () => {
@@ -71,13 +71,13 @@ describe('SQS — resource()', () => {
 describe('SQS — sqsPair()', () => {
   it('queue name does not have dlq suffix', () => {
     const { queue } = base.sqsPair({ key: 'ingest' })
-    expect(queue.name).toBe('slaops--platform--api--ingest')
+    expect(queue.name).toBe('derrops--platform--api--ingest')
     expect(queue.name).not.toContain('dlq')
   })
 
   it('dlq name has --dlq suffix', () => {
     const { dlq } = base.sqsPair({ key: 'ingest' })
-    expect(dlq.name).toBe('slaops--platform--api--ingest--dlq')
+    expect(dlq.name).toBe('derrops--platform--api--ingest--dlq')
   })
 
   it('both queue and dlq share the same key prefix', () => {
@@ -92,13 +92,13 @@ describe('SQS — sqsPair()', () => {
 
   it('queue ARN is a valid SQS ARN', () => {
     const { queue } = base.sqsPair({ key: 'ingest' })
-    expect(queue.arn).toBe('arn:aws:sqs:ap-southeast-2:123456789012:slaops--platform--api--ingest')
+    expect(queue.arn).toBe('arn:aws:sqs:ap-southeast-2:123456789012:derrops--platform--api--ingest')
   })
 
   it('dlq ARN is a valid SQS ARN with --dlq suffix', () => {
     const { dlq } = base.sqsPair({ key: 'ingest' })
     expect(dlq.arn).toBe(
-      'arn:aws:sqs:ap-southeast-2:123456789012:slaops--platform--api--ingest--dlq',
+      'arn:aws:sqs:ap-southeast-2:123456789012:derrops--platform--api--ingest--dlq',
     )
   })
 

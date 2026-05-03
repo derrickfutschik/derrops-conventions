@@ -18,7 +18,7 @@ interface PendingGrant {
  * additive — IAM ANDs them.
  *
  * @example
- * .allow(withCondition(table.read(), tagCondition('aws:ResourceTag/slaops:tenant', tenantId)))
+ * .allow(withCondition(table.read(), tagCondition('aws:ResourceTag/derrops:tenant', tenantId)))
  */
 export function withCondition(grant: GrantDescriptor, condition: IamCondition): GrantDescriptor {
   const merged: Record<string, Record<string, string | string[]>> = {}
@@ -39,8 +39,8 @@ export function withCondition(grant: GrantDescriptor, condition: IamCondition): 
  * or a bare key for service-specific condition keys.
  *
  * @example
- * // Only allow access when the resource has slaops:tenant = 't-abc123'
- * withCondition(domain.read(), tagCondition('aws:ResourceTag/slaops:tenant', 't-abc123'))
+ * // Only allow access when the resource has derrops:tenant = 't-abc123'
+ * withCondition(domain.read(), tagCondition('aws:ResourceTag/derrops:tenant', 't-abc123'))
  */
 export function tagCondition(tagKey: string, value: string): IamCondition {
   return { StringEquals: { [tagKey]: value } }
@@ -50,14 +50,14 @@ export function tagCondition(tagKey: string, value: string): IamCondition {
  * Build an IAM `StringEquals` condition for attribute-based access control (ABAC):
  * the resource's tag must equal the caller's principal session tag of the same key.
  *
- * When attached to a policy for a role that has a session tag `slaops:tenant = t-abc123`,
- * only resources tagged `slaops:tenant = t-abc123` are accessible — no per-tenant policy
+ * When attached to a policy for a role that has a session tag `derrops:tenant = t-abc123`,
+ * only resources tagged `derrops:tenant = t-abc123` are accessible — no per-tenant policy
  * needed.
  *
  * @example
- * // Lambda role tagged slaops:tenant=t-abc123 can only access tables tagged the same way
- * withCondition(table.read(), sessionTagCondition('slaops:tenant'))
- * // → Condition: StringEquals { 'aws:ResourceTag/slaops:tenant': '${aws:PrincipalTag/slaops:tenant}' }
+ * // Lambda role tagged derrops:tenant=t-abc123 can only access tables tagged the same way
+ * withCondition(table.read(), sessionTagCondition('derrops:tenant'))
+ * // → Condition: StringEquals { 'aws:ResourceTag/derrops:tenant': '${aws:PrincipalTag/derrops:tenant}' }
  */
 export function sessionTagCondition(tagKey: string): IamCondition {
   return {

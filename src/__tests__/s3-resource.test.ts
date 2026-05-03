@@ -13,7 +13,7 @@ const fullConv = () =>
     env: 'prod',
     region: 'ap-southeast-2',
   })
-    .tagPrefix('slaops:')
+    .tagPrefix('derrops:')
     .tagKeys('org', 'domain', 'service', 'environment')
 
 /** Convention without region/env (domain-scoped only) */
@@ -353,17 +353,17 @@ describe('DerropsConventions — s3Resource()', () => {
     describe('schema tags', () => {
       it('bucket segment schema tag (key names with -- delimiter)', () => {
         const r = fullConv().s3Resource()
-        expect(r.tags['slaops:segment']).toBe('region--env--org--domain--service')
+        expect(r.tags['derrops:segment']).toBe('region--env--org--domain--service')
       })
 
       it('prefix segment schema tag (full template, always all keys)', () => {
         const r = fullConv().s3Resource()
-        expect(r.tags['slaops:s3-prefix-segment']).toBe('org/domain/service/tenant/partition')
+        expect(r.tags['derrops:s3-prefix-segment']).toBe('org/domain/service/tenant/partition')
       })
 
       it('object name schema tag', () => {
         const r = fullConv().s3Resource()
-        expect(r.tags['slaops:s3-object-name-segment']).toBe('key')
+        expect(r.tags['derrops:s3-object-name-segment']).toBe('key')
       })
 
       it('prefix schema tag includes tenant even when no tenant is set', () => {
@@ -375,50 +375,50 @@ describe('DerropsConventions — s3Resource()', () => {
     describe('visible segment tags', () => {
       it('visible tags present for segments set on instance', () => {
         const r = fullConv().s3Resource()
-        expect(r.tags['slaops:org']).toBe('acme')
-        expect(r.tags['slaops:domain']).toBe('logs')
-        expect(r.tags['slaops:service']).toBe('ingest')
-        expect(r.tags['slaops:environment']).toBe('prod')
+        expect(r.tags['derrops:org']).toBe('acme')
+        expect(r.tags['derrops:domain']).toBe('logs')
+        expect(r.tags['derrops:service']).toBe('ingest')
+        expect(r.tags['derrops:environment']).toBe('prod')
       })
     })
 
     describe('segment-value tags (runtime instance tags per layer)', () => {
       it('segment-values encodes the bucket layer segments', () => {
         const r = fullConv().s3Resource()
-        expect(r.tags['slaops:segment-values']).toBe(
+        expect(r.tags['derrops:segment-values']).toBe(
           'region=ap-southeast-2,env=prod,org=acme,domain=logs,service=ingest',
         )
       })
 
       it('s3-prefix-segment-values encodes the prefix layer segments', () => {
         const r = fullConv().s3Resource({ partition: '2024/03/15' })
-        expect(r.tags['slaops:s3-prefix-segment-values']).toBe(
+        expect(r.tags['derrops:s3-prefix-segment-values']).toBe(
           'org=acme,domain=logs,service=ingest,partition=2024/03/15',
         )
       })
 
       it('s3-prefix-segment-values includes tenant when set', () => {
         const r = fullConv().s3Resource({ tenant: 't-xyz', partition: '2024/03/15' })
-        expect(r.tags['slaops:s3-prefix-segment-values']).toBe(
+        expect(r.tags['derrops:s3-prefix-segment-values']).toBe(
           'org=acme,domain=logs,service=ingest,tenant=t-xyz,partition=2024/03/15',
         )
       })
 
       it('s3-prefix-segment-values omits partition when not set', () => {
         const r = fullConv().s3Resource()
-        expect(r.tags['slaops:s3-prefix-segment-values']).toBe(
+        expect(r.tags['derrops:s3-prefix-segment-values']).toBe(
           'org=acme,domain=logs,service=ingest',
         )
       })
 
       it('s3-object-name-segment-values encodes the key', () => {
         const r = fullConv().s3Resource({ key: 'access.log.gz' })
-        expect(r.tags['slaops:s3-object-name-segment-values']).toBe('key=access.log.gz')
+        expect(r.tags['derrops:s3-object-name-segment-values']).toBe('key=access.log.gz')
       })
 
       it('s3-object-name-segment-values absent when no key', () => {
         const r = fullConv().s3Resource()
-        expect(r.tags).not.toHaveProperty('slaops:s3-object-name-segment-values')
+        expect(r.tags).not.toHaveProperty('derrops:s3-object-name-segment-values')
       })
 
       it('all three segment-value tags together enable full URI reconstruction from tags', () => {
@@ -427,12 +427,12 @@ describe('DerropsConventions — s3Resource()', () => {
           key: 'access.log.gz',
         })
         // bucket: region--env--org--domain--service
-        expect(r.tags['slaops:segment-values']).toContain('region=ap-southeast-2')
-        expect(r.tags['slaops:segment-values']).toContain('env=prod')
+        expect(r.tags['derrops:segment-values']).toContain('region=ap-southeast-2')
+        expect(r.tags['derrops:segment-values']).toContain('env=prod')
         // prefix: org/domain/service/partition
-        expect(r.tags['slaops:s3-prefix-segment-values']).toContain('partition=2024/03/15/14')
+        expect(r.tags['derrops:s3-prefix-segment-values']).toContain('partition=2024/03/15/14')
         // obj: key
-        expect(r.tags['slaops:s3-object-name-segment-values']).toBe('key=access.log.gz')
+        expect(r.tags['derrops:s3-object-name-segment-values']).toBe('key=access.log.gz')
       })
     })
 
@@ -498,7 +498,7 @@ describe('DerropsConventions — s3Resource()', () => {
 
     it('builds a multi-tenant log URI', () => {
       const c = new DerropsConventions({
-        org: 'slaops',
+        org: 'derrops',
         domain: 'logging',
         service: 'collector',
         env: 'prod',
@@ -511,11 +511,11 @@ describe('DerropsConventions — s3Resource()', () => {
         key: 'events.json.gz',
       })
 
-      expect(r.bucketName).toBe('us-east-1--prod--slaops--logging--collector')
-      expect(r.prefix).toBe('slaops/logging/collector/customer-abc/2024/06/01/')
+      expect(r.bucketName).toBe('us-east-1--prod--derrops--logging--collector')
+      expect(r.prefix).toBe('derrops/logging/collector/customer-abc/2024/06/01/')
       expect(r.uri).toBe(
-        's3://us-east-1--prod--slaops--logging--collector/' +
-          'slaops/logging/collector/customer-abc/2024/06/01/events.json.gz',
+        's3://us-east-1--prod--derrops--logging--collector/' +
+          'derrops/logging/collector/customer-abc/2024/06/01/events.json.gz',
       )
       expect(r.segments.all.tenant).toBe('customer-abc')
     })
@@ -877,14 +877,14 @@ describe('DerropsConventions — s3Resource()', () => {
       expect(parsed.obj.key).toBe('log.gz')
     })
 
-    it('parse: tags with prefix (slaops:) are found correctly by parser', () => {
-      // fullConv() uses slaops: prefix — verify _findTagByName handles it
+    it('parse: tags with prefix (derrops:) are found correctly by parser', () => {
+      // fullConv() uses derrops: prefix — verify _findTagByName handles it
       const r = fullConv().s3Resource({
         partition: '2024/03',
         key: 'f.gz',
         layers: { prefix: ['partition'] },
       })
-      expect(r.tags).toHaveProperty('slaops:s3-prefix-segment-values')
+      expect(r.tags).toHaveProperty('derrops:s3-prefix-segment-values')
       const parsed = DerropsConventions.parseS3Uri(r.uri, { tags: r.tags })
       expect(parsed.prefix).toEqual({ partition: '2024/03' })
     })
@@ -1005,7 +1005,7 @@ describe('DerropsConventions — s3Resource()', () => {
       const r = fullConv().s3Resource({
         layers: { bucket: ['region', 'env', 'org'] },
       })
-      expect(r.tags['slaops:segment-values']).toBe('region=ap-southeast-2,env=prod,org=acme')
+      expect(r.tags['derrops:segment-values']).toBe('region=ap-southeast-2,env=prod,org=acme')
     })
 
     it('s3-prefix-segment-values reflects custom prefix layer', () => {
@@ -1014,7 +1014,7 @@ describe('DerropsConventions — s3Resource()', () => {
         key: 'log.gz',
         layers: { prefix: ['partition'] },
       })
-      expect(r.tags['slaops:s3-prefix-segment-values']).toBe('partition=2024/03/15')
+      expect(r.tags['derrops:s3-prefix-segment-values']).toBe('partition=2024/03/15')
     })
 
     it('s3-object-name-segment-values reflects custom obj layer', () => {
@@ -1022,7 +1022,7 @@ describe('DerropsConventions — s3Resource()', () => {
         key: 'f.gz',
         layers: { obj: ['service', 'key'] },
       })
-      expect(r.tags['slaops:s3-object-name-segment-values']).toBe('service=ingest,key=f.gz')
+      expect(r.tags['derrops:s3-object-name-segment-values']).toBe('service=ingest,key=f.gz')
     })
 
     it('s3-prefix-segment schema tag always shows full template, regardless of custom layer', () => {
@@ -1030,7 +1030,7 @@ describe('DerropsConventions — s3Resource()', () => {
       const r = fullConv().s3Resource({
         layers: { prefix: ['partition'] },
       })
-      expect(r.tags['slaops:s3-prefix-segment']).toBe('org/domain/service/tenant/partition')
+      expect(r.tags['derrops:s3-prefix-segment']).toBe('org/domain/service/tenant/partition')
     })
 
     it('url changes when bucket layer changes', () => {

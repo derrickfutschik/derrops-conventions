@@ -50,10 +50,10 @@ describe('DerropsConventions — parse()', () => {
       ).toEqual({ org: 'acme', domain: 'payments', version: 'v2' })
     })
 
-    it('uses segment tag with prefix (e.g. slaops:segment)', () => {
+    it('uses segment tag with prefix (e.g. derrops:segment)', () => {
       expect(
         DerropsConventions.parse('acme--payments--v2', 'lambdaFunction', {
-          tags: { 'slaops:segment': 'org--domain--version' },
+          tags: { 'derrops:segment': 'org--domain--version' },
         }),
       ).toEqual({ org: 'acme', domain: 'payments', version: 'v2' })
     })
@@ -185,11 +185,11 @@ describe('DerropsConventions — parse()', () => {
     })
 
     it('correctly resolves segment tag with instance prefix', () => {
-      const c = new DerropsConventions({ org: 'acme' }).tagPrefix('slaops:')
-      // The instance's generated tags will have 'slaops:segment' key
+      const c = new DerropsConventions({ org: 'acme' }).tagPrefix('derrops:')
+      // The instance's generated tags will have 'derrops:segment' key
       const result = c.parse('acme--payments--v2', {
         type: 'lambdaFunction',
-        tags: { 'slaops:segment': 'org--domain--version' },
+        tags: { 'derrops:segment': 'org--domain--version' },
       })
       expect(result).toEqual({ org: 'acme', domain: 'payments', version: 'v2' })
     })
@@ -226,10 +226,10 @@ describe('DerropsConventions — parse()', () => {
       expect(result.service).toBe('checkout-api')
     })
 
-    it('parses with prefixed segment tag (e.g. slaops:segment)', () => {
+    it('parses with prefixed segment tag (e.g. derrops:segment)', () => {
       expect(
         DerropsConventions.parseS3Key('acme/payments/api', {
-          tags: { 'slaops:segment': 'org/domain/service' },
+          tags: { 'derrops:segment': 'org/domain/service' },
         }),
       ).toEqual({ org: 'acme', domain: 'payments', service: 'api' })
     })

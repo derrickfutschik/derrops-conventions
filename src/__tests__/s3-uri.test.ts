@@ -2,7 +2,7 @@ import { describe, it, expect } from '@jest/globals'
 import { DerropsConventions } from '../DerropsConventions.js'
 
 // ── Shared fixture ─────────────────────────────────────────────────────────────
-// A fully-configured convention representing the slaops org, logs domain, ingest service.
+// A fully-configured convention representing the derrops org, logs domain, ingest service.
 // Used across multiple test groups to produce consistent names and tags.
 const makeConv = () =>
   new DerropsConventions({
@@ -12,7 +12,7 @@ const makeConv = () =>
     env: 'prod',
     region: 'ap-southeast-2',
   })
-    .tagPrefix('slaops:')
+    .tagPrefix('derrops:')
     .tagKeys('org', 'domain', 'service', 'environment')
 
 describe('DerropsConventions — S3 URI convention', () => {
@@ -22,14 +22,14 @@ describe('DerropsConventions — S3 URI convention', () => {
     it('includes s3-prefix-segment with the full key template', () => {
       const c = makeConv()
       expect(c.tags({ type: 's3Bucket' })).toMatchObject({
-        'slaops:s3-prefix-segment': 'org/domain/service/tenant/partition',
+        'derrops:s3-prefix-segment': 'org/domain/service/tenant/partition',
       })
     })
 
     it('includes s3-object-name-segment with "key"', () => {
       const c = makeConv()
       expect(c.tags({ type: 's3Bucket' })).toMatchObject({
-        'slaops:s3-object-name-segment': 'key',
+        'derrops:s3-object-name-segment': 'key',
       })
     })
 
@@ -44,15 +44,15 @@ describe('DerropsConventions — S3 URI convention', () => {
     it('schema tags are absent for non-bucket types', () => {
       const c = makeConv()
       const tags = c.tags({ type: 'lambdaFunction' })
-      expect(tags).not.toHaveProperty('slaops:s3-prefix-segment')
-      expect(tags).not.toHaveProperty('slaops:s3-object-name-segment')
+      expect(tags).not.toHaveProperty('derrops:s3-prefix-segment')
+      expect(tags).not.toHaveProperty('derrops:s3-object-name-segment')
     })
 
     it('schema tags absent when no type is passed', () => {
       const c = makeConv()
       const tags = c.tags()
-      expect(tags).not.toHaveProperty('slaops:s3-prefix-segment')
-      expect(tags).not.toHaveProperty('slaops:s3-object-name-segment')
+      expect(tags).not.toHaveProperty('derrops:s3-prefix-segment')
+      expect(tags).not.toHaveProperty('derrops:s3-object-name-segment')
     })
 
     it('schema tag keys respect tagPrefix', () => {
@@ -80,20 +80,20 @@ describe('DerropsConventions — S3 URI convention', () => {
     it('all three segment tags are present together', () => {
       const c = makeConv()
       const tags = c.tags({ type: 's3Bucket' })
-      expect(tags).toHaveProperty('slaops:segment') // bucket name convention
-      expect(tags).toHaveProperty('slaops:s3-prefix-segment') // prefix convention
-      expect(tags).toHaveProperty('slaops:s3-object-name-segment') // object name convention
+      expect(tags).toHaveProperty('derrops:segment') // bucket name convention
+      expect(tags).toHaveProperty('derrops:s3-prefix-segment') // prefix convention
+      expect(tags).toHaveProperty('derrops:s3-object-name-segment') // object name convention
     })
 
     it('three tags encode the full naming contract for the URI', () => {
       const c = makeConv()
       const tags = c.tags({ type: 's3Bucket' })
       // bucket name: region--env--org--domain--service
-      expect(tags['slaops:segment']).toBe('region--env--org--domain--service')
+      expect(tags['derrops:segment']).toBe('region--env--org--domain--service')
       // prefix:      org/domain/service/tenant/partition
-      expect(tags['slaops:s3-prefix-segment']).toBe('org/domain/service/tenant/partition')
+      expect(tags['derrops:s3-prefix-segment']).toBe('org/domain/service/tenant/partition')
       // object name: key
-      expect(tags['slaops:s3-object-name-segment']).toBe('key')
+      expect(tags['derrops:s3-object-name-segment']).toBe('key')
     })
   })
 
@@ -488,7 +488,7 @@ describe('DerropsConventions — S3 URI convention', () => {
       const bucketTags = c.tags({ type: 's3Bucket' })
       const uri = `s3://${bucket}/acme/logs/ingest/2024/03/15/log.gz`
 
-      // Tags contain slaops:segment → parse() uses it for bucket name key order
+      // Tags contain derrops:segment → parse() uses it for bucket name key order
       const result = DerropsConventions.parseS3Uri(uri, { tags: bucketTags })
 
       // The s3-prefix-segment and s3-object-name-segment tags should not confuse _findSegmentTag

@@ -2,7 +2,7 @@ import { describe, it, expect } from '@jest/globals'
 import { DerropsConventions } from '../DerropsConventions.js'
 
 const base = new DerropsConventions({
-  org: 'slaops',
+  org: 'derrops',
   domain: 'platform',
   service: 'api',
   region: 'ap-southeast-2',
@@ -43,18 +43,18 @@ describe('imageTag()', () => {
 describe('ecrUri()', () => {
   it('full URI with env + version + key tag', () => {
     expect(base.with({ env: 'prod', version: 'v1.2.3', key: 'abc123f' }).ecrUri()).toBe(
-      '123456789012.dkr.ecr.ap-southeast-2.amazonaws.com/slaops/platform/api:prod--v1.2.3--abc123f',
+      '123456789012.dkr.ecr.ap-southeast-2.amazonaws.com/derrops/platform/api:prod--v1.2.3--abc123f',
     )
   })
 
   it('repo path uses / delimiter from ecr resource type', () => {
     const uri = base.with({ env: 'prod' }).ecrUri()
-    expect(uri).toContain('/slaops/platform/api:')
+    expect(uri).toContain('/derrops/platform/api:')
   })
 
   it('omits tag portion (no colon) when no tag segments are set', () => {
     const uri = base.ecrUri()
-    expect(uri).toBe('123456789012.dkr.ecr.ap-southeast-2.amazonaws.com/slaops/platform/api')
+    expect(uri).toBe('123456789012.dkr.ecr.ap-southeast-2.amazonaws.com/derrops/platform/api')
     expect(uri).not.toContain(':')
   })
 
@@ -69,12 +69,12 @@ describe('ecrUri()', () => {
   })
 
   it('throws when accountId not set', () => {
-    const c = new DerropsConventions({ org: 'slaops', region: 'ap-southeast-2' })
+    const c = new DerropsConventions({ org: 'derrops', region: 'ap-southeast-2' })
     expect(() => c.ecrUri()).toThrow('accountId')
   })
 
   it('throws when region not set', () => {
-    const c = new DerropsConventions({ org: 'slaops' }).arnContext({ accountId: '123456789012' })
+    const c = new DerropsConventions({ org: 'derrops' }).arnContext({ accountId: '123456789012' })
     expect(() => c.ecrUri()).toThrow('region')
   })
 

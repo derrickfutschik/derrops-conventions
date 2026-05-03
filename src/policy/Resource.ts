@@ -31,7 +31,7 @@ export interface Resource<T extends ResourceType = ResourceType> {
    *
    * @example
    * resource({ type: 'dynamoDb', key: 'orders' }).logicalId
-   * // 'SlaopsPlatformApiOrders'
+   * // 'DerropsPlatformApiOrders'
    *
    * // Scope the convention instance for shorter IDs:
    * svcConvention.with({ org: undefined, domain: undefined })

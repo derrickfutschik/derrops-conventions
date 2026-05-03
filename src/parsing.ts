@@ -37,7 +37,7 @@ export function parseSegmentValues(str: string): ParsedSegments {
 }
 
 /**
- * Find a tag value by canonical base name, ignoring prefix (e.g. `slaops:`) and casing variants.
+ * Find a tag value by canonical base name, ignoring prefix (e.g. `derrops:`) and casing variants.
  * Normalises by stripping `-` / `_` and lowercasing before comparison.
  */
 export function findTagByName(tags: Record<string, string>, name: string): string | undefined {

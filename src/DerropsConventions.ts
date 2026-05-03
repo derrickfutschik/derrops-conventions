@@ -548,15 +548,15 @@ export class DerropsConventions<
 
   /**
    * Set a string prepended to every tag key in `tags()` output. The prefix is appended
-   * as-is — include the separator you want (e.g. `'slaops:'`, `'my-app/'`, `'MyApp_'`).
+   * as-is — include the separator you want (e.g. `'derrops:'`, `'my-app/'`, `'MyApp_'`).
    *
    * Applied after `tagKeyCasing()`, so the cased key is what gets prefixed.
    *
    * Chainable — returns `this`.
    *
    * @example
-   * naming.tagPrefix('slaops:').tags()
-   * // → { 'slaops:domain': 'payments', 'slaops:service': 'checkout-api' }
+   * naming.tagPrefix('derrops:').tags()
+   * // → { 'derrops:domain': 'payments', 'derrops:service': 'checkout-api' }
    */
   tagPrefix(prefix: string): this {
     this.keyPrefix = prefix
@@ -873,7 +873,7 @@ export class DerropsConventions<
    * `flowchart`, with each segment tier expressed as a nested `subgraph`.
    *
    * @example
-   * const org = new DerropsConventions({ org: 'slaops' })
+   * const org = new DerropsConventions({ org: 'derrops' })
    * const platform = org.with({ domain: 'platform' })
    * platform.with({ service: 'vpc' })
    * console.log(org.toMermaid())
@@ -1031,19 +1031,19 @@ export class DerropsConventions<
    * @example
    * // All objects ingested in the 14:00 UTC hour of 2024-03-15
    * c.s3Prefix({ date: new Date('2024-03-15T14:30:00Z'), granularity: 'hour' })
-   * // → 'slaops/logs/ingest/2024/03/15/14/'
+   * // → 'derrops/logs/ingest/2024/03/15/14/'
    *
    * // Per-tenant log prefix for a full day
    * c.s3Prefix({ tenant: 't-a3f8b2', date: new Date('2024-03-15T00:00:00Z'), granularity: 'day' })
-   * // → 'slaops/logs/ingest/t-a3f8b2/2024/03/15/'
+   * // → 'derrops/logs/ingest/t-a3f8b2/2024/03/15/'
    *
    * // Plain service prefix — no date
    * c.s3Prefix()
-   * // → 'slaops/logs/ingest/'
+   * // → 'derrops/logs/ingest/'
    *
    * // Raw partition string (escape hatch for custom layouts)
    * c.s3Prefix({ partition: 'custom/path' })
-   * // → 'slaops/logs/ingest/custom/path/'
+   * // → 'derrops/logs/ingest/custom/path/'
    */
   s3Prefix(
     options: {
@@ -1128,8 +1128,8 @@ export class DerropsConventions<
    * conventions.tagKeys('org', 'domain', 'service', 'environment').tags()
    * // → { org: 'acme', domain: 'payments', service: 'checkout-api', environment: 'prod', segment: 'org--domain--service' }
    *
-   * conventions.tagPrefix('slaops:').tags()
-   * // → { 'slaops:domain': 'payments', 'slaops:service': 'checkout-api', 'slaops:segment': 'domain--service' }
+   * conventions.tagPrefix('derrops:').tags()
+   * // → { 'derrops:domain': 'payments', 'derrops:service': 'checkout-api', 'derrops:segment': 'domain--service' }
    *
    * conventions.tagKeyCasing('pascal').tagPrefix('MyApp_').tags()
    * // → { 'MyApp_Domain': 'payments', 'MyApp_Service': 'checkout-api', 'MyApp_Segment': 'domain--service' }
@@ -1324,8 +1324,8 @@ export class DerropsConventions<
    * @example
    * c.tagKeys('org', 'domain', 'service', 'environment').costFilter()
    * // → { And: [
-   * //     { Tags: { Key: 'slaops:org', Values: ['acme'], MatchOptions: ['EQUALS'] } },
-   * //     { Tags: { Key: 'slaops:domain', Values: ['payments'], MatchOptions: ['EQUALS'] } },
+   * //     { Tags: { Key: 'derrops:org', Values: ['acme'], MatchOptions: ['EQUALS'] } },
+   * //     { Tags: { Key: 'derrops:domain', Values: ['payments'], MatchOptions: ['EQUALS'] } },
    * //     ...
    * //   ] }
    */
@@ -1352,8 +1352,8 @@ export class DerropsConventions<
    * Billing console under Cost Allocation Tags.
    *
    * @example
-   * c.tagPrefix('slaops:').tagKeys('org', 'domain', 'service').costAllocationTags()
-   * // → ['slaops:org', 'slaops:domain', 'slaops:service']
+   * c.tagPrefix('derrops:').tagKeys('org', 'domain', 'service').costAllocationTags()
+   * // → ['derrops:org', 'derrops:domain', 'derrops:service']
    */
   costAllocationTags(): string[] {
     return buildCostAllocationTags(this)
@@ -1633,9 +1633,9 @@ export class DerropsConventions<
    * truncate the depth for prefix-match routing patterns in EventBridge rules.
    *
    * @example
-   * svc.eventSource()                    // 'slaops.platform.api'
-   * svc.eventSource({ level: 'domain' }) // 'slaops.platform'  ← matches all platform services
-   * svc.eventSource({ level: 'org' })    // 'slaops'           ← matches all slaops events
+   * svc.eventSource()                    // 'derrops.platform.api'
+   * svc.eventSource({ level: 'domain' }) // 'derrops.platform'  ← matches all platform services
+   * svc.eventSource({ level: 'org' })    // 'derrops'           ← matches all derrops events
    *
    * // Rule matching all platform-domain events:
    * { source: [{ prefix: svc.eventSource({ level: 'domain' }) }] }
@@ -1686,7 +1686,7 @@ export class DerropsConventions<
    * c.arnContext({ accountId: '123456789012' })
    *  .with({ env: 'prod', version: 'v1.2.3', key: 'abc123f' })
    *  .ecrUri()
-   * // '123456789012.dkr.ecr.ap-southeast-2.amazonaws.com/slaops/platform/api:prod--v1.2.3--abc123f'
+   * // '123456789012.dkr.ecr.ap-southeast-2.amazonaws.com/derrops/platform/api:prod--v1.2.3--abc123f'
    */
   ecrUri(): string {
     return buildEcrUri(this)
@@ -1703,8 +1703,8 @@ export class DerropsConventions<
    *
    * @example
    * const { queue, dlq, redrivePolicyArn } = svc.sqsPair({ key: 'ingest' })
-   * // queue.name → 'slaops--platform--api--ingest'
-   * // dlq.name   → 'slaops--platform--api--ingest--dlq'
+   * // queue.name → 'derrops--platform--api--ingest'
+   * // dlq.name   → 'derrops--platform--api--ingest--dlq'
    * // redrivePolicyArn === dlq.arn
    */
   sqsPair(options: Segments): SqsPair {

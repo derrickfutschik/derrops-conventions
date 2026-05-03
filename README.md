@@ -1,9 +1,9 @@
 # derrops-conventions
 
-TypeScript implementation of the [Derrops naming conventions](https://blog.slaops.com/blog/derrops-conventions) for AWS resources. The conventions are described in full in two blog posts:
+TypeScript implementation of the [Derrops naming conventions](https://blog.derrops.com/blog/derrops-conventions) for AWS resources. The conventions are described in full in two blog posts:
 
-- **[Derrops Guide to Naming Conventions and Segregation](https://blog.slaops.com/blog/derrops-conventions)** — the reasoning, principles, segment definitions, and delimiter decisions
-- **[AWS Resource Naming Cheatsheet](https://blog.slaops.com/blog/derrops-naming-sheet)** — quick-reference patterns for every AWS service
+- **[Derrops Guide to Naming Conventions and Segregation](https://blog.derrops.com/blog/derrops-conventions)** — the reasoning, principles, segment definitions, and delimiter decisions
+- **[AWS Resource Naming Cheatsheet](https://blog.derrops.com/blog/derrops-naming-sheet)** — quick-reference patterns for every AWS service
 
 This package encodes those rules into a fluent TypeScript builder so names are generated consistently, without manual string concatenation.
 
@@ -127,9 +127,9 @@ Stability decreases left to right — `org` and `domain` change almost never; `k
 
 `tenant` sits between `service` and `key` in the default order, not near the left. The key distinction: `org`, `domain`, and `service` are all known at system design time — they are defined when you write your CDK stacks and IAM policies. `tenant` is provisioned at runtime, per customer. The namespace of possible tenant values is volatile in a way that no other segment is. Placing runtime-provisioned segments to the right of design-time segments follows the stability principle and keeps prefix patterns predictable for cross-tenant access patterns (e.g. SSM prefix queries scoped to `/acme/payments/checkout-api/*`).
 
-Tenant isolation is enforced via tag-based IAM conditions (`aws:ResourceTag/tenant`) rather than naming position — see [Tag-Based Tenant Isolation (ABAC)](https://blog.slaops.com/blog/derrops-conventions#tag-based-tenant-isolation-abac) for the full pattern.
+Tenant isolation is enforced via tag-based IAM conditions (`aws:ResourceTag/tenant`) rather than naming position — see [Tag-Based Tenant Isolation (ABAC)](https://blog.derrops.com/blog/derrops-conventions#tag-based-tenant-isolation-abac) for the full pattern.
 
-See the [conventions guide](https://blog.slaops.com/blog/derrops-conventions#segment-stability) for the full stability matrix.
+See the [conventions guide](https://blog.derrops.com/blog/derrops-conventions#segment-stability) for the full stability matrix.
 
 ---
 
@@ -323,11 +323,11 @@ naming.tagKeys('org', 'domain', 'service', 'environment').tags()
 
 ### `.tagPrefix(prefix)`
 
-Prepend a string to every built-in tag key. Include the separator you want (e.g. `'slaops:'`, `'my-app/'`, `'MyApp_'`). Applied after `tagKeyCasing()`.
+Prepend a string to every built-in tag key. Include the separator you want (e.g. `'derrops:'`, `'my-app/'`, `'MyApp_'`). Applied after `tagKeyCasing()`.
 
 ```typescript
-naming.tagPrefix('slaops:').tags()
-// → { 'slaops:domain': 'payments', 'slaops:service': 'checkout-api' }
+naming.tagPrefix('derrops:').tags()
+// → { 'derrops:domain': 'payments', 'derrops:service': 'checkout-api' }
 ```
 
 ### `.tagKeyCasing(casing)`
@@ -1061,7 +1061,7 @@ naming.name({ type: 'vpcEndpoint', service: 's3' })
 
 Use VPC peering for two-org point-to-point connections. Use Transit Gateway (`transitGateway` / `transitGatewayAttachment`) when connecting three or more orgs — peering grows as O(n²) connections, TGW as O(n) attachments.
 
-See the [network topology guide](https://blog.slaops.com/blog/derrops-network-topology) for the full design rationale, CDK usage examples, and the access/permissions distinction.
+See the [network topology guide](https://blog.derrops.com/blog/derrops-network-topology) for the full design rationale, CDK usage examples, and the access/permissions distinction.
 
 ---
 
@@ -1140,7 +1140,7 @@ const policy = tenantConvention
 
 Tags must be applied **atomically at provisioning time**. A resource that exists without its `tenant` tag is unprotected — any principal whose policy matches the ARN wildcard can access it. The `.policy()` call above throws at synthesis time if the tag is missing, making this a deploy-time guarantee rather than an operational discipline.
 
-See [Tag-Based Tenant Isolation (ABAC)](https://blog.slaops.com/blog/derrops-conventions#tag-based-tenant-isolation-abac) for the full decision matrix, service compatibility table, and session-tag (dynamic ABAC) pattern.
+See [Tag-Based Tenant Isolation (ABAC)](https://blog.derrops.com/blog/derrops-conventions#tag-based-tenant-isolation-abac) for the full decision matrix, service compatibility table, and session-tag (dynamic ABAC) pattern.
 
 ### Silo model — tenant in resource names
 
@@ -1294,8 +1294,8 @@ The package applies the delimiter decision matrix from the conventions guide aut
 
 ## Further reading
 
-- [Derrops Guide to Naming Conventions and Segregation](https://blog.slaops.com/blog/derrops-conventions) — principles, segment definitions, delimiter rationale, multi-tenancy placement decisions
-- [AWS Resource Naming Cheatsheet](https://blog.slaops.com/blog/derrops-naming-sheet) — per-service patterns, examples, common pitfalls
+- [Derrops Guide to Naming Conventions and Segregation](https://blog.derrops.com/blog/derrops-conventions) — principles, segment definitions, delimiter rationale, multi-tenancy placement decisions
+- [AWS Resource Naming Cheatsheet](https://blog.derrops.com/blog/derrops-naming-sheet) — per-service patterns, examples, common pitfalls
 
 ## Future planes
 

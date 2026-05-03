@@ -144,8 +144,8 @@ describe('DerropsConventions — tags', () => {
     })
 
     it('respects tagPrefix', () => {
-      const c = new DerropsConventions({ domain: 'payments', service: 'api' }).tagPrefix('slaops:')
-      expect(c.tags()).toMatchObject({ 'slaops:segment': 'domain--service' })
+      const c = new DerropsConventions({ domain: 'payments', service: 'api' }).tagPrefix('derrops:')
+      expect(c.tags()).toMatchObject({ 'derrops:segment': 'domain--service' })
     })
 
     it('respects pascal tagKeyCasing', () => {
@@ -242,12 +242,12 @@ describe('DerropsConventions — tags', () => {
 
     it('prepends prefix to default tag keys', () => {
       const c = new DerropsConventions(defaults)
-      expect(c.tagPrefix('slaops:').tags()).toEqual({
-        'slaops:org': 'acme',
-        'slaops:domain': 'payments',
-        'slaops:service': 'checkout-api',
-        'slaops:environment': 'prod',
-        'slaops:segment': 'env--org--domain--service',
+      expect(c.tagPrefix('derrops:').tags()).toEqual({
+        'derrops:org': 'acme',
+        'derrops:domain': 'payments',
+        'derrops:service': 'checkout-api',
+        'derrops:environment': 'prod',
+        'derrops:segment': 'env--org--domain--service',
       })
     })
 
@@ -265,13 +265,13 @@ describe('DerropsConventions — tags', () => {
     it('works with all four visible tags', () => {
       const c = new DerropsConventions(defaults)
       expect(
-        c.tagKeys('org', 'domain', 'service', 'environment').tagPrefix('slaops:').tags(),
+        c.tagKeys('org', 'domain', 'service', 'environment').tagPrefix('derrops:').tags(),
       ).toEqual({
-        'slaops:org': 'acme',
-        'slaops:domain': 'payments',
-        'slaops:service': 'checkout-api',
-        'slaops:environment': 'prod',
-        'slaops:segment': 'env--org--domain--service',
+        'derrops:org': 'acme',
+        'derrops:domain': 'payments',
+        'derrops:service': 'checkout-api',
+        'derrops:environment': 'prod',
+        'derrops:segment': 'env--org--domain--service',
       })
     })
 
@@ -287,20 +287,20 @@ describe('DerropsConventions — tags', () => {
     })
 
     it('with() inherits prefix from parent', () => {
-      const base = new DerropsConventions({ org: 'acme', domain: 'payments' }).tagPrefix('slaops:')
+      const base = new DerropsConventions({ org: 'acme', domain: 'payments' }).tagPrefix('derrops:')
       const scoped = base.with({ service: 'checkout-api' })
       expect(scoped.tags()).toEqual({
-        'slaops:org': 'acme',
-        'slaops:domain': 'payments',
-        'slaops:service': 'checkout-api',
-        'slaops:segment': 'org--domain--service',
+        'derrops:org': 'acme',
+        'derrops:domain': 'payments',
+        'derrops:service': 'checkout-api',
+        'derrops:segment': 'org--domain--service',
       })
     })
 
     it('tagPrefix on derived instance does not affect parent', () => {
       const base = new DerropsConventions({ org: 'acme', domain: 'payments', service: 'api' })
       const derived = base.with({})
-      derived.tagPrefix('slaops:')
+      derived.tagPrefix('derrops:')
       expect(base.tags()).toEqual({
         org: 'acme',
         domain: 'payments',
@@ -428,9 +428,9 @@ describe('DerropsConventions — tags', () => {
 
     it('throws when a prefixed key exceeds the limit', () => {
       const c = new DerropsConventions({ domain: 'pay', service: 'api' })
-        .tagPrefix('slaops:')
+        .tagPrefix('derrops:')
         .keyMax(12)
-      // 'slaops:domain' is 13 chars — exceeds limit of 12
+      // 'derrops:domain' is 13 chars — exceeds limit of 12
       expect(() => c.tags()).toThrow(/keyMax/)
     })
 
@@ -646,13 +646,13 @@ describe('DerropsConventions — tags', () => {
 
     it('augmentor output is NOT subject to tagPrefix', () => {
       const c = new DerropsConventions({ domain: 'payments', service: 'api' })
-        .tagPrefix('slaops:')
+        .tagPrefix('derrops:')
         .tagAugment(() => ({ 'updated-at': '2026-01-01' }))
 
       const result = c.tags()
-      expect(result).toHaveProperty('slaops:domain')
+      expect(result).toHaveProperty('derrops:domain')
       expect(result).toHaveProperty('updated-at', '2026-01-01')
-      expect(result).not.toHaveProperty('slaops:updated-at')
+      expect(result).not.toHaveProperty('derrops:updated-at')
     })
 
     it('augmented tags are visible to policies', () => {
@@ -909,14 +909,14 @@ describe('DerropsConventions — tags', () => {
 
     it('rule output is NOT subject to tagPrefix', () => {
       const c = new DerropsConventions({ org: 'acme', domain: 'payments', service: 'api' })
-        .tagPrefix('slaops:')
+        .tagPrefix('derrops:')
         .tagRule(() => ({ 'cost-center': 'payments-team' }))
 
       const result = c.tags()
-      expect(result).toHaveProperty('slaops:domain', 'payments')
-      expect(result).toHaveProperty('slaops:service', 'api')
+      expect(result).toHaveProperty('derrops:domain', 'payments')
+      expect(result).toHaveProperty('derrops:service', 'api')
       expect(result).toHaveProperty('cost-center', 'payments-team')
-      expect(result).not.toHaveProperty('slaops:cost-center')
+      expect(result).not.toHaveProperty('derrops:cost-center')
     })
 
     it('rule output is NOT subject to tagKeyCasing', () => {
@@ -1017,8 +1017,8 @@ describe('DerropsConventions — tags', () => {
         service: 'api',
       })
         .emitSegmentValues()
-        .tagPrefix('slaops:')
-      expect(c.tags()).toHaveProperty('slaops:segment-values', 'domain=payments,service=api')
+        .tagPrefix('derrops:')
+      expect(c.tags()).toHaveProperty('derrops:segment-values', 'domain=payments,service=api')
     })
 
     it('segment-values respects pascal tagKeyCasing', () => {

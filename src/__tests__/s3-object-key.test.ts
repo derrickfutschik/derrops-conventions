@@ -7,11 +7,11 @@ describe('DerropsConventions — s3ObjectKey and s3LogKey', () => {
 
   describe('s3ObjectKey', () => {
     describe('basic segment composition', () => {
-      const c = new DerropsConventions({ org: 'slaops', domain: 'logs', service: 'ingest' })
+      const c = new DerropsConventions({ org: 'derrops', domain: 'logs', service: 'ingest' })
 
       it('org + domain + service + key', () => {
         expect(c.name({ type: 's3ObjectKey', key: 'schema.json' })).toBe(
-          'slaops/logs/ingest/schema.json',
+          'derrops/logs/ingest/schema.json',
         )
       })
 
@@ -31,23 +31,23 @@ describe('DerropsConventions — s3ObjectKey and s3LogKey', () => {
       })
 
       it('path prefix (no key) — stops at service', () => {
-        expect(c.name({ type: 's3ObjectKey' })).toBe('slaops/logs/ingest')
+        expect(c.name({ type: 's3ObjectKey' })).toBe('derrops/logs/ingest')
       })
     })
 
     describe('with tenant', () => {
-      const base = new DerropsConventions({ org: 'slaops', domain: 'api', service: 'collector' })
+      const base = new DerropsConventions({ org: 'derrops', domain: 'api', service: 'collector' })
 
       it('tenant appears between service and key', () => {
         expect(base.name({ type: 's3ObjectKey', tenant: 't-a3f8b2', key: 'data.json' })).toBe(
-          'slaops/api/collector/t-a3f8b2/data.json',
+          'derrops/api/collector/t-a3f8b2/data.json',
         )
       })
 
       it('tenant default on instance', () => {
         expect(
           base.with({ tenant: 't-a3f8b2' }).name({ type: 's3ObjectKey', key: 'events.json' }),
-        ).toBe('slaops/api/collector/t-a3f8b2/events.json')
+        ).toBe('derrops/api/collector/t-a3f8b2/events.json')
       })
 
       it('tenant call-time override wins over instance default', () => {
@@ -55,7 +55,7 @@ describe('DerropsConventions — s3ObjectKey and s3LogKey', () => {
           base
             .with({ tenant: 't-a3f8b2' })
             .name({ type: 's3ObjectKey', tenant: 't-xyz999', key: 'events.json' }),
-        ).toBe('slaops/api/collector/t-xyz999/events.json')
+        ).toBe('derrops/api/collector/t-xyz999/events.json')
       })
     })
 
@@ -76,25 +76,25 @@ describe('DerropsConventions — s3ObjectKey and s3LogKey', () => {
         const name = new DerropsConventions({
           region: 'ap-southeast-2',
           env: 'prod',
-          org: 'slaops',
+          org: 'derrops',
           domain: 'logs',
           service: 'ingest',
         }).name({ type: 's3ObjectKey', key: 'file.gz' })
         expect(name).not.toContain('ap-southeast-2')
         expect(name).not.toContain('prod')
-        expect(name).toBe('slaops/logs/ingest/file.gz')
+        expect(name).toBe('derrops/logs/ingest/file.gz')
       })
     })
 
     describe('instance defaults', () => {
       it('type default via with({ type }) avoids repeating type on each call', () => {
         const objKey = new DerropsConventions({
-          org: 'slaops',
+          org: 'derrops',
           domain: 'portal',
           service: 'assets',
         }).with({ type: 's3ObjectKey' })
-        expect(objKey.name({ key: 'logo.png' })).toBe('slaops/portal/assets/logo.png')
-        expect(objKey.name({ key: 'styles.css' })).toBe('slaops/portal/assets/styles.css')
+        expect(objKey.name({ key: 'logo.png' })).toBe('derrops/portal/assets/logo.png')
+        expect(objKey.name({ key: 'styles.css' })).toBe('derrops/portal/assets/styles.css')
       })
     })
   })
@@ -103,47 +103,47 @@ describe('DerropsConventions — s3ObjectKey and s3LogKey', () => {
 
   describe('s3LogKey — time-partitioned log paths', () => {
     describe('partition segment carries the date path', () => {
-      const c = new DerropsConventions({ org: 'slaops', domain: 'logs', service: 'ingest' })
+      const c = new DerropsConventions({ org: 'derrops', domain: 'logs', service: 'ingest' })
 
       it('full date-hour partition: yyyy/mm/dd/hh', () => {
         expect(c.name({ type: 's3LogKey', partition: '2024/03/15/14', key: 'log-001.gz' })).toBe(
-          'slaops/logs/ingest/2024/03/15/14/log-001.gz',
+          'derrops/logs/ingest/2024/03/15/14/log-001.gz',
         )
       })
 
       it('date-only partition: yyyy/mm/dd', () => {
         expect(c.name({ type: 's3LogKey', partition: '2024/03/15', key: 'summary.json' })).toBe(
-          'slaops/logs/ingest/2024/03/15/summary.json',
+          'derrops/logs/ingest/2024/03/15/summary.json',
         )
       })
 
       it('month partition: yyyy/mm', () => {
         expect(c.name({ type: 's3LogKey', partition: '2024/03', key: 'monthly.parquet' })).toBe(
-          'slaops/logs/ingest/2024/03/monthly.parquet',
+          'derrops/logs/ingest/2024/03/monthly.parquet',
         )
       })
 
       it('year partition: yyyy', () => {
         expect(c.name({ type: 's3LogKey', partition: '2024', key: 'annual.parquet' })).toBe(
-          'slaops/logs/ingest/2024/annual.parquet',
+          'derrops/logs/ingest/2024/annual.parquet',
         )
       })
 
       it('partition without key produces a prefix path', () => {
         expect(c.name({ type: 's3LogKey', partition: '2024/03/15/14' })).toBe(
-          'slaops/logs/ingest/2024/03/15/14',
+          'derrops/logs/ingest/2024/03/15/14',
         )
       })
 
       it('no partition — partition segment is simply absent', () => {
         expect(c.name({ type: 's3LogKey', key: 'unpartitioned.gz' })).toBe(
-          'slaops/logs/ingest/unpartitioned.gz',
+          'derrops/logs/ingest/unpartitioned.gz',
         )
       })
     })
 
     describe('multi-tenant log paths — tenant before partition', () => {
-      const c = new DerropsConventions({ org: 'slaops', domain: 'logs', service: 'ingest' })
+      const c = new DerropsConventions({ org: 'derrops', domain: 'logs', service: 'ingest' })
 
       it('tenant + full date-hour partition + filename', () => {
         expect(
@@ -153,7 +153,7 @@ describe('DerropsConventions — s3ObjectKey and s3LogKey', () => {
             partition: '2024/03/15/14',
             key: 'log-001.gz',
           }),
-        ).toBe('slaops/logs/ingest/t-a3f8b2/2024/03/15/14/log-001.gz')
+        ).toBe('derrops/logs/ingest/t-a3f8b2/2024/03/15/14/log-001.gz')
       })
 
       it('tenant appears before partition in default order', () => {
@@ -172,12 +172,12 @@ describe('DerropsConventions — s3ObjectKey and s3LogKey', () => {
         const tenantC = c.with({ tenant: 't-a3f8b2' })
         expect(
           tenantC.name({ type: 's3LogKey', partition: '2024/03/15/14', key: 'chunk-000.gz' }),
-        ).toBe('slaops/logs/ingest/t-a3f8b2/2024/03/15/14/chunk-000.gz')
+        ).toBe('derrops/logs/ingest/t-a3f8b2/2024/03/15/14/chunk-000.gz')
       })
 
       it('tenant prefix path — no filename', () => {
         expect(c.name({ type: 's3LogKey', tenant: 't-xyz', partition: '2024/01/01/00' })).toBe(
-          'slaops/logs/ingest/t-xyz/2024/01/01/00',
+          'derrops/logs/ingest/t-xyz/2024/01/01/00',
         )
       })
     })
@@ -204,27 +204,27 @@ describe('DerropsConventions — s3ObjectKey and s3LogKey', () => {
     })
 
     describe('real-world log file names', () => {
-      const c = new DerropsConventions({ org: 'slaops', domain: 'http', service: 'gateway' })
+      const c = new DerropsConventions({ org: 'derrops', domain: 'http', service: 'gateway' })
 
       it('Kinesis Firehose delivery key format', () => {
         expect(
           c.name({
             type: 's3LogKey',
             partition: '2024/03/15/14',
-            key: 'slaops-1-2024-03-15-14-00-00-abc123',
+            key: 'derrops-1-2024-03-15-14-00-00-abc123',
           }),
-        ).toBe('slaops/http/gateway/2024/03/15/14/slaops-1-2024-03-15-14-00-00-abc123')
+        ).toBe('derrops/http/gateway/2024/03/15/14/derrops-1-2024-03-15-14-00-00-abc123')
       })
 
       it('gzipped log file', () => {
         expect(c.name({ type: 's3LogKey', partition: '2024/03/15', key: 'access.log.gz' })).toBe(
-          'slaops/http/gateway/2024/03/15/access.log.gz',
+          'derrops/http/gateway/2024/03/15/access.log.gz',
         )
       })
 
       it('parquet file for analytics', () => {
         expect(c.name({ type: 's3LogKey', partition: '2024/03', key: 'requests.parquet' })).toBe(
-          'slaops/http/gateway/2024/03/requests.parquet',
+          'derrops/http/gateway/2024/03/requests.parquet',
         )
       })
     })
@@ -233,15 +233,15 @@ describe('DerropsConventions — s3ObjectKey and s3LogKey', () => {
   // ── Shared behaviour ───────────────────────────────────────────────────────
 
   describe('shared behaviour — normalization', () => {
-    const c = new DerropsConventions({ org: 'SLAOPS', domain: 'Logs', service: 'Ingest' })
+    const c = new DerropsConventions({ org: 'DERROPS', domain: 'Logs', service: 'Ingest' })
 
     it('segment values are lowercased for s3ObjectKey', () => {
-      expect(c.name({ type: 's3ObjectKey', key: 'FILE.JSON' })).toBe('slaops/logs/ingest/file.json')
+      expect(c.name({ type: 's3ObjectKey', key: 'FILE.JSON' })).toBe('derrops/logs/ingest/file.json')
     })
 
     it('segment values are lowercased for s3LogKey', () => {
       expect(c.name({ type: 's3LogKey', partition: '2024/03/15', key: 'LOG.GZ' })).toBe(
-        'slaops/logs/ingest/2024/03/15/log.gz',
+        'derrops/logs/ingest/2024/03/15/log.gz',
       )
     })
 
@@ -256,29 +256,29 @@ describe('DerropsConventions — s3ObjectKey and s3LogKey', () => {
 
     it('hyphens in segments are preserved (wordDelimiter is -, so no conversion)', () => {
       expect(
-        new DerropsConventions({ org: 'slaops', domain: 'http-logs', service: 'api-gateway' }).name(
+        new DerropsConventions({ org: 'derrops', domain: 'http-logs', service: 'api-gateway' }).name(
           { type: 's3LogKey', key: 'access-log.gz' },
         ),
-      ).toBe('slaops/http-logs/api-gateway/access-log.gz')
+      ).toBe('derrops/http-logs/api-gateway/access-log.gz')
     })
   })
 
   describe('shared behaviour — with() immutability', () => {
-    const base = new DerropsConventions({ org: 'slaops', domain: 'logs' })
+    const base = new DerropsConventions({ org: 'derrops', domain: 'logs' })
 
     it('with() does not mutate base for s3ObjectKey', () => {
       const scoped = base.with({ service: 'ingest' })
-      expect(base.name({ type: 's3ObjectKey', key: 'root.json' })).toBe('slaops/logs/root.json')
+      expect(base.name({ type: 's3ObjectKey', key: 'root.json' })).toBe('derrops/logs/root.json')
       expect(scoped.name({ type: 's3ObjectKey', key: 'root.json' })).toBe(
-        'slaops/logs/ingest/root.json',
+        'derrops/logs/ingest/root.json',
       )
     })
 
     it('with() does not mutate base for s3LogKey', () => {
       const scoped = base.with({ service: 'ingest', tenant: 't-abc' })
-      expect(base.name({ type: 's3LogKey', partition: '2024/01' })).toBe('slaops/logs/2024/01')
+      expect(base.name({ type: 's3LogKey', partition: '2024/01' })).toBe('derrops/logs/2024/01')
       expect(scoped.name({ type: 's3LogKey', partition: '2024/01' })).toBe(
-        'slaops/logs/ingest/t-abc/2024/01',
+        'derrops/logs/ingest/t-abc/2024/01',
       )
     })
   })
@@ -365,22 +365,22 @@ describe('DerropsConventions — s3ObjectKey and s3LogKey', () => {
     })
 
     describe('composes directly with name()', () => {
-      const c = new DerropsConventions({ org: 'slaops', domain: 'logs', service: 'ingest' })
+      const c = new DerropsConventions({ org: 'derrops', domain: 'logs', service: 'ingest' })
 
       it('datePartition result passed as partition to name()', () => {
         const partition = DerropsConventions.datePartition(ref, 'hour')
         expect(c.name({ type: 's3LogKey', partition, key: 'log-001.gz' })).toBe(
-          'slaops/logs/ingest/2024/03/15/14/log-001.gz',
+          'derrops/logs/ingest/2024/03/15/14/log-001.gz',
         )
       })
 
       it('all four granularities produce valid name() inputs', () => {
         const granularities: DatePartitionGranularity[] = ['year', 'month', 'day', 'hour']
         const expected = [
-          'slaops/logs/ingest/2024/log.gz',
-          'slaops/logs/ingest/2024/03/log.gz',
-          'slaops/logs/ingest/2024/03/15/log.gz',
-          'slaops/logs/ingest/2024/03/15/14/log.gz',
+          'derrops/logs/ingest/2024/log.gz',
+          'derrops/logs/ingest/2024/03/log.gz',
+          'derrops/logs/ingest/2024/03/15/log.gz',
+          'derrops/logs/ingest/2024/03/15/14/log.gz',
         ]
         for (const [i, g] of granularities.entries()) {
           expect(
@@ -398,35 +398,35 @@ describe('DerropsConventions — s3ObjectKey and s3LogKey', () => {
   // ── s3Prefix() ─────────────────────────────────────────────────────────────
 
   describe('s3Prefix()', () => {
-    const c = new DerropsConventions({ org: 'slaops', domain: 'logs', service: 'ingest' })
+    const c = new DerropsConventions({ org: 'derrops', domain: 'logs', service: 'ingest' })
     const ref = new Date('2024-03-15T14:07:05Z')
 
     describe('always returns a trailing-slash path', () => {
       it('no args → service-scoped prefix', () => {
-        expect(c.s3Prefix()).toBe('slaops/logs/ingest/')
+        expect(c.s3Prefix()).toBe('derrops/logs/ingest/')
       })
 
       it('with date + granularity: hour', () => {
         expect(c.s3Prefix({ date: ref, granularity: 'hour' })).toBe(
-          'slaops/logs/ingest/2024/03/15/14/',
+          'derrops/logs/ingest/2024/03/15/14/',
         )
       })
 
       it('with date + granularity: day', () => {
-        expect(c.s3Prefix({ date: ref, granularity: 'day' })).toBe('slaops/logs/ingest/2024/03/15/')
+        expect(c.s3Prefix({ date: ref, granularity: 'day' })).toBe('derrops/logs/ingest/2024/03/15/')
       })
 
       it('with date + granularity: month', () => {
-        expect(c.s3Prefix({ date: ref, granularity: 'month' })).toBe('slaops/logs/ingest/2024/03/')
+        expect(c.s3Prefix({ date: ref, granularity: 'month' })).toBe('derrops/logs/ingest/2024/03/')
       })
 
       it('with date + granularity: year', () => {
-        expect(c.s3Prefix({ date: ref, granularity: 'year' })).toBe('slaops/logs/ingest/2024/')
+        expect(c.s3Prefix({ date: ref, granularity: 'year' })).toBe('derrops/logs/ingest/2024/')
       })
 
       it('raw partition escape hatch', () => {
         expect(c.s3Prefix({ partition: 'custom/layout/v2' })).toBe(
-          'slaops/logs/ingest/custom/layout/v2/',
+          'derrops/logs/ingest/custom/layout/v2/',
         )
       })
     })
@@ -434,24 +434,24 @@ describe('DerropsConventions — s3ObjectKey and s3LogKey', () => {
     describe('tenant handling', () => {
       it('tenant from options appears before date partition', () => {
         const prefix = c.s3Prefix({ tenant: 't-a3f8b2', date: ref, granularity: 'hour' })
-        expect(prefix).toBe('slaops/logs/ingest/t-a3f8b2/2024/03/15/14/')
+        expect(prefix).toBe('derrops/logs/ingest/t-a3f8b2/2024/03/15/14/')
       })
 
       it('tenant from options without date', () => {
-        expect(c.s3Prefix({ tenant: 't-a3f8b2' })).toBe('slaops/logs/ingest/t-a3f8b2/')
+        expect(c.s3Prefix({ tenant: 't-a3f8b2' })).toBe('derrops/logs/ingest/t-a3f8b2/')
       })
 
       it('tenant from instance default is inherited', () => {
         const tenantC = c.with({ tenant: 't-a3f8b2' })
         expect(tenantC.s3Prefix({ date: ref, granularity: 'day' })).toBe(
-          'slaops/logs/ingest/t-a3f8b2/2024/03/15/',
+          'derrops/logs/ingest/t-a3f8b2/2024/03/15/',
         )
       })
 
       it('tenant from options overrides instance default', () => {
         const tenantC = c.with({ tenant: 't-a3f8b2' })
         expect(tenantC.s3Prefix({ tenant: 't-xyz999', date: ref, granularity: 'hour' })).toBe(
-          'slaops/logs/ingest/t-xyz999/2024/03/15/14/',
+          'derrops/logs/ingest/t-xyz999/2024/03/15/14/',
         )
       })
     })
@@ -459,11 +459,11 @@ describe('DerropsConventions — s3ObjectKey and s3LogKey', () => {
     describe('date without granularity (or vice-versa) falls back to raw partition', () => {
       it('date without granularity → no partition in path', () => {
         // Without granularity the date cannot be formatted — partition is omitted
-        expect(c.s3Prefix({ date: ref })).toBe('slaops/logs/ingest/')
+        expect(c.s3Prefix({ date: ref })).toBe('derrops/logs/ingest/')
       })
 
       it('granularity without date → no partition in path', () => {
-        expect(c.s3Prefix({ granularity: 'hour' })).toBe('slaops/logs/ingest/')
+        expect(c.s3Prefix({ granularity: 'hour' })).toBe('derrops/logs/ingest/')
       })
     })
 
@@ -498,8 +498,8 @@ describe('DerropsConventions — s3ObjectKey and s3LogKey', () => {
     describe('with() immutability', () => {
       it('s3Prefix does not mutate the base instance', () => {
         const scoped = c.with({ service: 'other' })
-        expect(c.s3Prefix()).toBe('slaops/logs/ingest/')
-        expect(scoped.s3Prefix()).toBe('slaops/logs/other/')
+        expect(c.s3Prefix()).toBe('derrops/logs/ingest/')
+        expect(scoped.s3Prefix()).toBe('derrops/logs/other/')
       })
     })
   })

@@ -2,7 +2,7 @@ import { describe, it, expect } from '@jest/globals'
 import { DerropsConventions } from '../DerropsConventions.js'
 
 const base = new DerropsConventions({
-  org: 'slaops',
+  org: 'derrops',
   domain: 'platform',
   service: 'api',
   region: 'ap-southeast-2',
@@ -24,7 +24,7 @@ describe('CDK — logicalId on Resource', () => {
 
   it('hyphens within a segment word are treated as word separators', () => {
     const c = new DerropsConventions({
-      org: 'slaops',
+      org: 'derrops',
       domain: 'platform',
       service: 'order-service',
     }).arnContext({ accountId: '123456789012' })
@@ -34,7 +34,7 @@ describe('CDK — logicalId on Resource', () => {
   })
 
   it('org-only instance — logicalId still works (no segments to omit)', () => {
-    const c = new DerropsConventions({ org: 'slaops', service: 'api' }).arnContext({
+    const c = new DerropsConventions({ org: 'derrops', service: 'api' }).arnContext({
       accountId: '123456789012',
     })
     expect(c.resource({ type: 'lambdaFunction', key: 'handler' }).logicalId).toBe(
@@ -63,8 +63,8 @@ describe('CDK — logicalId on Resource', () => {
 
   it('name still includes org — logicalId is separate from name', () => {
     const r = base.resource({ type: 'dynamoDb', key: 'orders' })
-    expect(r.name).toContain('slaops')
-    expect(r.logicalId).not.toContain('Slaops')
+    expect(r.name).toContain('derrops')
+    expect(r.logicalId).not.toContain('Derrops')
   })
 
   it('different types produce different logicalIds even with the same key', () => {

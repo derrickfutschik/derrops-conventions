@@ -17,7 +17,7 @@ const base = () =>
     env: 'prod',
     region: 'ap-southeast-2',
   })
-    .tagPrefix('slaops:')
+    .tagPrefix('derrops:')
     .tagKeys('org', 'domain', 'service', 'environment')
 
 const withArn = () => base().arnContext({ accountId: '123456789012' })
@@ -142,23 +142,23 @@ describe('costFilter()', () => {
   it('includes the visible tag keys', () => {
     const filter = base().costFilter()
     const keys = filter.And.map((f) => f.Tags.Key)
-    expect(keys).toContain('slaops:org')
-    expect(keys).toContain('slaops:domain')
-    expect(keys).toContain('slaops:service')
-    expect(keys).toContain('slaops:environment')
+    expect(keys).toContain('derrops:org')
+    expect(keys).toContain('derrops:domain')
+    expect(keys).toContain('derrops:service')
+    expect(keys).toContain('derrops:environment')
   })
 
   it('excludes structural schema tags (segment, s3-prefix-segment, etc.)', () => {
     const filter = base().costFilter()
     const keys = filter.And.map((f) => f.Tags.Key)
-    expect(keys).not.toContain('slaops:segment')
-    expect(keys).not.toContain('slaops:s3-prefix-segment')
-    expect(keys).not.toContain('slaops:segment-values')
+    expect(keys).not.toContain('derrops:segment')
+    expect(keys).not.toContain('derrops:s3-prefix-segment')
+    expect(keys).not.toContain('derrops:segment-values')
   })
 
   it('filter values match the actual segment values', () => {
     const filter = base().costFilter()
-    const orgFilter = filter.And.find((f) => f.Tags.Key === 'slaops:org')
+    const orgFilter = filter.And.find((f) => f.Tags.Key === 'derrops:org')
     expect(orgFilter?.Tags.Values).toEqual(['acme'])
   })
 
@@ -191,10 +191,10 @@ describe('budgetName()', () => {
 describe('costAllocationTags()', () => {
   it('returns the list of visible tag key names with prefix', () => {
     const keys = base().costAllocationTags()
-    expect(keys).toContain('slaops:org')
-    expect(keys).toContain('slaops:domain')
-    expect(keys).toContain('slaops:service')
-    expect(keys).toContain('slaops:environment')
+    expect(keys).toContain('derrops:org')
+    expect(keys).toContain('derrops:domain')
+    expect(keys).toContain('derrops:service')
+    expect(keys).toContain('derrops:environment')
   })
 
   it('respects tagKeys() to control which tags appear', () => {
@@ -243,7 +243,7 @@ describe('for()', () => {
 
   it('inherits tagPrefix from parent', () => {
     const derived = base().for({ env: 'staging' })
-    expect(derived.tags()).toHaveProperty('slaops:environment', 'staging')
+    expect(derived.tags()).toHaveProperty('derrops:environment', 'staging')
   })
 
   it('inherits tagKeyCasing from parent', () => {

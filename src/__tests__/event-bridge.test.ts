@@ -2,51 +2,51 @@ import { describe, it, expect } from '@jest/globals'
 import { DerropsConventions } from '../DerropsConventions.js'
 
 const base = new DerropsConventions({
-  org: 'slaops',
+  org: 'derrops',
   domain: 'platform',
   service: 'api',
 })
 
 describe('eventSource()', () => {
   it('returns org.domain.service by default', () => {
-    expect(base.eventSource()).toBe('slaops.platform.api')
+    expect(base.eventSource()).toBe('derrops.platform.api')
   })
 
   it('level: domain returns org.domain', () => {
-    expect(base.eventSource({ level: 'domain' })).toBe('slaops.platform')
+    expect(base.eventSource({ level: 'domain' })).toBe('derrops.platform')
   })
 
   it('level: org returns org only', () => {
-    expect(base.eventSource({ level: 'org' })).toBe('slaops')
+    expect(base.eventSource({ level: 'org' })).toBe('derrops')
   })
 
   it('level: service is the default and returns full path', () => {
-    expect(base.eventSource({ level: 'service' })).toBe('slaops.platform.api')
+    expect(base.eventSource({ level: 'service' })).toBe('derrops.platform.api')
   })
 
   it('missing service falls back gracefully to defined segments only', () => {
-    const c = new DerropsConventions({ org: 'slaops', domain: 'platform' })
-    expect(c.eventSource()).toBe('slaops.platform')
+    const c = new DerropsConventions({ org: 'derrops', domain: 'platform' })
+    expect(c.eventSource()).toBe('derrops.platform')
   })
 
   it('only org set returns org only', () => {
-    const c = new DerropsConventions({ org: 'slaops' })
-    expect(c.eventSource()).toBe('slaops')
+    const c = new DerropsConventions({ org: 'derrops' })
+    expect(c.eventSource()).toBe('derrops')
   })
 
   it('can be used directly as an EventBridge source filter value', () => {
     const filter = { source: [base.eventSource()] }
-    expect(filter).toEqual({ source: ['slaops.platform.api'] })
+    expect(filter).toEqual({ source: ['derrops.platform.api'] })
   })
 
   it('domain-level source forms a valid EventBridge prefix routing pattern', () => {
     const pattern = { source: [{ prefix: base.eventSource({ level: 'domain' }) }] }
-    expect(pattern).toEqual({ source: [{ prefix: 'slaops.platform' }] })
+    expect(pattern).toEqual({ source: [{ prefix: 'derrops.platform' }] })
   })
 
   it('different services under same domain share the domain-level prefix', () => {
-    const auth = new DerropsConventions({ org: 'slaops', domain: 'platform', service: 'auth' })
-    const api = new DerropsConventions({ org: 'slaops', domain: 'platform', service: 'api' })
+    const auth = new DerropsConventions({ org: 'derrops', domain: 'platform', service: 'auth' })
+    const api = new DerropsConventions({ org: 'derrops', domain: 'platform', service: 'api' })
     expect(auth.eventSource({ level: 'domain' })).toBe(api.eventSource({ level: 'domain' }))
     expect(auth.eventSource()).not.toBe(api.eventSource())
   })

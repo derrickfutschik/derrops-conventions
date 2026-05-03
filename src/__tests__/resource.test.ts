@@ -2,7 +2,7 @@ import { describe, it, expect } from '@jest/globals'
 import { DerropsConventions } from '../DerropsConventions.js'
 
 const base = new DerropsConventions({
-  org: 'slaops',
+  org: 'derrops',
   domain: 'platform',
   service: 'api',
   region: 'ap-southeast-2',
@@ -41,7 +41,7 @@ describe('resource() — ARN format', () => {
   it('lambdaFunction: regional, includes function: prefix', () => {
     const r = base.resource({ type: 'lambdaFunction', key: 'handler' })
     expect(r.arn).toBe(
-      'arn:aws:lambda:ap-southeast-2:123456789012:function:slaops--platform--api--handler',
+      'arn:aws:lambda:ap-southeast-2:123456789012:function:derrops--platform--api--handler',
     )
     expect(r.arns).toHaveLength(1)
   })
@@ -49,14 +49,14 @@ describe('resource() — ARN format', () => {
   it('s3Bucket: global, no region or account in ARN, emits bucket and bucket/*', () => {
     const r = base.resource({ type: 's3Bucket', key: 'data' })
     expect(r.arns).toHaveLength(2)
-    expect(r.arns[0]).toBe('arn:aws:s3:::ap-southeast-2--prod--slaops--platform--api--data')
-    expect(r.arns[1]).toBe('arn:aws:s3:::ap-southeast-2--prod--slaops--platform--api--data/*')
+    expect(r.arns[0]).toBe('arn:aws:s3:::ap-southeast-2--prod--derrops--platform--api--data')
+    expect(r.arns[1]).toBe('arn:aws:s3:::ap-southeast-2--prod--derrops--platform--api--data/*')
   })
 
   it('dynamoDb: regional, table/ prefix', () => {
     const r = base.resource({ type: 'dynamoDb', key: 'orders' })
     expect(r.arn).toBe(
-      'arn:aws:dynamodb:ap-southeast-2:123456789012:table/slaops--platform--api--orders',
+      'arn:aws:dynamodb:ap-southeast-2:123456789012:table/derrops--platform--api--orders',
     )
     expect(r.arns).toHaveLength(1)
   })
@@ -64,9 +64,9 @@ describe('resource() — ARN format', () => {
   it('dynamoDbGsi: ARN targets parent table (--gsi stripped), appends /index/*', () => {
     const r = base.resource({ type: 'dynamoDbGsi', key: 'orders' })
     // name has --gsi suffix
-    expect(r.name).toBe('slaops--platform--api--orders--gsi')
+    expect(r.name).toBe('derrops--platform--api--orders--gsi')
     // ARN must not contain --gsi and must end with /index/*
-    expect(r.arn).toContain('table/slaops--platform--api--orders/index/*')
+    expect(r.arn).toContain('table/derrops--platform--api--orders/index/*')
     expect(r.arn).not.toContain('--gsi')
     expect(r.arns).toHaveLength(1)
   })
@@ -74,7 +74,7 @@ describe('resource() — ARN format', () => {
   it('ssmParam: leading slash, path delimiter', () => {
     const r = base.resource({ type: 'ssmParam', key: 'db-secret' })
     expect(r.arn).toBe(
-      'arn:aws:ssm:ap-southeast-2:123456789012:parameter/slaops/platform/api/db-secret',
+      'arn:aws:ssm:ap-southeast-2:123456789012:parameter/derrops/platform/api/db-secret',
     )
   })
 
@@ -93,40 +93,40 @@ describe('resource() — ARN format', () => {
   it('openSearchDomain: emits domain ARN and domain/* for index access', () => {
     const r = base.resource({ type: 'openSearchDomain' })
     expect(r.arns).toHaveLength(2)
-    expect(r.arns[0]).toContain(':domain/slaops--platform--api')
+    expect(r.arns[0]).toContain(':domain/derrops--platform--api')
     expect(r.arns[1]).toBe(r.arns[0] + '/*')
   })
 
   it('secretsManager: secret: prefix', () => {
     const r = base.resource({ type: 'secretsManager', key: 'jwt' })
-    expect(r.arn).toContain('secret:slaops/platform/api/jwt')
+    expect(r.arn).toContain('secret:derrops/platform/api/jwt')
   })
 
   it('cloudFormationStack: name includes -stack suffix, ARN ends with /*', () => {
     const r = base.resource({ type: 'cloudFormationStack', key: 'infra' })
     expect(r.name.endsWith('-stack')).toBe(true)
-    expect(r.arn).toMatch(/stack\/slaops--platform--api--infra-stack\/\*$/)
+    expect(r.arn).toMatch(/stack\/derrops--platform--api--infra-stack\/\*$/)
   })
 
   it('ssmDocument: document/ prefix', () => {
     const r = base.resource({ type: 'ssmDocument', key: 'deploy' })
-    expect(r.arn).toContain('document/slaops--platform--api--deploy')
+    expect(r.arn).toContain('document/derrops--platform--api--deploy')
   })
 
   it('redshiftCluster: cluster: prefix', () => {
     const r = base.resource({ type: 'redshiftCluster' })
-    expect(r.arn).toContain('cluster:slaops--platform--api')
+    expect(r.arn).toContain('cluster:derrops--platform--api')
   })
 
   it('configRule: name includes -rule suffix, config-rule/ prefix', () => {
     const r = base.resource({ type: 'configRule', key: 'tagging' })
     expect(r.name.endsWith('-rule')).toBe(true)
-    expect(r.arn).toContain('config-rule/slaops--platform--api--tagging-rule')
+    expect(r.arn).toContain('config-rule/derrops--platform--api--tagging-rule')
   })
 
   it('xraySamplingRule: sampling-rule/ prefix', () => {
     const r = base.resource({ type: 'xraySamplingRule', key: 'low-rate' })
-    expect(r.arn).toContain('sampling-rule/slaops--platform--api--low-rate')
+    expect(r.arn).toContain('sampling-rule/derrops--platform--api--low-rate')
   })
 
   it('cloudFrontDistribution: no region in ARN', () => {
@@ -156,7 +156,7 @@ describe('resource() — ARN format', () => {
 
   it('uses non-default partition when set', () => {
     const cn = new DerropsConventions({
-      org: 'slaops',
+      org: 'derrops',
       domain: 'platform',
       service: 'api',
       region: 'cn-north-1',
@@ -172,7 +172,7 @@ describe('resource() — segment overrides', () => {
   it('overriding domain changes the name and ARN', () => {
     const r = base.resource({ type: 'dynamoDb', domain: 'oaspec', key: 'specs' })
     expect(r.name).toContain('oaspec')
-    expect(r.arn).toContain('slaops--oaspec--api--specs')
+    expect(r.arn).toContain('derrops--oaspec--api--specs')
   })
 
   it('including tenant changes the name and ARN', () => {
@@ -184,7 +184,7 @@ describe('resource() — segment overrides', () => {
   it('.with() instance propagates defaults to resource()', () => {
     const scoped = base.with({ service: 'worker', domain: 'jobs' })
     const r = scoped.resource({ type: 'lambdaFunction', key: 'processor' })
-    expect(r.name).toBe('slaops--jobs--worker--processor')
+    expect(r.name).toBe('derrops--jobs--worker--processor')
   })
 
   it('default type via .with({ type }) works without passing type', () => {
@@ -221,7 +221,7 @@ describe('resource() — error paths', () => {
   })
 
   it('throws when arnContext is not set', () => {
-    const bare = new DerropsConventions({ org: 'slaops', region: 'ap-southeast-2' })
+    const bare = new DerropsConventions({ org: 'derrops', region: 'ap-southeast-2' })
     expect(() => bare.resource({ type: 'lambdaFunction', key: 'h' })).toThrow(/accountId/)
   })
 })
