@@ -37,6 +37,8 @@ import type {
   MaybeConstrain,
   IsLiteralString,
   CfgKeyBase,
+  AnyDomainMap,
+  ServiceForDomain,
 } from './conventions-types.js'
 import {
   DEFAULT_SEGMENT_ORDER,
@@ -96,6 +98,8 @@ export type {
   MaybeConstrain,
   IsLiteralString,
   CfgKeyBase,
+  AnyDomainMap,
+  ServiceForDomain,
 } from './conventions-types.js'
 
 /**
@@ -122,6 +126,7 @@ export class DerropsConventions<
   TType extends ResourceType | undefined = undefined,
   TDomain extends string = string,
   TService extends string = string,
+  TMap extends AnyDomainMap = AnyDomainMap,
 > {
   private readonly defaults: Segments
   private order: Array<SegmentKey | string>
@@ -144,7 +149,7 @@ export class DerropsConventions<
   private extraSegments: Record<string, string>
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private _dependencies: Array<{
-    owner: DerropsConventions<any, any, any, any>
+    owner: DerropsConventions<any, any, any, any, any>
     resources: ResourceType[]
   }>
   /**
@@ -153,7 +158,7 @@ export class DerropsConventions<
    * Not propagated through `.with()` — each instance owns its own children list.
    */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  private _children: DerropsConventions<any, any, any, any>[] = []
+  private _children: DerropsConventions<any, any, any, any, any>[] = []
 
   constructor(
     defaults: ConstrainedSegments<C> = {} as ConstrainedSegments<C>,
@@ -331,6 +336,48 @@ export class DerropsConventions<
     values: readonly V[],
   ): DerropsConventions<Omit<C, 'service'> & Record<'service', V>, TType, TDomain, TService> {
     return this.constrain('service', ...values)
+  }
+
+  /**
+   * Register a domain→service map, constraining which services are valid per domain.
+   * Replaces independent `.domain()` + `.service()` calls when you need compile-time
+   * enforcement that a service actually belongs to the domain it is paired with.
+   *
+   * @example
+   * const conv = new DerropsConventions({ org: 'derrops', env: 'prod' })
+   *   .domains({
+   *     platform:         ['vpc', 'api-gateway', 'app-database'] as const,
+   *     'user-management': ['cognito', 'identity-pool']          as const,
+   *   })
+   *
+   * conv.with({ domain: 'platform',        service: 'vpc' })      // ✅
+   * conv.with({ domain: 'platform',        service: 'cognito' })  // ❌ TS error
+   * conv.with({ domain: 'user-management', service: 'cognito' })  // ✅
+   */
+  domains<TNewMap extends Record<string, readonly string[]>>(
+    map: TNewMap,
+  ): DerropsConventions<
+    Omit<C, 'domain' | 'service'> &
+      Record<'domain', keyof TNewMap & string> &
+      Record<'service', TNewMap[keyof TNewMap][number]>,
+    TType,
+    keyof TNewMap & string,
+    TNewMap[keyof TNewMap][number],
+    TNewMap
+  > {
+    const domains = Object.keys(map) as Array<keyof TNewMap & string>
+    const services = [...new Set(Object.values(map).flat())] as Array<
+      TNewMap[keyof TNewMap][number]
+    >
+    return this.domain(domains).service(services) as unknown as DerropsConventions<
+      Omit<C, 'domain' | 'service'> &
+        Record<'domain', keyof TNewMap & string> &
+        Record<'service', TNewMap[keyof TNewMap][number]>,
+      TType,
+      keyof TNewMap & string,
+      TNewMap[keyof TNewMap][number],
+      TNewMap
+    >
   }
 
   /** Constrain allowed `partition` values. */
@@ -705,14 +752,15 @@ export class DerropsConventions<
   with<
     T extends ResourceType | undefined = undefined,
     D extends string = string,
-    S extends string = string,
+    S extends ServiceForDomain<TMap, D> = ServiceForDomain<TMap, D>,
   >(
     overrides: ConstrainedSegments<C> & { type?: T; domain?: D; service?: S },
   ): DerropsConventions<
     C,
     T extends ResourceType ? T : TType,
     IsLiteralString<D> extends true ? D : TDomain,
-    IsLiteralString<S> extends true ? S : TService
+    IsLiteralString<S> extends true ? S : TService,
+    TMap
   > {
     const { type, ...segmentOverrides } = overrides as ConstrainedSegments<C> & {
       type?: ResourceType
@@ -729,7 +777,8 @@ export class DerropsConventions<
       C,
       T extends ResourceType ? T : TType,
       IsLiteralString<D> extends true ? D : TDomain,
-      IsLiteralString<S> extends true ? S : TService
+      IsLiteralString<S> extends true ? S : TService,
+      TMap
     >
   }
 
@@ -752,18 +801,18 @@ export class DerropsConventions<
    * // Override multiple segments at once
    * orgConv.for({ domain: 'payments', service: 'api', env: 'staging' }).name({ type: 'lambdaFunction' })
    */
-  for(segments: Partial<Segments>): DerropsConventions<C, TType, string, string> {
+  for(segments: Partial<Segments>): DerropsConventions<C, TType, string, string, TMap> {
     const derived = new DerropsConventions<C>(
       { ...this.defaults, ...segments } as ConstrainedSegments<C>,
       this.defaultType as ResourceType | undefined,
     )
     this._cloneState(derived)
     // Not registered in _children — a projection is not a hierarchy node.
-    return derived as unknown as DerropsConventions<C, TType, string, string>
+    return derived as unknown as DerropsConventions<C, TType, string, string, TMap>
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  private _cloneState(derived: DerropsConventions<any, any, any, any>): void {
+  private _cloneState(derived: DerropsConventions<any, any, any, any, any>): void {
     derived.order = [...this.order]
     derived.extraSegments = { ...this.extraSegments }
     derived.visibleTags = [...this.visibleTags]
@@ -849,7 +898,7 @@ export class DerropsConventions<
    * Intended for visualisation (`toMermaid()`) and debugging.
    */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  children(): readonly DerropsConventions<any, any, any, any>[] {
+  children(): readonly DerropsConventions<any, any, any, any, any>[] {
     return this._children
   }
 
@@ -880,7 +929,7 @@ export class DerropsConventions<
    */
   toMermaid(options?: MermaidOptions): string {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    return renderMermaid(this as unknown as DerropsConventions<any, any, any, any>, options)
+    return renderMermaid(this as unknown as DerropsConventions<any, any, any, any, any>, options)
   }
 
   /**
@@ -1729,7 +1778,7 @@ export class DerropsConventions<
    * db.policyFor(api)  // → IAM policy granting api read/write on db's DynamoDB + S3 resources
    */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  dependsOn(owner: DerropsConventions<any, any, any, any>, resources: ResourceType[]): this {
+  dependsOn(owner: DerropsConventions<any, any, any, any, any>, resources: ResourceType[]): this {
     this._dependencies.push({ owner, resources })
     return this
   }
@@ -1742,10 +1791,10 @@ export class DerropsConventions<
    */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   dependencies(): {
-    nodes: DerropsConventions<any, any, any, any>[]
+    nodes: DerropsConventions<any, any, any, any, any>[]
     edges: Array<{
-      from: DerropsConventions<any, any, any, any>
-      owner: DerropsConventions<any, any, any, any>
+      from: DerropsConventions<any, any, any, any, any>
+      owner: DerropsConventions<any, any, any, any, any>
       resources: ResourceType[]
     }>
   } {
@@ -1769,7 +1818,7 @@ export class DerropsConventions<
    * // → IAM policy: { Statement: [{ Effect: 'Allow', Action: ['dynamodb:Get*', ...], Resource: [...] }] }
    */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  policyFor(caller: DerropsConventions<any, any, any, any>): PolicyBuilder {
+  policyFor(caller: DerropsConventions<any, any, any, any, any>): PolicyBuilder {
     return buildPolicyFor(this, caller)
   }
 

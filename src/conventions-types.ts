@@ -169,3 +169,24 @@ export type CfgKeyBase<TDomain extends string, TService extends string, K extend
       ? `${TDomain}.${TService}.${K}`
       : `${TDomain}.${K}`
     : string
+
+/** A mapping from domain names to their valid service names. */
+export type AnyDomainMap = Record<string, readonly string[]>
+
+/**
+ * Given a domain-service map and a specific domain literal `D`, resolve the allowed
+ * service type:
+ * - If `TMap` is unconstrained (the default), service is `string`
+ * - If `D` is a literal key of `TMap`, service is narrowed to that domain's services
+ * - If `D` is `string` (no literal domain), service is the union of all services in the map
+ */
+export type ServiceForDomain<
+  TMap extends AnyDomainMap,
+  D extends string,
+> = string extends keyof TMap
+  ? string
+  : string extends D
+    ? TMap[keyof TMap][number]
+    : D extends keyof TMap
+      ? TMap[D][number]
+      : string

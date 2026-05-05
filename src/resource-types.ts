@@ -677,6 +677,36 @@ export const RESOURCE_TYPES = {
     suffix: '/',
   },
 
+  // ── Auth / Cognito ───────────────────────────────────────────────────────
+  // Cognito resource IDs (pool IDs, client IDs, identity pool IDs) are auto-generated
+  // by AWS and not derivable from the resource name — no arn/permissions here.
+  // Use the CDK-provided ARN for IAM policy grants.
+  cognitoUserPool: {
+    global: false,
+    segmentDelimiter: '--',
+    wordDelimiter: '-',
+    iamService: 'cognito-idp',
+    consoleLabel: 'cognito',
+    localId: 'UserPool',
+  },
+  cognitoUserPoolClient: {
+    // App client name: org--domain--service--key (key = client purpose, e.g. 'cli', 'portal')
+    global: false,
+    segmentDelimiter: '--',
+    wordDelimiter: '-',
+    iamService: 'cognito-idp',
+    consoleLabel: 'cognito',
+    localId: 'UserPoolClient',
+  },
+  cognitoIdentityPool: {
+    global: false,
+    segmentDelimiter: '--',
+    wordDelimiter: '-',
+    iamService: 'cognito-identity',
+    consoleLabel: 'cognito',
+    localId: 'IdentityPool',
+  },
+
   // ── DNS / Route53 / CloudFront / ACM ─────────────────────────────────────
   // apex encodes the effective zone for this deployment (e.g. 'dev.acme.com' or 'acme.com').
   // Use .apexMapping() on the convention instance to derive it from env at naming time.
