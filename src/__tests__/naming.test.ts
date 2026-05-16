@@ -105,6 +105,29 @@ describe('DerropsConventions — naming', () => {
       expect(c.name({ type: 'iamPath' })).toBe('/acme/payments/checkout-api/')
     })
 
+    it('iamRole does not produce a leading -- delimiter', () => {
+      expect(c.name({ type: 'iamRole' })).toBe('acme--payments--checkout-api')
+    })
+
+    it('iamRole with purpose does not produce a leading -- delimiter', () => {
+      expect(c.name({ type: 'iamRole', purpose: 'sqs-publish' })).toBe(
+        'acme--payments--checkout-api--sqs-publish',
+      )
+    })
+
+    it('name() strips accidental leading segment delimiter from joined segments', () => {
+      // ssmParam intentionally adds a leading '/' via leadingDelimiter — verify the
+      // sanitisation of joined does not double-up the slash
+      expect(c.name({ type: 'ssmParam', key: 'stripe-key' })).toBe(
+        '/acme/payments/checkout-api/stripe-key',
+      )
+    })
+
+    it('name() strips accidental trailing segment delimiter and intentional suffix is preserved', () => {
+      // iamPath has suffix:'/' — verify sanitisation of joined leaves the suffix intact
+      expect(c.name({ type: 'iamPath' })).toBe('/acme/payments/checkout-api/')
+    })
+
     it('glueDatabase converts hyphens to underscores', () => {
       expect(c.name({ type: 'glueDatabase' })).toBe('acme_payments_checkout_api')
     })

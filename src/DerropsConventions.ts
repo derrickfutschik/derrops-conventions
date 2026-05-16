@@ -1011,7 +1011,13 @@ export class DerropsConventions<
       this.apexMapFn,
     )
     const joined = segments.join(config.segmentDelimiter)
-    const base = config.leadingDelimiter ? `${config.segmentDelimiter}${joined}` : joined
+    const escapedSd = config.segmentDelimiter.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    const escapedWd = config.wordDelimiter.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    const sanitized = joined.replace(
+      new RegExp(`^(?:${escapedSd}|${escapedWd})+|(?:${escapedSd}|${escapedWd})+$`, 'g'),
+      '',
+    )
+    const base = config.leadingDelimiter ? `${config.segmentDelimiter}${sanitized}` : sanitized
     const prefixed = config.namePrefix ? `${config.namePrefix}${base}` : base
     return config.suffix ? `${prefixed}${config.suffix}` : prefixed
   }

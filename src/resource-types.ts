@@ -623,12 +623,9 @@ export const RESOURCE_TYPES = {
 
   // ── IAM ──────────────────────────────────────────────────────────────────
   iamRole: {
-    // generates the IAM path: /{org}/{domain}/{service}/{key}
-    // leading '/' from name acts as separator after 'role' in the ARN
     global: false,
     segmentDelimiter: '--',
     wordDelimiter: '-',
-    leadingDelimiter: true,
     iamService: 'iam',
     consoleLabel: 'iam-role',
     localId: 'IAMRole',
