@@ -13,7 +13,7 @@ const makeConv = () =>
     region: 'ap-southeast-2',
   })
     .tagPrefix('derrops:')
-    .tagKeys('org', 'domain', 'service', 'environment')
+    .tagKeys('org', 'domain', 'service', 'env')
 
 describe('DerropsConventions — S3 URI convention', () => {
   // ── Schema tags on s3Bucket ──────────────────────────────────────────────────

@@ -33,13 +33,11 @@ describe('DerropsConventions — parse()', () => {
       })
     })
 
-    it('strips the suffix (dynamoDbGsi)', () => {
-      const result = DerropsConventions.parse('acme--payments--orders--gsi', 'dynamoDbGsi')
+    it('parses dynamoDbGsi name — no suffix to strip, key segment is included', () => {
+      const result = DerropsConventions.parse('acme--payments--orders--by-user', 'dynamoDbGsi')
       expect(result['org']).toBe('acme')
       expect(result['domain']).toBe('payments')
       expect(result['service']).toBe('orders')
-      // --gsi suffix stripped, so only 3 parts remain
-      expect(Object.keys(result)).not.toContain('key')
     })
 
     it('uses segment tag for key order when provided', () => {

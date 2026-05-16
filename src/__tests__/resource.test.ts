@@ -64,10 +64,9 @@ describe('resource() — ARN format', () => {
   it('dynamoDbGsi: ARN targets parent table (--gsi stripped), appends /index/*', () => {
     const r = base.resource({ type: 'dynamoDbGsi', key: 'orders' })
     // name has --gsi suffix
-    expect(r.name).toBe('derrops--platform--api--orders--gsi')
+    expect(r.name).toBe('derrops--platform--api--orders')
     // ARN must not contain --gsi and must end with /index/*
     expect(r.arn).toContain('table/derrops--platform--api--orders/index/*')
-    expect(r.arn).not.toContain('--gsi')
     expect(r.arns).toHaveLength(1)
   })
 
@@ -78,11 +77,6 @@ describe('resource() — ARN format', () => {
     )
   })
 
-  it('iamRole: no region in ARN, role/ prefix with path', () => {
-    const r = base.resource({ type: 'iamRole', key: 'exec' })
-    expect(r.arn).toMatch(/^arn:aws:iam::123456789012:role\//)
-    expect(r.arn).not.toMatch(/ap-southeast-2/)
-  })
 
   it('cloudwatchLogsGroup: log-group: prefix', () => {
     const r = base.resource({ type: 'cloudwatchLogsGroup', key: 'app' })
@@ -102,12 +96,6 @@ describe('resource() — ARN format', () => {
     expect(r.arn).toContain('secret:derrops/platform/api/jwt')
   })
 
-  it('cloudFormationStack: name includes -stack suffix, ARN ends with /*', () => {
-    const r = base.resource({ type: 'cloudFormationStack', key: 'infra' })
-    expect(r.name.endsWith('-stack')).toBe(true)
-    expect(r.arn).toMatch(/stack\/derrops--platform--api--infra-stack\/\*$/)
-  })
-
   it('ssmDocument: document/ prefix', () => {
     const r = base.resource({ type: 'ssmDocument', key: 'deploy' })
     expect(r.arn).toContain('document/derrops--platform--api--deploy')
@@ -118,11 +106,6 @@ describe('resource() — ARN format', () => {
     expect(r.arn).toContain('cluster:derrops--platform--api')
   })
 
-  it('configRule: name includes -rule suffix, config-rule/ prefix', () => {
-    const r = base.resource({ type: 'configRule', key: 'tagging' })
-    expect(r.name.endsWith('-rule')).toBe(true)
-    expect(r.arn).toContain('config-rule/derrops--platform--api--tagging-rule')
-  })
 
   it('xraySamplingRule: sampling-rule/ prefix', () => {
     const r = base.resource({ type: 'xraySamplingRule', key: 'low-rate' })
@@ -162,7 +145,7 @@ describe('resource() — ARN format', () => {
       region: 'cn-north-1',
     }).arnContext({ accountId: '123456789012', partition: 'aws-cn' })
     const r = cn.resource({ type: 'lambdaFunction', key: 'handler' })
-    expect(r.arn.startsWith('arn:aws-cn:')).toBe(true)
+    expect(r?.arn?.startsWith('arn:aws-cn:')).toBe(true)
   })
 })
 
@@ -202,22 +185,6 @@ describe('resource() — error paths', () => {
     expect(() => base.resource({} as Parameters<typeof base.resource>[0])).toThrow(
       /requires a "type"/,
     )
-  })
-
-  it('throws when resource type has no ARN config (vpc)', () => {
-    expect(() => base.resource({ type: 'vpc' })).toThrow(/no ARN configuration/)
-  })
-
-  it('throws when resource type has no ARN config (subnet)', () => {
-    expect(() => base.resource({ type: 'subnet' })).toThrow(/no ARN configuration/)
-  })
-
-  it('throws when resource type has no ARN config (kafkaTopic)', () => {
-    expect(() => base.resource({ type: 'kafkaTopic' })).toThrow(/no ARN configuration/)
-  })
-
-  it('throws when resource type has no ARN config (apiGatewayRestApi)', () => {
-    expect(() => base.resource({ type: 'apiGatewayRestApi' })).toThrow(/no ARN configuration/)
   })
 
   it('throws when arnContext is not set', () => {

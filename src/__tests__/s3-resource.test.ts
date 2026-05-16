@@ -14,7 +14,7 @@ const fullConv = () =>
     region: 'ap-southeast-2',
   })
     .tagPrefix('derrops:')
-    .tagKeys('org', 'domain', 'service', 'environment')
+    .tagKeys('org', 'domain', 'service', 'env')
 
 /** Convention without region/env (domain-scoped only) */
 const domainConv = () => new DerropsConventions({ org: 'acme', domain: 'payments', service: 'api' })
@@ -378,7 +378,7 @@ describe('DerropsConventions — s3Resource()', () => {
         expect(r.tags['derrops:org']).toBe('acme')
         expect(r.tags['derrops:domain']).toBe('logs')
         expect(r.tags['derrops:service']).toBe('ingest')
-        expect(r.tags['derrops:environment']).toBe('prod')
+        expect(r.tags['derrops:env']).toBe('prod')
       })
     })
 
@@ -492,7 +492,7 @@ describe('DerropsConventions — s3Resource()', () => {
       )
       expect(r.uri).toBe(
         's3://ap-southeast-2--prod--acme--platform--api-gateway/' +
-          'acme/platform/api-gateway/2024/03/15/14/access-2024031514-0001.log.gz',
+        'acme/platform/api-gateway/2024/03/15/14/access-2024031514-0001.log.gz',
       )
     })
 
@@ -515,7 +515,7 @@ describe('DerropsConventions — s3Resource()', () => {
       expect(r.prefix).toBe('derrops/logging/collector/customer-abc/2024/06/01/')
       expect(r.uri).toBe(
         's3://us-east-1--prod--derrops--logging--collector/' +
-          'derrops/logging/collector/customer-abc/2024/06/01/events.json.gz',
+        'derrops/logging/collector/customer-abc/2024/06/01/events.json.gz',
       )
       expect(r.segments.all.tenant).toBe('customer-abc')
     })

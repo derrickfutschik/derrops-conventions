@@ -44,8 +44,7 @@ export function buildConsoleUrl(type: ResourceType, ctx: ConsoleUrlContext): str
 
     case 'dynamoDb':
     case 'dynamoDbGsi':
-      // GSI shares the table ARN — strip the --gsi suffix the name carries
-      return `https://console.aws.amazon.com/dynamodbv2/home?region=${r}#table?name=${enc(name.replace(/--gsi$/, ''))}`
+      return `https://console.aws.amazon.com/dynamodbv2/home?region=${r}#table?name=${enc(name)}`
 
     case 'rdsInstance':
       return `https://console.aws.amazon.com/rds/home?region=${r}#database:id=${enc(name)}`

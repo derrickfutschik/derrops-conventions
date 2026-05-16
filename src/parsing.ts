@@ -88,8 +88,11 @@ export function parseResourceName(
   if (config.namePrefix && cleanName.startsWith(config.namePrefix)) {
     cleanName = cleanName.slice(config.namePrefix.length)
   }
-  if (config.suffix && cleanName.endsWith(config.suffix)) {
-    cleanName = cleanName.slice(0, -config.suffix.length)
+  if (config.suffix !== undefined) {
+    const suffixStr = `${config.suffixDelimiter ?? delimiter}${config.suffix}`
+    if (cleanName.endsWith(suffixStr)) {
+      cleanName = cleanName.slice(0, -suffixStr.length)
+    }
   }
 
   const segmentTagValue = options?.tags ? findSegmentTag(options.tags) : undefined

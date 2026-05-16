@@ -532,53 +532,53 @@ describe('DerropsConventions — naming', () => {
     })
   })
 
-  describe('suffix', () => {
+  describe('suffix — AWS-mandated and same-service collision prevention only', () => {
     const c = new DerropsConventions({ org: 'acme', domain: 'payments', service: 'api' })
 
-    it('dynamoDbGsi appends --gsi', () => {
-      expect(c.name({ type: 'dynamoDbGsi', key: 'by-user' })).toBe(
-        'acme--payments--api--by-user--gsi',
-      )
+    it('sqsFifoQueue appends .fifo via suffixDelimiter', () => {
+      expect(c.name({ type: 'sqsFifoQueue', key: 'events' })).toBe('acme--payments--api--events.fifo')
     })
 
-    it('eventBridgeRule appends -rule', () => {
+    it('sqsDlq appends --dlq via segmentDelimiter', () => {
+      expect(c.name({ type: 'sqsDlq', key: 'events' })).toBe('acme--payments--api--events--dlq')
+    })
+
+    it('iamPath appends trailing / with no extra separator', () => {
+      expect(c.name({ type: 'iamPath' })).toBe('/acme/payments/api/')
+    })
+
+    it('cloudMapNamespace appends .local via segmentDelimiter', () => {
+      expect(
+        new DerropsConventions({ org: 'acme', domain: 'payments' }).name({ type: 'cloudMapNamespace' }),
+      ).toBe('payments.acme.local')
+    })
+
+    it('dynamoDbGsi has no suffix — use key to distinguish from table', () => {
+      expect(c.name({ type: 'dynamoDbGsi', key: 'by-user' })).toBe('acme--payments--api--by-user')
+    })
+
+    it('eventBridgeRule has no suffix', () => {
       expect(c.name({ type: 'eventBridgeRule', key: 'order-created' })).toBe(
-        'acme--payments--api--order-created-rule',
+        'acme--payments--api--order-created',
       )
     })
 
-    it('glueJob appends -job', () => {
-      expect(c.name({ type: 'glueJob', key: 'transform' })).toBe(
-        'acme--payments--api--transform-job',
-      )
-    })
-
-    it('glueCrawler appends -crawler', () => {
-      expect(c.name({ type: 'glueCrawler', key: 'raw-data' })).toBe(
-        'acme--payments--api--raw-data-crawler',
-      )
-    })
-
-    it('cloudFormationStack appends -stack', () => {
+    it('cloudFormationStack has no suffix', () => {
       expect(c.name({ type: 'cloudFormationStack', key: 'infra' })).toBe(
-        'acme--payments--api--infra-stack',
+        'acme--payments--api--infra',
       )
     })
 
-    it('ec2ElasticIp appends --eip and ignores key segment', () => {
-      expect(c.name({ type: 'ec2ElasticIp' })).toBe('acme--payments--api--eip')
+    it('ec2ElasticIp has no suffix', () => {
+      expect(c.name({ type: 'ec2ElasticIp' })).toBe('acme--payments--api')
     })
 
-    it('autoScalingGroup appends --asg and ignores key segment', () => {
-      expect(c.name({ type: 'autoScalingGroup' })).toBe('acme--payments--api--asg')
+    it('networkAcl has no suffix', () => {
+      expect(c.name({ type: 'networkAcl' })).toBe('acme--payments')
     })
 
-    it('networkAcl appends --nacl', () => {
-      expect(c.name({ type: 'networkAcl' })).toBe('acme--payments--nacl')
-    })
-
-    it('wafWebAcl appends --waf', () => {
-      expect(c.name({ type: 'wafWebAcl' })).toBe('acme--payments--api--waf')
+    it('wafWebAcl has no suffix', () => {
+      expect(c.name({ type: 'wafWebAcl' })).toBe('acme--payments--api')
     })
   })
 
@@ -716,8 +716,8 @@ describe('DerropsConventions — naming', () => {
     })
 
     describe('networkAcl (domain boundary control)', () => {
-      it('name is org + domain + --nacl suffix', () => {
-        expect(c.name({ type: 'networkAcl' })).toBe('acme--payments--nacl')
+      it('name is org + domain', () => {
+        expect(c.name({ type: 'networkAcl' })).toBe('acme--payments')
       })
 
       it('service is absent even when set on instance', () => {
@@ -725,9 +725,7 @@ describe('DerropsConventions — naming', () => {
       })
 
       it('different domains produce different NACLs', () => {
-        expect(c.with({ domain: 'identity' }).name({ type: 'networkAcl' })).toBe(
-          'acme--identity--nacl',
-        )
+        expect(c.with({ domain: 'identity' }).name({ type: 'networkAcl' })).toBe('acme--identity')
       })
     })
 
@@ -762,8 +760,8 @@ describe('DerropsConventions — naming', () => {
     })
 
     describe('transitGateway (org hub)', () => {
-      it('name is org + --tgw suffix', () => {
-        expect(c.name({ type: 'transitGateway' })).toBe('acme--tgw')
+      it('name is org only', () => {
+        expect(c.name({ type: 'transitGateway' })).toBe('acme')
       })
 
       it('domain and service are not included', () => {
@@ -772,20 +770,20 @@ describe('DerropsConventions — naming', () => {
     })
 
     describe('transitGatewayAttachment (domain → org TGW)', () => {
-      it('name is org + domain + --tgw-attach suffix', () => {
-        expect(c.name({ type: 'transitGatewayAttachment' })).toBe('acme--payments--tgw-attach')
+      it('name is org + domain', () => {
+        expect(c.name({ type: 'transitGatewayAttachment' })).toBe('acme--payments')
       })
 
       it('different domains produce different attachments', () => {
         expect(c.with({ domain: 'identity' }).name({ type: 'transitGatewayAttachment' })).toBe(
-          'acme--identity--tgw-attach',
+          'acme--identity',
         )
       })
     })
 
     describe('vpcPeering (cross-org)', () => {
       it('uses target segment for remote org name', () => {
-        expect(c.name({ type: 'vpcPeering', target: 'globex' })).toBe('acme--globex--peer')
+        expect(c.name({ type: 'vpcPeering', target: 'globex' })).toBe('acme--globex')
       })
 
       it('domain does not appear — peering is org-level', () => {
@@ -793,35 +791,29 @@ describe('DerropsConventions — naming', () => {
       })
 
       it('different remote orgs produce different peer names', () => {
-        expect(c.name({ type: 'vpcPeering', target: 'acme-partner' })).toBe(
-          'acme--acme-partner--peer',
-        )
+        expect(c.name({ type: 'vpcPeering', target: 'acme-partner' })).toBe('acme--acme-partner')
       })
     })
 
     describe('vpcEndpoint (domain → AWS service)', () => {
       it('s3 endpoint', () => {
-        expect(c.name({ type: 'vpcEndpoint', service: 's3' })).toBe('acme--payments--s3--endpoint')
+        expect(c.name({ type: 'vpcEndpoint', service: 's3' })).toBe('acme--payments--s3')
       })
 
       it('dynamodb endpoint', () => {
-        expect(c.name({ type: 'vpcEndpoint', service: 'dynamodb' })).toBe(
-          'acme--payments--dynamodb--endpoint',
-        )
+        expect(c.name({ type: 'vpcEndpoint', service: 'dynamodb' })).toBe('acme--payments--dynamodb')
       })
 
       it('ecr-api endpoint (hyphen preserved — wordDelimiter is -)', () => {
-        expect(c.name({ type: 'vpcEndpoint', service: 'ecr-api' })).toBe(
-          'acme--payments--ecr-api--endpoint',
-        )
+        expect(c.name({ type: 'vpcEndpoint', service: 'ecr-api' })).toBe('acme--payments--ecr-api')
       })
     })
 
     describe('clientVpnEndpoint (employee VPN entry point)', () => {
       const platform = new DerropsConventions({ org: 'acme', domain: 'platform' })
 
-      it('name is org + domain + --client-vpn', () => {
-        expect(platform.name({ type: 'clientVpnEndpoint' })).toBe('acme--platform--client-vpn')
+      it('name is org + domain', () => {
+        expect(platform.name({ type: 'clientVpnEndpoint' })).toBe('acme--platform')
       })
 
       it('different domains produce different endpoint names', () => {
@@ -829,7 +821,7 @@ describe('DerropsConventions — naming', () => {
           new DerropsConventions({ org: 'acme', domain: 'ops' }).name({
             type: 'clientVpnEndpoint',
           }),
-        ).toBe('acme--ops--client-vpn')
+        ).toBe('acme--ops')
       })
 
       // Resource-level access control (OpenSearch vs RDS) is achieved by placing each
@@ -856,14 +848,14 @@ describe('DerropsConventions — naming', () => {
       it('returns vpc and transitGateway names', () => {
         expect(orgC.orgNetworkLayer()).toEqual({
           vpc: 'acme',
-          transitGateway: 'acme--tgw',
+          transitGateway: 'acme',
         })
       })
 
       it('works on a domain-scoped instance too (org segment still present)', () => {
         expect(domainC.orgNetworkLayer()).toEqual({
           vpc: 'acme',
-          transitGateway: 'acme--tgw',
+          transitGateway: 'acme',
         })
       })
     })
@@ -871,8 +863,8 @@ describe('DerropsConventions — naming', () => {
     describe('domainNetworkLayer()', () => {
       it('returns subnets, nacl, routeTables, tgwAttachment for two AZs', () => {
         const layer = domainC.domainNetworkLayer(['1a', '1b'])
-        expect(layer.nacl).toBe('acme--payments--nacl')
-        expect(layer.tgwAttachment).toBe('acme--payments--tgw-attach')
+        expect(layer.nacl).toBe('acme--payments')
+        expect(layer.tgwAttachment).toBe('acme--payments')
         expect(layer.subnets).toEqual({
           private: ['acme--payments--private--1a', 'acme--payments--private--1b'],
           public: ['acme--payments--public--1a', 'acme--payments--public--1b'],
@@ -904,7 +896,7 @@ describe('DerropsConventions — naming', () => {
 
       it('different domains produce different topology', () => {
         const identityLayer = orgC.with({ domain: 'identity' }).domainNetworkLayer(['1a'])
-        expect(identityLayer.nacl).toBe('acme--identity--nacl')
+        expect(identityLayer.nacl).toBe('acme--identity')
         expect(identityLayer.subnets['private']![0]).toBe('acme--identity--private--1a')
       })
     })

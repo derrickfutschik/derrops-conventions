@@ -29,7 +29,7 @@ describe('SQS — naming', () => {
     expect(q.name({ type: 'sqsFifoQueue', key: 'events' })).toBe('acme--payments--api--events.fifo')
   })
 
-  it('sqsDlq appends --dlq', () => {
+  it('sqsDlq appends --dlq via segmentDelimiter', () => {
     const q = new DerropsConventions({ org: 'acme', domain: 'payments', service: 'api' })
     expect(q.name({ type: 'sqsDlq', key: 'events' })).toBe('acme--payments--api--events--dlq')
   })

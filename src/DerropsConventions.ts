@@ -358,8 +358,8 @@ export class DerropsConventions<
     map: TNewMap,
   ): DerropsConventions<
     Omit<C, 'domain' | 'service'> &
-      Record<'domain', keyof TNewMap & string> &
-      Record<'service', TNewMap[keyof TNewMap][number]>,
+    Record<'domain', keyof TNewMap & string> &
+    Record<'service', TNewMap[keyof TNewMap][number]>,
     TType,
     keyof TNewMap & string,
     TNewMap[keyof TNewMap][number],
@@ -371,8 +371,8 @@ export class DerropsConventions<
     >
     return this.domain(domains).service(services) as unknown as DerropsConventions<
       Omit<C, 'domain' | 'service'> &
-        Record<'domain', keyof TNewMap & string> &
-        Record<'service', TNewMap[keyof TNewMap][number]>,
+      Record<'domain', keyof TNewMap & string> &
+      Record<'service', TNewMap[keyof TNewMap][number]>,
       TType,
       keyof TNewMap & string,
       TNewMap[keyof TNewMap][number],
@@ -585,7 +585,7 @@ export class DerropsConventions<
    * Chainable — returns `this`.
    *
    * @example
-   * naming.tagKeys('org', 'domain', 'service', 'environment')
+   * naming.tagKeys('org', 'domain', 'service', 'env')
    * naming.tags() // → { org: 'acme', domain: 'payments', service: 'checkout-api', environment: 'prod' }
    */
   tagKeys(...keys: TagKey[]): this {
@@ -1019,7 +1019,9 @@ export class DerropsConventions<
     )
     const base = config.leadingDelimiter ? `${config.segmentDelimiter}${sanitized}` : sanitized
     const prefixed = config.namePrefix ? `${config.namePrefix}${base}` : base
-    return config.suffix ? `${prefixed}${config.suffix}` : prefixed
+    return config.suffix !== undefined
+      ? `${prefixed}${config.suffixDelimiter ?? config.segmentDelimiter}${config.suffix}`
+      : prefixed
   }
 
   /**
@@ -1180,7 +1182,7 @@ export class DerropsConventions<
    * conventions.tags({ type: 's3ObjectKey' })
    * // → { domain: 'payments', service: 'checkout-api', segment: 'org/domain/service' }
    *
-   * conventions.tagKeys('org', 'domain', 'service', 'environment').tags()
+   * conventions.tagKeys('org', 'domain', 'service', 'env').tags()
    * // → { org: 'acme', domain: 'payments', service: 'checkout-api', environment: 'prod', segment: 'org--domain--service' }
    *
    * conventions.tagPrefix('derrops:').tags()
@@ -1377,7 +1379,7 @@ export class DerropsConventions<
    * Pass the result to `CostExplorer.getCostAndUsage({ Filter: costFilter() })`.
    *
    * @example
-   * c.tagKeys('org', 'domain', 'service', 'environment').costFilter()
+   * c.tagKeys('org', 'domain', 'service', 'env').costFilter()
    * // → { And: [
    * //     { Tags: { Key: 'derrops:org', Values: ['acme'], MatchOptions: ['EQUALS'] } },
    * //     { Tags: { Key: 'derrops:domain', Values: ['payments'], MatchOptions: ['EQUALS'] } },
@@ -1444,9 +1446,9 @@ export class DerropsConventions<
    * //     public:   ['acme--payments--public--1a', ...],
    * //     isolated: ['acme--payments--isolated--1a', ...],
    * //   },
-   * //   nacl: 'acme--payments--nacl',
+   * //   nacl: 'acme--payments',
    * //   routeTables: { private: 'acme--payments--private', public: 'acme--payments--public', isolated: 'acme--payments--isolated' },
-   * //   tgwAttachment: 'acme--payments--tgw-attach',
+   * //   tgwAttachment: 'acme--payments',
    * // }
    */
   domainNetworkLayer(
@@ -1997,7 +1999,7 @@ export class DerropsConventions<
 
   /** Register a custom resource type, or override an existing one. */
   static registerResourceType(name: string, config: ResourceTypeConfig): void {
-    ;(RESOURCE_TYPES as Record<string, ResourceTypeConfig>)[name] = config
+    ; (RESOURCE_TYPES as Record<string, ResourceTypeConfig>)[name] = config
   }
 
   /**
@@ -2052,11 +2054,11 @@ export class DerropsConventions<
     spec: ConventionSpec<TDomain, TService, TEnv, TKind, TPurpose, TAz>,
   ): DerropsConventions<
     MaybeConstrain<'domain', TDomain> &
-      MaybeConstrain<'service', TService> &
-      MaybeConstrain<'env', TEnv> &
-      MaybeConstrain<'kind', TKind> &
-      MaybeConstrain<'purpose', TPurpose> &
-      MaybeConstrain<'az', TAz>
+    MaybeConstrain<'service', TService> &
+    MaybeConstrain<'env', TEnv> &
+    MaybeConstrain<'kind', TKind> &
+    MaybeConstrain<'purpose', TPurpose> &
+    MaybeConstrain<'az', TAz>
   > {
     // Collect string values as segment defaults
     const defaults: Partial<Record<SegmentKey, string>> = {}
@@ -2168,11 +2170,11 @@ export function conventions<
   spec: ConventionSpec<TDomain, TService, TEnv, TKind, TPurpose, TAz>,
 ): DerropsConventions<
   MaybeConstrain<'domain', TDomain> &
-    MaybeConstrain<'service', TService> &
-    MaybeConstrain<'env', TEnv> &
-    MaybeConstrain<'kind', TKind> &
-    MaybeConstrain<'purpose', TPurpose> &
-    MaybeConstrain<'az', TAz>
+  MaybeConstrain<'service', TService> &
+  MaybeConstrain<'env', TEnv> &
+  MaybeConstrain<'kind', TKind> &
+  MaybeConstrain<'purpose', TPurpose> &
+  MaybeConstrain<'az', TAz>
 > {
   return DerropsConventions.create(spec)
 }

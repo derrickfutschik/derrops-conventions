@@ -450,11 +450,9 @@ export const RESOURCE_TYPES = {
     global: false,
     segmentDelimiter: '--',
     wordDelimiter: '-',
-    suffix: '--gsi',
     iamService: 'dynamodb',
     consoleLabel: 'dynamodb-gsi',
     localId: 'DynamoDBGSI',
-    // stripSuffix removes '--gsi' before ARN construction so the ARN targets the parent table.
     // resourceSuffix '/index/*' grants access to all indexes on that table.
     arn: {
       service: 'dynamodb',
@@ -462,7 +460,6 @@ export const RESOURCE_TYPES = {
       includeAccount: true,
       resourcePrefix: 'table/',
       resourceSuffix: '/index/*',
-      stripSuffix: '--gsi',
     },
     permissions: {
       read: [
@@ -573,7 +570,6 @@ export const RESOURCE_TYPES = {
     segmentDelimiter: '--',
     wordDelimiter: '-',
     segments: ['org', 'domain', 'service'],
-    suffix: '--eip',
   },
   lambdaFunction: {
     global: false,
@@ -613,7 +609,6 @@ export const RESOURCE_TYPES = {
     segmentDelimiter: '--',
     wordDelimiter: '-',
     segments: ['org', 'domain', 'service'],
-    suffix: '--asg',
   },
   launchTemplate: {
     global: false,
@@ -667,11 +662,13 @@ export const RESOURCE_TYPES = {
   iamPath: {
     // path prefix for organising roles/users: /{org}/{domain}/{service}/
     // AWS requires IAM paths to start AND end with '/'; suffix adds the trailing slash.
+    // suffixDelimiter '' prevents an extra '/' before the trailing slash.
     global: false,
     segmentDelimiter: '/',
     wordDelimiter: '-',
     leadingDelimiter: true,
     suffix: '/',
+    suffixDelimiter: '',
   },
 
   // ── Auth / Cognito ───────────────────────────────────────────────────────
@@ -867,7 +864,6 @@ export const RESOURCE_TYPES = {
     segmentDelimiter: '--',
     wordDelimiter: '-',
     segments: ['org', 'domain'],
-    suffix: '--nacl',
   },
   alb: {
     global: false,
@@ -887,7 +883,6 @@ export const RESOURCE_TYPES = {
     segmentDelimiter: '--',
     wordDelimiter: '-',
     segments: ['org'],
-    suffix: '--tgw',
   },
   transitGatewayAttachment: {
     // Domain VPC attachment to the org Transit Gateway.
@@ -895,7 +890,6 @@ export const RESOURCE_TYPES = {
     segmentDelimiter: '--',
     wordDelimiter: '-',
     segments: ['org', 'domain'],
-    suffix: '--tgw-attach',
   },
   vpcPeering: {
     // Cross-org VPC peering connection. 'target' = the remote org name.
@@ -904,7 +898,6 @@ export const RESOURCE_TYPES = {
     segmentDelimiter: '--',
     wordDelimiter: '-',
     segments: ['org', 'target'],
-    suffix: '--peer',
   },
   vpcEndpoint: {
     // VPC Interface or Gateway endpoint for an AWS service inside a domain.
@@ -914,7 +907,6 @@ export const RESOURCE_TYPES = {
     segmentDelimiter: '--',
     wordDelimiter: '-',
     segments: ['org', 'domain', 'service'],
-    suffix: '--endpoint',
   },
   clientVpnEndpoint: {
     // AWS Client VPN endpoint — one shared endpoint per org per region.
@@ -934,7 +926,6 @@ export const RESOURCE_TYPES = {
     segmentDelimiter: '--',
     wordDelimiter: '-',
     segments: ['org', 'domain'],
-    suffix: '--client-vpn',
   },
 
   // ── Messaging ────────────────────────────────────────────────────────────
@@ -977,7 +968,8 @@ export const RESOURCE_TYPES = {
     global: false,
     segmentDelimiter: '--',
     wordDelimiter: '-',
-    suffix: '.fifo',
+    suffix: 'fifo',
+    suffixDelimiter: '.',
     iamService: 'sqs',
     consoleLabel: 'sqs-fifo',
     localId: 'SQSFifoQueue',
@@ -999,7 +991,7 @@ export const RESOURCE_TYPES = {
     global: false,
     segmentDelimiter: '--',
     wordDelimiter: '-',
-    suffix: '--dlq',
+    suffix: 'dlq',
     iamService: 'sqs',
     consoleLabel: 'sqs-dlq',
     localId: 'SQSQueue',
@@ -1059,7 +1051,6 @@ export const RESOURCE_TYPES = {
     global: false,
     segmentDelimiter: '--',
     wordDelimiter: '-',
-    suffix: '-rule',
     iamService: 'events',
     consoleLabel: 'eventbridge-rule',
     localId: 'EventRule',
@@ -1145,7 +1136,7 @@ export const RESOURCE_TYPES = {
     segmentDelimiter: '.',
     wordDelimiter: '-',
     segments: ['domain', 'org'],
-    suffix: '.local',
+    suffix: 'local',
     iamService: 'servicediscovery',
     localId: 'CloudMapNamespace',
     arn: {
@@ -1400,7 +1391,6 @@ export const RESOURCE_TYPES = {
     global: false,
     segmentDelimiter: '--',
     wordDelimiter: '-',
-    suffix: '-job',
     iamService: 'glue',
     consoleLabel: 'glue-job',
     localId: 'GlueJob',
@@ -1415,7 +1405,6 @@ export const RESOURCE_TYPES = {
     global: false,
     segmentDelimiter: '--',
     wordDelimiter: '-',
-    suffix: '-crawler',
     iamService: 'glue',
     consoleLabel: 'glue-crawler',
     localId: 'GlueCrawler',
@@ -1525,7 +1514,6 @@ export const RESOURCE_TYPES = {
     global: false,
     segmentDelimiter: '--',
     wordDelimiter: '-',
-    suffix: '-stack',
     iamService: 'cloudformation',
     consoleLabel: 'cloudformation',
     localId: 'CloudFormationStack',
@@ -1557,7 +1545,6 @@ export const RESOURCE_TYPES = {
     global: false,
     segmentDelimiter: '--',
     wordDelimiter: '-',
-    suffix: '-rule',
     iamService: 'config',
     consoleLabel: 'config',
     localId: 'ConfigRule',
@@ -1590,7 +1577,6 @@ export const RESOURCE_TYPES = {
     segmentDelimiter: '--',
     wordDelimiter: '-',
     segments: ['org', 'domain', 'service'],
-    suffix: '--waf',
     iamService: 'wafv2',
     consoleLabel: 'waf',
     localId: 'WAFWebACL',
@@ -1685,7 +1671,6 @@ export const RESOURCE_TYPES = {
     global: false,
     segmentDelimiter: '--',
     wordDelimiter: '-',
-    suffix: '-profile',
   },
 
   // ── Lambda ────────────────────────────────────────────────────────────────
@@ -1731,23 +1716,20 @@ export const RESOURCE_TYPES = {
     global: false,
     segmentDelimiter: '--',
     wordDelimiter: '-',
-    suffix: '-window',
   },
 
   // ── Service Catalog ───────────────────────────────────────────────────────
   serviceCatalogPortfolio: {
-    // {org}--{domain}--portfolio
+    // {org}--{domain}
     global: false,
     segmentDelimiter: '--',
     wordDelimiter: '-',
     segments: ['org', 'domain'],
-    suffix: '--portfolio',
   },
   serviceCatalogProduct: {
     global: false,
     segmentDelimiter: '--',
     wordDelimiter: '-',
-    suffix: '-product',
   },
 
   // ── ElastiCache ───────────────────────────────────────────────────────────
@@ -1755,7 +1737,6 @@ export const RESOURCE_TYPES = {
     global: false,
     segmentDelimiter: '--',
     wordDelimiter: '-',
-    suffix: '--params',
   },
 
   // ── Redshift ──────────────────────────────────────────────────────────────
@@ -1763,7 +1744,6 @@ export const RESOURCE_TYPES = {
     global: false,
     segmentDelimiter: '--',
     wordDelimiter: '-',
-    suffix: '--subnet-group',
   },
 
   // ── WAF ───────────────────────────────────────────────────────────────────
@@ -1771,7 +1751,6 @@ export const RESOURCE_TYPES = {
     global: false,
     segmentDelimiter: '--',
     wordDelimiter: '-',
-    suffix: '--ipset',
   },
   wafRuleGroup: {
     global: false,
@@ -1784,13 +1763,11 @@ export const RESOURCE_TYPES = {
     global: false,
     segmentDelimiter: '--',
     wordDelimiter: '-',
-    suffix: '--dataset',
   },
   quickSightAnalysis: {
     global: false,
     segmentDelimiter: '--',
     wordDelimiter: '-',
-    suffix: '--analysis',
   },
   quickSightDashboard: {
     global: false,

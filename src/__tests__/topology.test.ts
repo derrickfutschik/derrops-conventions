@@ -48,7 +48,7 @@ describe('constraints() — runtime constraint store', () => {
   it('constraints() returns a copy — mutations do not affect the instance', () => {
     const c = new DerropsConventions({ org: 'acme' }).domain(['payments'])
     const snapshot = c.constraints()
-    ;(snapshot as Record<string, unknown>).domain = ['mutated']
+      ; (snapshot as Record<string, unknown>).domain = ['mutated']
     expect(c.constraints().domain).toEqual(['payments'])
   })
 
@@ -87,7 +87,7 @@ describe('topology() — names and CIDRs', () => {
     })
 
     it('transitGateway name', () => {
-      expect(result.transitGateway).toBe('acme--tgw')
+      expect(result.transitGateway).toBe('acme')
     })
   })
 
@@ -168,11 +168,11 @@ describe('topology() — names and CIDRs', () => {
 
   describe('other domain fields', () => {
     it('nacl', () => {
-      expect(result.domains.payments?.nacl).toBe('acme--payments--nacl')
+      expect(result.domains.payments?.nacl).toBe('acme--payments')
     })
 
     it('tgwAttachment', () => {
-      expect(result.domains.payments?.tgwAttachment).toBe('acme--payments--tgw-attach')
+      expect(result.domains.payments?.tgwAttachment).toBe('acme--payments')
     })
 
     it('routeTables for each tier', () => {

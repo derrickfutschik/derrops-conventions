@@ -14,7 +14,7 @@ describe('DerropsConventions — tags', () => {
         org: 'acme',
         domain: 'payments',
         service: 'checkout-api',
-        environment: 'prod',
+        env: 'prod',
         segment: 'env--org--domain--service',
       })
     })
@@ -27,7 +27,7 @@ describe('DerropsConventions — tags', () => {
         env: 'prod',
       })
       expect(c.tags()).toHaveProperty('org')
-      expect(c.tags()).toHaveProperty('environment')
+      expect(c.tags()).toHaveProperty('env')
     })
 
     it('call-time overrides merge with instance defaults', () => {
@@ -54,12 +54,12 @@ describe('DerropsConventions — tags', () => {
         service: 'checkout-api',
         env: 'prod',
         key: 'stripe-key',
-      }).tagKeys('org', 'domain', 'service', 'environment')
+      }).tagKeys('org', 'domain', 'service', 'env')
       expect(c.tags()).toEqual({
         org: 'acme',
         domain: 'payments',
         service: 'checkout-api',
-        environment: 'prod',
+        env: 'prod',
         segment: 'region--env--org--domain--service--tenant--key',
       })
     })
@@ -71,7 +71,7 @@ describe('DerropsConventions — tags', () => {
         org: 'acme',
         domain: 'payments',
         service: 'checkout-api',
-        environment: 'dev',
+        env: 'dev',
         segment: 'env--org--domain--service',
       })
     })
@@ -180,11 +180,11 @@ describe('DerropsConventions — tags', () => {
     })
 
     it('show all four tags', () => {
-      expect(c.tagKeys('org', 'domain', 'service', 'environment').tags()).toEqual({
+      expect(c.tagKeys('org', 'domain', 'service', 'env').tags()).toEqual({
         org: 'acme',
         domain: 'payments',
         service: 'checkout-api',
-        environment: 'prod',
+        env: 'prod',
         segment: 'env--org--domain--service',
       })
     })
@@ -197,8 +197,8 @@ describe('DerropsConventions — tags', () => {
     })
 
     it('show only environment', () => {
-      expect(c.tagKeys('environment').tags()).toEqual({
-        environment: 'prod',
+      expect(c.tagKeys('env').tags()).toEqual({
+        env: 'prod',
         segment: 'env--org--domain--service',
       })
     })
@@ -212,14 +212,14 @@ describe('DerropsConventions — tags', () => {
         'org',
         'domain',
         'service',
-        'environment',
+        'env',
       )
       const scoped = base.with({ service: 'checkout-api' })
       expect(scoped.tags()).toEqual({
         org: 'acme',
         domain: 'payments',
         service: 'checkout-api',
-        environment: 'dev',
+        env: 'dev',
         segment: 'env--org--domain--service',
       })
     })
@@ -227,7 +227,7 @@ describe('DerropsConventions — tags', () => {
     it('tagKeys on derived instance does not affect parent', () => {
       const base = new DerropsConventions({ org: 'acme', domain: 'payments', service: 'api' })
       const derived = base.with({})
-      derived.tagKeys('org', 'domain', 'service', 'environment')
+      derived.tagKeys('org', 'domain', 'service', 'env')
       expect(base.tags()).toEqual({
         org: 'acme',
         domain: 'payments',
@@ -246,7 +246,7 @@ describe('DerropsConventions — tags', () => {
         'derrops:org': 'acme',
         'derrops:domain': 'payments',
         'derrops:service': 'checkout-api',
-        'derrops:environment': 'prod',
+        'derrops:env': 'prod',
         'derrops:segment': 'env--org--domain--service',
       })
     })
@@ -257,7 +257,7 @@ describe('DerropsConventions — tags', () => {
         'my-app/org': 'acme',
         'my-app/domain': 'payments',
         'my-app/service': 'checkout-api',
-        'my-app/environment': 'prod',
+        'my-app/env': 'prod',
         'my-app/segment': 'env--org--domain--service',
       })
     })
@@ -265,12 +265,12 @@ describe('DerropsConventions — tags', () => {
     it('works with all four visible tags', () => {
       const c = new DerropsConventions(defaults)
       expect(
-        c.tagKeys('org', 'domain', 'service', 'environment').tagPrefix('derrops:').tags(),
+        c.tagKeys('org', 'domain', 'service', 'env').tagPrefix('derrops:').tags(),
       ).toEqual({
         'derrops:org': 'acme',
         'derrops:domain': 'payments',
         'derrops:service': 'checkout-api',
-        'derrops:environment': 'prod',
+        'derrops:env': 'prod',
         'derrops:segment': 'env--org--domain--service',
       })
     })
@@ -281,7 +281,7 @@ describe('DerropsConventions — tags', () => {
         org: 'acme',
         domain: 'payments',
         service: 'checkout-api',
-        environment: 'prod',
+        env: 'prod',
         segment: 'env--org--domain--service',
       })
     })
@@ -316,14 +316,14 @@ describe('DerropsConventions — tags', () => {
       domain: 'payments',
       service: 'checkout-api',
       env: 'prod',
-    }).tagKeys('org', 'domain', 'service', 'environment')
+    }).tagKeys('org', 'domain', 'service', 'env')
 
     it('kebab (default) — no transformation', () => {
       expect(c.tagKeyCasing('kebab').tags()).toEqual({
         org: 'acme',
         domain: 'payments',
         service: 'checkout-api',
-        environment: 'prod',
+        env: 'prod',
         segment: 'env--org--domain--service',
       })
     })
@@ -333,7 +333,7 @@ describe('DerropsConventions — tags', () => {
         org: 'acme',
         domain: 'payments',
         service: 'checkout-api',
-        environment: 'prod',
+        env: 'prod',
         segment: 'env--org--domain--service',
       })
     })
@@ -343,7 +343,7 @@ describe('DerropsConventions — tags', () => {
         org: 'acme',
         domain: 'payments',
         service: 'checkout-api',
-        environment: 'prod',
+        env: 'prod',
         segment: 'env--org--domain--service',
       })
     })
@@ -353,7 +353,7 @@ describe('DerropsConventions — tags', () => {
         Org: 'acme',
         Domain: 'payments',
         Service: 'checkout-api',
-        Environment: 'prod',
+        Env: 'prod',
         Segment: 'env--org--domain--service',
       })
     })
@@ -363,7 +363,7 @@ describe('DerropsConventions — tags', () => {
         MyApp_Org: 'acme',
         MyApp_Domain: 'payments',
         MyApp_Service: 'checkout-api',
-        MyApp_Environment: 'prod',
+        MyApp_Env: 'prod',
         MyApp_Segment: 'env--org--domain--service',
       })
     })
@@ -851,7 +851,7 @@ describe('DerropsConventions — tags', () => {
         org: 'acme',
         domain: 'auth',
         service: 'token-service',
-        environment: 'prod',
+        env: 'prod',
         segment: 'env--org--domain--service',
         sensitive: 'true',
       })

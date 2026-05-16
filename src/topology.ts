@@ -37,9 +37,9 @@ export interface SubnetEntry {
 export interface DomainNetworkTopology {
   /** Domain CIDR block (one /20 per domain by default) — e.g. `'10.0.0.0/20'` */
   cidr: string
-  /** Network ACL name — e.g. `'acme--payments--nacl'` */
+  /** Network ACL name — e.g. `'acme--payments'` */
   nacl: string
-  /** Transit Gateway attachment name — e.g. `'acme--payments--tgw-attach'` */
+  /** Transit Gateway attachment name — e.g. `'acme--payments'` */
   tgwAttachment: string
   /** Route table name per tier — e.g. `{ private: 'acme--payments--private', ... }` */
   routeTables: Record<string, string>

@@ -317,7 +317,7 @@ svcConvention.applyTags((k, v) => Tags.of(this).add(k, v), { service: 'override'
 Set which built-in tag keys appear in `tags()` output. Defaults to `['domain', 'service']` — `org` and `environment` are hidden by default because account-segregated deployments already provide that context.
 
 ```typescript
-naming.tagKeys('org', 'domain', 'service', 'environment').tags()
+naming.tagKeys('org', 'domain', 'service', 'env').tags()
 // → { org: 'acme', domain: 'payments', service: 'checkout-api', environment: 'prod' }
 ```
 
@@ -748,9 +748,9 @@ orgConvention.with({ domain: 'payments' }).domainNetworkLayer(['1a', '1b', '1c']
 //     public:   ['acme--payments--public--1a', ...],
 //     isolated: ['acme--payments--isolated--1a', ...],
 //   },
-//   nacl:         'acme--payments--nacl',
+//   nacl:         'acme--payments',
 //   routeTables:  { private: 'acme--payments--private', public: 'acme--payments--public', isolated: 'acme--payments--isolated' },
-//   tgwAttachment:'acme--payments--tgw-attach',
+//   tgwAttachment:'acme--payments',
 // }
 
 // Service layer — provision with each service deployment

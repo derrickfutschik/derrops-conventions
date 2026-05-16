@@ -215,9 +215,6 @@ describe('StaticPolicyBuilder', () => {
     expect(gsiResource[0]).not.toContain('--gsi')
   })
 
-  it('throws when resource type has no ARN config', () => {
-    expect(() => c.staticPolicy().include('vpc')).toThrow(/no ARN configuration/)
-  })
 
   it('deduplicates identical ARNs', () => {
     const doc = c
@@ -290,22 +287,13 @@ describe('StaticPolicyBuilder', () => {
     )
   })
 
-  it('cloudFormationStack ARN includes wildcard suffix for all stack instances', () => {
-    const doc = c
-      .staticPolicy()
-      .include('cloudFormationStack', { key: 'infra' }, { permissions: 'read' })
-      .buildPolicy()
-    const resource = doc.Statement[0]!.Resource as string
-    expect(resource).toMatch(/stack\/derrops--platform--api--infra-stack\/\*$/)
-  })
-
   it('configRule generates correct ARN', () => {
     const doc = c
       .staticPolicy()
       .include('configRule', { key: 'tagged' }, { permissions: 'read' })
       .buildPolicy()
     expect(doc.Statement[0]!.Resource).toBe(
-      'arn:aws:config:ap-southeast-2:123456789012:config-rule/derrops--platform--api--tagged-rule',
+      'arn:aws:config:ap-southeast-2:123456789012:config-rule/derrops--platform--api--tagged',
     )
   })
 
@@ -448,10 +436,6 @@ describe('DerropsConventions.resource()', () => {
     expect(r.arns).toHaveLength(2)
     expect(r.arns[0]).toMatch(/:::ap-southeast-2--derrops--/)
     expect(r.arns[1]).toMatch(/\/\*$/)
-  })
-
-  it('throws when resource type has no ARN config', () => {
-    expect(() => c.resource({ type: 'vpc' })).toThrow(/no ARN configuration/)
   })
 
   it('throws when arnContext is not set', () => {

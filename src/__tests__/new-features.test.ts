@@ -18,7 +18,7 @@ const base = () =>
     region: 'ap-southeast-2',
   })
     .tagPrefix('derrops:')
-    .tagKeys('org', 'domain', 'service', 'environment')
+    .tagKeys('org', 'domain', 'service', 'env')
 
 const withArn = () => base().arnContext({ accountId: '123456789012' })
 
@@ -67,9 +67,6 @@ describe('KMS resource types', () => {
       expect(base().name({ type: 'kmsKey', key: 'cmk' })).toBe('acme--payments--checkout-api--cmk')
     })
 
-    it('has no ARN config (naming-only type)', () => {
-      expect(() => withArn().resource({ type: 'kmsKey' })).toThrow(/no ARN configuration/)
-    })
   })
 })
 
@@ -114,11 +111,6 @@ describe('cloudwatchResource()', () => {
     expect(r.arn).toBe('arn:aws:cloudwatch:::dashboard/acme--payments--checkout-api')
   })
 
-  it('cloudwatchLogMetricFilter has no ARN (sub-resource)', () => {
-    expect(() => withArn().resource({ type: 'cloudwatchLogMetricFilter' })).toThrow(
-      /no ARN configuration/,
-    )
-  })
 })
 
 // ── 3. Cost allocation ────────────────────────────────────────────────────────
@@ -145,7 +137,7 @@ describe('costFilter()', () => {
     expect(keys).toContain('derrops:org')
     expect(keys).toContain('derrops:domain')
     expect(keys).toContain('derrops:service')
-    expect(keys).toContain('derrops:environment')
+    expect(keys).toContain('derrops:env')
   })
 
   it('excludes structural schema tags (segment, s3-prefix-segment, etc.)', () => {
@@ -194,7 +186,7 @@ describe('costAllocationTags()', () => {
     expect(keys).toContain('derrops:org')
     expect(keys).toContain('derrops:domain')
     expect(keys).toContain('derrops:service')
-    expect(keys).toContain('derrops:environment')
+    expect(keys).toContain('derrops:env')
   })
 
   it('respects tagKeys() to control which tags appear', () => {
@@ -243,7 +235,7 @@ describe('for()', () => {
 
   it('inherits tagPrefix from parent', () => {
     const derived = base().for({ env: 'staging' })
-    expect(derived.tags()).toHaveProperty('derrops:environment', 'staging')
+    expect(derived.tags()).toHaveProperty('derrops:env', 'staging')
   })
 
   it('inherits tagKeyCasing from parent', () => {

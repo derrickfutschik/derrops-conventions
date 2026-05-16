@@ -302,8 +302,20 @@ export interface ResourceTypeConfig {
   leadingDelimiter?: boolean
   /** Literal string prepended to the joined name (before suffix). Used for wildcard DNS records: `'*.'` */
   namePrefix?: string
-  /** Literal string appended after all segments are joined, e.g. `'--gsi'`, `'.fifo'`, `'-rule'` */
+  /**
+   * Word appended after all segments are joined.
+   * The delimiter used between the joined segments and this suffix is `suffixDelimiter` when
+   * specified, otherwise `segmentDelimiter`. Only set when the suffix is AWS-mandated or
+   * required to avoid same-service naming collisions (e.g. `'fifo'` for SQS FIFO queues,
+   * `'dlq'` to distinguish dead-letter queues from their source queue in the SQS namespace).
+   */
   suffix?: string
+  /**
+   * Delimiter prepended before `suffix` when it differs from `segmentDelimiter`.
+   * Use `''` (empty string) when the suffix must be appended with no separator (e.g. `iamPath`
+   * trailing `/`). Omit to fall back to `segmentDelimiter`.
+   */
+  suffixDelimiter?: string
   /** IAM action prefix for this resource type, e.g. `'s3'`, `'lambda'`. */
   iamService?: string
   /** ARN construction metadata. Omit for sub-resources and purely naming helpers. */

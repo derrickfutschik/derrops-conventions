@@ -52,7 +52,7 @@ export const SEGMENT_FOR_TAG: Record<TagKey, keyof Segments> = {
   org: 'org',
   domain: 'domain',
   service: 'service',
-  environment: 'env',
+  env: 'env',
   tenant: 'tenant',
 }
 
@@ -61,12 +61,12 @@ export const TAG_FOR_SEGMENT: Partial<Record<keyof Segments, TagKey>> = {
   org: 'org',
   domain: 'domain',
   service: 'service',
-  env: 'environment',
+  env: 'env',
   tenant: 'tenant',
 }
 
 /** Canonical ordering for tag keys in `visibleTags`. */
-export const ALL_TAG_KEYS: TagKey[] = ['org', 'domain', 'service', 'environment', 'tenant']
+export const ALL_TAG_KEYS: TagKey[] = ['org', 'domain', 'service', 'env', 'tenant']
 
 export const DEFAULT_TAG_KEYS: TagKey[] = ['domain', 'service']
 export const DEFAULT_TAG_CASING: TagKeyCasing = 'kebab'
