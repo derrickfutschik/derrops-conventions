@@ -283,6 +283,82 @@ describe('DerropsConventions — naming', () => {
     })
   })
 
+  describe('space as word separator — input convention', () => {
+    // The canonical input convention: segment values use spaces to separate words.
+    // normalize() converts spaces → wordDelimiter at name()-build time, regardless of
+    // whether the segment was set via with() or passed directly to name().
+
+    describe('wordDelimiter: - (all standard resource types)', () => {
+      const c = new DerropsConventions({ org: 'acme', domain: 'payments', service: 'checkout-api' })
+
+      it('space in key passed to name() becomes hyphen', () => {
+        expect(c.name({ type: 'lambdaFunction', key: 'order events' })).toBe(
+          'acme--payments--checkout-api--order-events',
+        )
+      })
+
+      it('space in service passed to name() becomes hyphen', () => {
+        expect(
+          new DerropsConventions({ org: 'acme', domain: 'payments' }).name({
+            type: 'lambdaFunction',
+            service: 'checkout api',
+            key: 'handler',
+          }),
+        ).toBe('acme--payments--checkout-api--handler')
+      })
+
+      it('space in key set via with() becomes hyphen', () => {
+        expect(c.with({ key: 'order events' }).name({ type: 'lambdaFunction' })).toBe(
+          'acme--payments--checkout-api--order-events',
+        )
+      })
+
+      it('space in service set via with() becomes hyphen', () => {
+        expect(
+          new DerropsConventions({ org: 'acme', domain: 'payments' })
+            .with({ service: 'checkout api' })
+            .name({ type: 'lambdaFunction', key: 'handler' }),
+        ).toBe('acme--payments--checkout-api--handler')
+      })
+
+      it('multi-word segments work across types with dot segmentDelimiter (kafkaTopic)', () => {
+        expect(
+          new DerropsConventions({ org: 'acme', domain: 'payments' }).name({
+            type: 'kafkaTopic',
+            service: 'checkout api',
+            key: 'order events',
+          }),
+        ).toBe('acme.payments.checkout-api.order-events')
+      })
+    })
+
+    describe('wordDelimiter: _ (rdsDbName, glueDatabase, redshiftDatabase)', () => {
+      const c = new DerropsConventions()
+
+      it('space in service passed to name() becomes underscore', () => {
+        expect(
+          c.name({ type: 'rdsDbName', org: 'acme', domain: 'payments', service: 'checkout api' }),
+        ).toBe('acme_payments_checkout_api')
+      })
+
+      it('space in service set via with() becomes underscore', () => {
+        expect(
+          new DerropsConventions({ org: 'acme', domain: 'payments' })
+            .with({ service: 'checkout api' })
+            .name({ type: 'rdsDbName' }),
+        ).toBe('acme_payments_checkout_api')
+      })
+
+      it('multi-word domain set via with() becomes underscore', () => {
+        expect(
+          new DerropsConventions({ org: 'acme' })
+            .with({ domain: 'order management', service: 'api' })
+            .name({ type: 'rdsDbName' }),
+        ).toBe('acme_order_management_api')
+      })
+    })
+  })
+
   describe('segment overrides', () => {
     const c = new DerropsConventions({ org: 'acme', domain: 'payments', service: 'checkout-api' })
 
