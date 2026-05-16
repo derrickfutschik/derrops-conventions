@@ -626,7 +626,7 @@ export const RESOURCE_TYPES = {
     // generates the IAM path: /{org}/{domain}/{service}/{key}
     // leading '/' from name acts as separator after 'role' in the ARN
     global: false,
-    segmentDelimiter: '/',
+    segmentDelimiter: '--',
     wordDelimiter: '-',
     leadingDelimiter: true,
     iamService: 'iam',

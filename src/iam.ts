@@ -48,15 +48,10 @@ export function buildResource(
     )
   }
   const config: ResourceTypeConfig = RESOURCE_TYPES[resolvedType]
-  if (!config.arn) {
-    throw new Error(
-      `Resource type "${resolvedType}" has no ARN configuration. Use .name() for naming-only resource types.`,
-    )
-  }
   const arnContext = ctx.resolveArnCtx()
   const resourceName = ctx.name(options)
   const logicalName = ctx.name({ ...options, org: undefined })
-  const arns = buildPolicyArns(resourceName, config.arn, arnContext)
+  const arns = config.arn ? buildPolicyArns(resourceName, config.arn, arnContext) : []
   const tags = ctx.tags()
 
   const merged: Segments = { ...ctx.segments(), ...segmentOverrides }
@@ -68,12 +63,14 @@ export function buildResource(
           .concat(config.consoleLabel, zone)
           .join('.')
       : undefined
-  const consoleUrl = buildConsoleUrl(resolvedType, {
-    name: resourceName,
-    region: merged.region ?? arnContext.region,
-    accountId: arnContext.accountId,
-    arn: arns[0]!,
-  })
+  const consoleUrl = arns[0]
+    ? buildConsoleUrl(resolvedType, {
+        name: resourceName,
+        region: merged.region ?? arnContext.region,
+        accountId: arnContext.accountId,
+        arn: arns[0],
+      })
+    : undefined
 
   return new ResourceImpl(
     resourceName,

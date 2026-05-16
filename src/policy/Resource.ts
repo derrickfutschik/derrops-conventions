@@ -12,8 +12,8 @@ import type { GrantDescriptor } from './types.js'
 export interface Resource<T extends ResourceType = ResourceType> {
   /** The generated name string — identical to what `DerropsConventions.name()` returns. */
   readonly name: string
-  /** The base ARN for this resource. */
-  readonly arn: string
+  /** The base ARN for this resource. `undefined` for naming-only resource types with no ARN configuration. */
+  readonly arn: string | undefined
   /**
    * All ARNs needed for the IAM `Resource` field. Usually `[arn]`, but two entries for types
    * that emit a `policyResourceSuffix` (e.g. S3 buckets emit `bucket` + `bucket/*`).
@@ -78,7 +78,7 @@ export interface Resource<T extends ResourceType = ResourceType> {
 
 export class ResourceImpl<T extends ResourceType> implements Resource<T> {
   readonly name: string
-  readonly arn: string
+  readonly arn: string | undefined
   readonly arns: string[]
   readonly type: T
   readonly tags: Record<string, string>
@@ -99,7 +99,7 @@ export class ResourceImpl<T extends ResourceType> implements Resource<T> {
   ) {
     this.name = name
     this.logicalName = logicalName
-    this.arn = arns[0]!
+    this.arn = arns[0]
     this.arns = arns
     this.type = type
     this.tags = tags

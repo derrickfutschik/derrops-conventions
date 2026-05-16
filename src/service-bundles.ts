@@ -49,7 +49,7 @@ export function buildSqsPair(ctx: ConventionsContext, options: Segments): SqsPai
   const queue = ctx.resource({ ...options, type: 'sqsQueue' } as any)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const dlq = ctx.resource({ ...options, type: 'sqsDlq' } as any)
-  return { queue, dlq, redrivePolicyArn: dlq.arn }
+  return { queue, dlq, redrivePolicyArn: dlq.arn! }
 }
 
 export function buildCfnExport(ctx: ConventionsContext, exportKey: string): string {
