@@ -66,6 +66,14 @@ export interface Resource<T extends ResourceType = ResourceType> {
 
   /** Explicit action list — bypasses tier lookup. Use for custom subsets or service-wildcard grants. */
   raw(...actions: string[]): GrantDescriptor
+
+  /**
+   * Call `fn(key, value)` for every tag on this resource.
+   *
+   * @example
+   * resources.userpool.applyTags((k, v) => Tags.of(this).add(k, v))
+   */
+  applyTags(fn: (key: string, value: string) => void): void
 }
 
 export class ResourceImpl<T extends ResourceType> implements Resource<T> {
@@ -132,6 +140,12 @@ export class ResourceImpl<T extends ResourceType> implements Resource<T> {
       throw new Error(`.raw() requires at least one action string.`)
     }
     return { arns: this.arns, actions }
+  }
+
+  applyTags(fn: (key: string, value: string) => void): void {
+    for (const [k, v] of Object.entries(this.tags)) {
+      fn(k, v)
+    }
   }
 
   get logicalId(): string {

@@ -1,4 +1,5 @@
 export { DerropsConventions, conventions } from './DerropsConventions.js'
+export { defineResource } from './ResourceBuilder.js'
 export type { ConventionSpec } from './conventions-types.js'
 export { buildNetworkTopology, buildCapacityReport } from './topology.js'
 export type {
