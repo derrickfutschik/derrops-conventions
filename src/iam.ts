@@ -9,6 +9,7 @@ import { buildPolicyArns } from './policy/arn.js'
 import type { ArnContext } from './policy/types.js'
 import { buildConsoleUrl } from './console.js'
 import type { ConventionsContext } from './conventions-context.js'
+import { applyTagKeyCasing } from './conventions-constants.js'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyNameOptions = Record<string, any>
@@ -52,7 +53,20 @@ export function buildResource(
   const resourceName = ctx.name(options)
   const logicalName = ctx.name({ ...options, org: undefined })
   const arns = config.arn ? buildPolicyArns(resourceName, config.arn, arnContext) : []
-  const tags = ctx.tags()
+  const usedSegments = ctx.namedSegments(options)
+  const tags = ctx.tags({ type: resolvedType, ...segmentOverrides })
+
+  // Emit a tag for every segment that went into the name, not just TagKey ones.
+  // Skip segments already tagged (TagKey ones set by buildTags) so tagRule overrides win.
+  const prefix = ctx.tagKeyPrefix()
+  const casing = ctx.tagCasing()
+  for (const [key, value] of Object.entries(usedSegments)) {
+    const tagKey = prefix + applyTagKeyCasing(key, casing)
+    if (!(tagKey in tags)) tags[tagKey] = value
+  }
+  // Override segment tag with the exact keys from the name — ground truth.
+  const segmentTagKey = prefix + applyTagKeyCasing('segment', casing)
+  tags[segmentTagKey] = Object.keys(usedSegments).join(config.segmentDelimiter)
 
   const merged: Segments = { ...ctx.segments(), ...segmentOverrides }
   const zone = ctx.resolveApex(merged)
@@ -81,5 +95,6 @@ export function buildResource(
     config,
     dns,
     consoleUrl,
+    usedSegments,
   )
 }

@@ -66,6 +66,44 @@ export function mergeExtraSegments(
 
 // ── Segment building ──────────────────────────────────────────────────────────
 
+export function buildSegmentsKeyed(
+  merged: Segments,
+  config: ResourceTypeConfig,
+  extraSegments: Record<string, string>,
+  order: Array<SegmentKey | string>,
+  apexZoneMap: Record<string, string> | undefined,
+  apexMapFn: ((segments: Segments) => string) | undefined,
+): Array<{ key: string; value: string }> {
+  const activeOrder = config.segments
+    ? mergeExtraSegments(config.segments, extraSegments, order)
+    : effectiveOrder(config, order)
+
+  const lookup = (source: Record<string, string | undefined>, key: string): string | undefined =>
+    source[key] ?? extraSegments[key]
+
+  let source: Record<string, string | undefined> = merged as Record<string, string | undefined>
+
+  if (activeOrder.includes('apex')) {
+    let effective: Segments = merged
+    if (apexZoneMap !== undefined && merged.region !== undefined) {
+      const zone = apexZoneMap[merged.region]
+      if (zone !== undefined) effective = { ...merged, apex: zone }
+    }
+    if (apexMapFn !== undefined) {
+      effective = { ...effective, apex: apexMapFn(effective) }
+    }
+    source = effective as Record<string, string | undefined>
+  }
+
+  return activeOrder
+    .map((key) => {
+      const raw = lookup(source, key)
+      if (!raw || raw.length === 0) return null
+      return { key, value: normalize(raw, config.wordDelimiter) }
+    })
+    .filter((p): p is { key: string; value: string } => p !== null)
+}
+
 export function buildSegments(
   merged: Segments,
   config: ResourceTypeConfig,
@@ -74,33 +112,9 @@ export function buildSegments(
   apexZoneMap: Record<string, string> | undefined,
   apexMapFn: ((segments: Segments) => string) | undefined,
 ): string[] {
-  const activeOrder = config.segments
-    ? mergeExtraSegments(config.segments, extraSegments, order)
-    : effectiveOrder(config, order)
-
-  if (!activeOrder.includes('apex')) {
-    return activeOrder
-      .map((key) => (merged as Record<string, string | undefined>)[key] ?? extraSegments[key])
-      .filter((v): v is string => v !== undefined && v.length > 0)
-      .map((v) => normalize(v, config.wordDelimiter))
-  }
-
-  // Step 1: zone lookup — resolve base domain from region
-  let effective: Segments = merged
-  if (apexZoneMap !== undefined && merged.region !== undefined) {
-    const zone = apexZoneMap[merged.region]
-    if (zone !== undefined) effective = { ...merged, apex: zone }
-  }
-
-  // Step 2: apex mapping — env qualification or other derivation on top of resolved zone
-  if (apexMapFn !== undefined) {
-    effective = { ...effective, apex: apexMapFn(effective) }
-  }
-
-  return activeOrder
-    .map((key) => (effective as Record<string, string | undefined>)[key] ?? extraSegments[key])
-    .filter((v): v is string => v !== undefined && v.length > 0)
-    .map((v) => normalize(v, config.wordDelimiter))
+  return buildSegmentsKeyed(merged, config, extraSegments, order, apexZoneMap, apexMapFn).map(
+    (p) => p.value,
+  )
 }
 
 // ── ARN context ───────────────────────────────────────────────────────────────

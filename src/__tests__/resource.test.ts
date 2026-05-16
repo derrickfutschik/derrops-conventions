@@ -33,6 +33,83 @@ describe('resource() — core properties', () => {
     expect(typeof r.tags).toBe('object')
     expect(Object.keys(r.tags).length).toBeGreaterThan(0)
   })
+
+  it('segment tag is exactly the keys that went into the name joined with --', () => {
+    const r = base.resource({ type: 'lambdaFunction', key: 'handler' })
+    expect(r.tags['segment']).toBe('org--domain--service--key')
+  })
+
+  it('segment tag for global type includes region and env', () => {
+    const r = base.resource({ type: 's3Bucket', key: 'data' })
+    expect(r.tags['segment']).toBe('region--env--org--domain--service--key')
+  })
+
+  it('segment tag uses the resource type delimiter (/ for s3ObjectKey)', () => {
+    const r = base.resource({ type: 's3ObjectKey', key: 'file.gz' })
+    expect(r.tags['segment']).toBe('org/domain/service/key')
+  })
+
+  it('every name segment gets an individual tag — including non-TagKey ones like key', () => {
+    const r = base.resource({ type: 'lambdaFunction', key: 'handler' })
+    expect(r.tags['org']).toBe('derrops')
+    expect(r.tags['domain']).toBe('platform')
+    expect(r.tags['service']).toBe('api')
+    expect(r.tags['key']).toBe('handler')
+  })
+
+  it('purpose segment gets an individual tag', () => {
+    const r = base.with({ purpose: 'web' }).resource({ type: 'ec2SecurityGroup' })
+    expect(r.tags['purpose']).toBe('web')
+    expect(r.tags['segment']).toBe('org--domain--service--purpose')
+  })
+
+  it('env is tagged for global types that include it in the name', () => {
+    const r = base.resource({ type: 's3Bucket', key: 'data' })
+    expect(r.tags['env']).toBe('prod')
+    expect(r.tags['region']).toBe('ap-southeast-2')
+  })
+
+  it('segments contains the key-value pairs that went into the name', () => {
+    const r = base.resource({ type: 'lambdaFunction', key: 'handler' })
+    expect(r.segments).toEqual({
+      org: 'derrops',
+      domain: 'platform',
+      service: 'api',
+      key: 'handler',
+    })
+  })
+
+  it('segments for global type includes region and env', () => {
+    const r = base.resource({ type: 's3Bucket', key: 'data' })
+    expect(r.segments).toEqual({
+      region: 'ap-southeast-2',
+      env: 'prod',
+      org: 'derrops',
+      domain: 'platform',
+      service: 'api',
+      key: 'data',
+    })
+  })
+
+  it('segments omits keys with no value', () => {
+    const r = new DerropsConventions({ org: 'derrops', domain: 'platform', service: 'api' })
+      .arnContext({ accountId: '123456789012' })
+      .resource({ type: 'lambdaFunction' })
+    expect(r.segments).not.toHaveProperty('key')
+    expect(r.segments).not.toHaveProperty('tenant')
+  })
+
+  it('Object.keys(segments) always equals segment tag split on its delimiter', () => {
+    const r = base.resource({ type: 'lambdaFunction', key: 'handler' })
+    const segmentTagKeys = r.tags['segment']!.split('--')
+    expect(Object.keys(r.segments)).toEqual(segmentTagKeys)
+  })
+
+  it('tagPrefix is applied to extra segment tags', () => {
+    const r = base.tagPrefix('derrops:').resource({ type: 'lambdaFunction', key: 'handler' })
+    expect(r.tags['derrops:key']).toBe('handler')
+    expect(r.tags['derrops:segment']).toBe('org--domain--service--key')
+  })
 })
 
 // ── ARN correctness per resource type ─────────────────────────────────────────

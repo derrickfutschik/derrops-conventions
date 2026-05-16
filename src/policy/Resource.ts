@@ -23,6 +23,11 @@ export interface Resource<T extends ResourceType = ResourceType> {
   /** AWS resource tags from the convention's segment defaults. */
   readonly tags: Record<string, string>
   /**
+   * The segment key-value pairs that actually contributed to this resource's name, in name order.
+   * Use this to reliably identify which dimensions are encoded in the name.
+   */
+  readonly segments: Record<string, string>
+  /**
    * PascalCase CDK construct ID derived from the resource name.
    *
    * Converts the `--`-delimited name to PascalCase by splitting on any run of
@@ -82,6 +87,7 @@ export class ResourceImpl<T extends ResourceType> implements Resource<T> {
   readonly arns: string[]
   readonly type: T
   readonly tags: Record<string, string>
+  readonly segments: Record<string, string>
   readonly dns: string | undefined
   readonly console: string | undefined
   private readonly config: ResourceTypeConfig
@@ -96,6 +102,7 @@ export class ResourceImpl<T extends ResourceType> implements Resource<T> {
     config: ResourceTypeConfig,
     dns: string | undefined,
     consoleUrl: string | undefined,
+    segments: Record<string, string>,
   ) {
     this.name = name
     this.logicalName = logicalName
@@ -103,6 +110,7 @@ export class ResourceImpl<T extends ResourceType> implements Resource<T> {
     this.arns = arns
     this.type = type
     this.tags = tags
+    this.segments = segments
     this.config = config
     this.dns = dns
     this.console = consoleUrl

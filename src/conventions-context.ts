@@ -21,6 +21,13 @@ export interface ConventionsContext {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   name(options: Record<string, any>): string
 
+  /**
+   * Return the key-value pairs of segments that actually contributed to the name for the
+   * given options, in the order they appear in the name.
+   */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  namedSegments(options: Record<string, any>): Record<string, string>
+
   /** Generate AWS resource tags. */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   tags(options?: Record<string, any>): Record<string, string>

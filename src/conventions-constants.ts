@@ -1,4 +1,4 @@
-import type { SegmentKey, Segments } from './types.js'
+import type { SegmentKey } from './types.js'
 import type { TagKey, TagKeyCasing, DimensionKey } from './conventions-types.js'
 
 // ── Segment ordering ──────────────────────────────────────────────────────────
@@ -47,24 +47,6 @@ export const GLOBAL_ONLY_SEGMENTS: SegmentKey[] = ['region', 'env']
 
 // ── Tag mapping ───────────────────────────────────────────────────────────────
 
-/** Maps each tag key to the segment it reads from. */
-export const SEGMENT_FOR_TAG: Record<TagKey, keyof Segments> = {
-  org: 'org',
-  domain: 'domain',
-  service: 'service',
-  env: 'env',
-  tenant: 'tenant',
-}
-
-/** Reverse map: segment key → tag key (for segments that have a corresponding tag). */
-export const TAG_FOR_SEGMENT: Partial<Record<keyof Segments, TagKey>> = {
-  org: 'org',
-  domain: 'domain',
-  service: 'service',
-  env: 'env',
-  tenant: 'tenant',
-}
-
 /** Canonical ordering for tag keys in `visibleTags`. */
 export const ALL_TAG_KEYS: TagKey[] = ['org', 'domain', 'service', 'env', 'tenant']
 
@@ -72,22 +54,6 @@ export const DEFAULT_TAG_KEYS: TagKey[] = ['domain', 'service']
 export const DEFAULT_TAG_CASING: TagKeyCasing = 'kebab'
 
 // ── CloudWatch dimension mapping ──────────────────────────────────────────────
-
-export const SEGMENT_FOR_DIMENSION: Record<DimensionKey, keyof Segments> = {
-  org: 'org',
-  domain: 'domain',
-  service: 'service',
-  environment: 'env',
-  tenant: 'tenant',
-}
-
-export const DIMENSION_NAME: Record<DimensionKey, string> = {
-  org: 'Org',
-  domain: 'Domain',
-  service: 'Service',
-  environment: 'Environment',
-  tenant: 'Tenant',
-}
 
 // Default: just Service — namespace already captures Org/Domain via cloudwatchMetricNamespace.
 export const DEFAULT_DIMENSION_KEYS: DimensionKey[] = ['service']

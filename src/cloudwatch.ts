@@ -1,5 +1,4 @@
 import type { Segments } from './types.js'
-import { SEGMENT_FOR_DIMENSION, DIMENSION_NAME } from './conventions-constants.js'
 import type { ConventionsContext } from './conventions-context.js'
 
 export function buildDimensions(
@@ -9,8 +8,8 @@ export function buildDimensions(
   const merged: Segments = { ...ctx.segments(), ...overrides }
   const result: Array<{ Name: string; Value: string }> = []
   for (const dimKey of ctx.visibleDimensionKeys()) {
-    const value = merged[SEGMENT_FOR_DIMENSION[dimKey]]
-    if (value) result.push({ Name: DIMENSION_NAME[dimKey], Value: value })
+    const value = merged[dimKey]
+    if (value) result.push({ Name: dimKey, Value: value })
   }
   return result
 }

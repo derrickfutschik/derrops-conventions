@@ -42,7 +42,6 @@ import type {
 } from './conventions-types.js'
 import {
   DEFAULT_SEGMENT_ORDER,
-  TAG_FOR_SEGMENT,
   ALL_TAG_KEYS,
   DEFAULT_TAG_KEYS,
   DEFAULT_TAG_CASING,
@@ -72,6 +71,7 @@ import {
   effectiveOrder as effectiveOrderFn,
   mergeExtraSegments,
   buildSegments as buildSegmentsFn,
+  buildSegmentsKeyed as buildSegmentsKeyedFn,
   resolveArnContext as resolveArnContextFn,
 } from './helpers.js'
 import { buildTags } from './tagging.js'
@@ -169,8 +169,7 @@ export class DerropsConventions<
     this.defaultType = defaultType
     const tagKeySet = new Set<TagKey>(DEFAULT_TAG_KEYS)
     for (const seg of Object.keys(defaults) as (keyof Segments)[]) {
-      const tagKey = TAG_FOR_SEGMENT[seg]
-      if (tagKey !== undefined) tagKeySet.add(tagKey)
+      if ((ALL_TAG_KEYS as readonly string[]).includes(seg)) tagKeySet.add(seg as TagKey)
     }
     this.visibleTags = ALL_TAG_KEYS.filter((k) => tagKeySet.has(k))
     this.keyPrefix = ''
@@ -1022,6 +1021,26 @@ export class DerropsConventions<
     return config.suffix !== undefined
       ? `${prefixed}${config.suffixDelimiter ?? config.segmentDelimiter}${config.suffix}`
       : prefixed
+  }
+
+  namedSegments(options: NameOptions<C, TType>): Record<string, string> {
+    const resolvedType = (options as { type?: ResourceType }).type ?? this.defaultType
+    if (!resolvedType) {
+      throw new Error(
+        'namedSegments() requires a "type" — either pass it directly or set a default via .with({ type })',
+      )
+    }
+    const config: ResourceTypeConfig = RESOURCE_TYPES[resolvedType]
+    const { type: _type, ...overrides } = options as { type?: ResourceType } & Segments
+    const pairs = buildSegmentsKeyedFn(
+      { ...this.defaults, ...overrides },
+      config,
+      this.extraSegments,
+      this.order,
+      this.apexZoneMap,
+      this.apexMapFn,
+    )
+    return Object.fromEntries(pairs.map((p) => [p.key, p.value]))
   }
 
   /**

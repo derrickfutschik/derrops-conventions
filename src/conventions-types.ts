@@ -32,7 +32,7 @@ export type TagKeyCasing = 'kebab' | 'camel' | 'snake' | 'pascal'
  * Same set as `TagKey` — both read from the same segments — but kept separate
  * so the two concepts can diverge independently.
  */
-export type DimensionKey = 'org' | 'domain' | 'service' | 'environment' | 'tenant'
+export type DimensionKey = 'org' | 'domain' | 'service' | 'env' | 'tenant'
 
 /**
  * Spec object accepted by `conventions()` and `DerropsConventions.create()`.

@@ -1,7 +1,7 @@
 import type { SegmentKey, Segments, ResourceTypeConfig } from './types.js'
 import { RESOURCE_TYPES } from './resource-types.js'
 import type { ResourceType } from './resource-types.js'
-import { SEGMENT_FOR_TAG, applyTagKeyCasing } from './conventions-constants.js'
+import { applyTagKeyCasing } from './conventions-constants.js'
 import type { TagKey, TagKeyCasing } from './conventions-types.js'
 import { effectiveOrder, mergeExtraSegments } from './helpers.js'
 
@@ -33,7 +33,7 @@ export function buildTags(
   const result: Record<string, string> = {}
 
   for (const tagKey of state.visibleTags) {
-    const value = merged[SEGMENT_FOR_TAG[tagKey]]
+    const value = merged[tagKey]
     if (value) {
       result[state.keyPrefix + applyTagKeyCasing(tagKey, state.keyCasing)] = value
     }

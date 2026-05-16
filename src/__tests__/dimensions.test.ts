@@ -14,7 +14,7 @@ describe('DerropsConventions — dimensions()', () => {
   describe('default output', () => {
     it('returns Service only by default', () => {
       expect(makeBase().with({ tenant: 't-a3f8b2' }).dimensions()).toEqual([
-        { Name: 'Service', Value: 'checkout-api' },
+        { Name: 'service', Value: 'checkout-api' },
       ])
 
       console.log(makeBase().dimensions())
@@ -22,7 +22,7 @@ describe('DerropsConventions — dimensions()', () => {
 
     it('omits dimensions whose segments are absent', () => {
       const c = new DerropsConventions({ domain: 'payments', service: 'api' })
-      expect(c.dimensions()).toEqual([{ Name: 'Service', Value: 'api' }])
+      expect(c.dimensions()).toEqual([{ Name: 'service', Value: 'api' }])
     })
 
     it('returns empty array when service is absent', () => {
@@ -33,22 +33,22 @@ describe('DerropsConventions — dimensions()', () => {
 
   describe('dimensionKeys()', () => {
     it('includes all requested keys that have values', () => {
-      expect(makeBase().dimensionKeys('service', 'environment').dimensions()).toEqual([
-        { Name: 'Service', Value: 'checkout-api' },
-        { Name: 'Environment', Value: 'prod' },
+      expect(makeBase().dimensionKeys('service', 'env').dimensions()).toEqual([
+        { Name: 'service', Value: 'checkout-api' },
+        { Name: 'env', Value: 'prod' },
       ])
     })
 
     it('includes all five keys', () => {
       const c = makeBase().with({ tenant: 't-a3f8b2' })
       expect(
-        c.dimensionKeys('org', 'domain', 'service', 'environment', 'tenant').dimensions(),
+        c.dimensionKeys('org', 'domain', 'service', 'env', 'tenant').dimensions(),
       ).toEqual([
-        { Name: 'Org', Value: 'acme' },
-        { Name: 'Domain', Value: 'payments' },
-        { Name: 'Service', Value: 'checkout-api' },
-        { Name: 'Environment', Value: 'prod' },
-        { Name: 'Tenant', Value: 't-a3f8b2' },
+        { Name: 'org', Value: 'acme' },
+        { Name: 'domain', Value: 'payments' },
+        { Name: 'service', Value: 'checkout-api' },
+        { Name: 'env', Value: 'prod' },
+        { Name: 'tenant', Value: 't-a3f8b2' },
       ])
     })
 
@@ -57,18 +57,18 @@ describe('DerropsConventions — dimensions()', () => {
     })
 
     it('with() inherits dimensionKeys from parent', () => {
-      const base = makeBase().dimensionKeys('service', 'environment')
+      const base = makeBase().dimensionKeys('service', 'env')
       const child = base.with({ service: 'auth-service' })
       expect(child.dimensions()).toEqual([
-        { Name: 'Service', Value: 'auth-service' },
-        { Name: 'Environment', Value: 'prod' },
+        { Name: 'service', Value: 'auth-service' },
+        { Name: 'env', Value: 'prod' },
       ])
     })
 
     it('dimensionKeys on derived instance does not affect parent', () => {
       const base = makeBase()
-      const derived = base.with({}).dimensionKeys('service', 'environment')
-      expect(base.dimensions()).toEqual([{ Name: 'Service', Value: 'checkout-api' }])
+      const derived = base.with({}).dimensionKeys('service', 'env')
+      expect(base.dimensions()).toEqual([{ Name: 'service', Value: 'checkout-api' }])
       expect(derived.dimensions()).toHaveLength(2)
     })
   })
@@ -76,34 +76,34 @@ describe('DerropsConventions — dimensions()', () => {
   describe('call-time segment overrides', () => {
     it('override service at call time', () => {
       expect(makeBase().dimensions({ service: 'auth-service' })).toEqual([
-        { Name: 'Service', Value: 'auth-service' },
+        { Name: 'service', Value: 'auth-service' },
       ])
     })
 
-    it('override environment at call time when included', () => {
+    it('override env at call time when included', () => {
       expect(
-        makeBase().dimensionKeys('service', 'environment').dimensions({ env: 'staging' }),
+        makeBase().dimensionKeys('service', 'env').dimensions({ env: 'staging' }),
       ).toEqual([
-        { Name: 'Service', Value: 'checkout-api' },
-        { Name: 'Environment', Value: 'staging' },
+        { Name: 'service', Value: 'checkout-api' },
+        { Name: 'env', Value: 'staging' },
       ])
     })
   })
 
-  describe('dimension names use PascalCase', () => {
-    it('org → Org', () => {
-      expect(makeBase().dimensionKeys('org').dimensions()).toEqual([{ Name: 'Org', Value: 'acme' }])
+  describe('dimension names are lowercase', () => {
+    it('org → org', () => {
+      expect(makeBase().dimensionKeys('org').dimensions()).toEqual([{ Name: 'org', Value: 'acme' }])
     })
 
-    it('environment → Environment (multi-word)', () => {
-      expect(makeBase().dimensionKeys('environment').dimensions()).toEqual([
-        { Name: 'Environment', Value: 'prod' },
+    it('env → env', () => {
+      expect(makeBase().dimensionKeys('env').dimensions()).toEqual([
+        { Name: 'env', Value: 'prod' },
       ])
     })
 
-    it('tenant → Tenant', () => {
+    it('tenant → tenant', () => {
       expect(makeBase().with({ tenant: 't-a3f8b2' }).dimensionKeys('tenant').dimensions()).toEqual([
-        { Name: 'Tenant', Value: 't-a3f8b2' },
+        { Name: 'tenant', Value: 't-a3f8b2' },
       ])
     })
   })
@@ -112,7 +112,7 @@ describe('DerropsConventions — dimensions()', () => {
     it('namespace captures org/domain; default dimensions capture service', () => {
       const c = makeBase()
       expect(c.name({ type: 'cloudwatchMetricNamespace' })).toBe('acme/payments')
-      expect(c.dimensions()).toEqual([{ Name: 'Service', Value: 'checkout-api' }])
+      expect(c.dimensions()).toEqual([{ Name: 'service', Value: 'checkout-api' }])
     })
 
     it('multi-tenant: namespace is shared, tenant dimension separates metric series', () => {
@@ -124,12 +124,12 @@ describe('DerropsConventions — dimensions()', () => {
       expect(tenantB.name({ type: 'cloudwatchMetricNamespace' })).toBe('acme/payments')
 
       expect(tenantA.dimensions()).toEqual([
-        { Name: 'Service', Value: 'checkout-api' },
-        { Name: 'Tenant', Value: 't-aaaa' },
+        { Name: 'service', Value: 'checkout-api' },
+        { Name: 'tenant', Value: 't-aaaa' },
       ])
       expect(tenantB.dimensions()).toEqual([
-        { Name: 'Service', Value: 'checkout-api' },
-        { Name: 'Tenant', Value: 't-bbbb' },
+        { Name: 'service', Value: 'checkout-api' },
+        { Name: 'tenant', Value: 't-bbbb' },
       ])
     })
   })
