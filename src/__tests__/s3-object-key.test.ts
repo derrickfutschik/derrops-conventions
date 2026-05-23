@@ -236,7 +236,9 @@ describe('DerropsConventions — s3ObjectKey and s3LogKey', () => {
     const c = new DerropsConventions({ org: 'DERROPS', domain: 'Logs', service: 'Ingest' })
 
     it('segment values are lowercased for s3ObjectKey', () => {
-      expect(c.name({ type: 's3ObjectKey', key: 'FILE.JSON' })).toBe('derrops/logs/ingest/file.json')
+      expect(c.name({ type: 's3ObjectKey', key: 'FILE.JSON' })).toBe(
+        'derrops/logs/ingest/file.json',
+      )
     })
 
     it('segment values are lowercased for s3LogKey', () => {
@@ -256,9 +258,11 @@ describe('DerropsConventions — s3ObjectKey and s3LogKey', () => {
 
     it('hyphens in segments are preserved (wordDelimiter is -, so no conversion)', () => {
       expect(
-        new DerropsConventions({ org: 'derrops', domain: 'http-logs', service: 'api-gateway' }).name(
-          { type: 's3LogKey', key: 'access-log.gz' },
-        ),
+        new DerropsConventions({
+          org: 'derrops',
+          domain: 'http-logs',
+          service: 'api-gateway',
+        }).name({ type: 's3LogKey', key: 'access-log.gz' }),
       ).toBe('derrops/http-logs/api-gateway/access-log.gz')
     })
   })
@@ -413,7 +417,9 @@ describe('DerropsConventions — s3ObjectKey and s3LogKey', () => {
       })
 
       it('with date + granularity: day', () => {
-        expect(c.s3Prefix({ date: ref, granularity: 'day' })).toBe('derrops/logs/ingest/2024/03/15/')
+        expect(c.s3Prefix({ date: ref, granularity: 'day' })).toBe(
+          'derrops/logs/ingest/2024/03/15/',
+        )
       })
 
       it('with date + granularity: month', () => {

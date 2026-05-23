@@ -154,7 +154,6 @@ describe('resource() — ARN format', () => {
     )
   })
 
-
   it('cloudwatchLogsGroup: log-group: prefix', () => {
     const r = base.resource({ type: 'cloudwatchLogsGroup', key: 'app' })
     expect(r.arn).toContain('log-group:')
@@ -182,7 +181,6 @@ describe('resource() — ARN format', () => {
     const r = base.resource({ type: 'redshiftCluster' })
     expect(r.arn).toContain('cluster:derrops--platform--api')
   })
-
 
   it('xraySamplingRule: sampling-rule/ prefix', () => {
     const r = base.resource({ type: 'xraySamplingRule', key: 'low-rate' })

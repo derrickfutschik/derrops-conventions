@@ -66,7 +66,6 @@ describe('KMS resource types', () => {
     it('generates -- delimited descriptive name', () => {
       expect(base().name({ type: 'kmsKey', key: 'cmk' })).toBe('acme--payments--checkout-api--cmk')
     })
-
   })
 })
 
@@ -110,7 +109,6 @@ describe('cloudwatchResource()', () => {
     const r = withArn().resource({ type: 'cloudwatchDashboard' })
     expect(r.arn).toBe('arn:aws:cloudwatch:::dashboard/acme--payments--checkout-api')
   })
-
 })
 
 // ── 3. Cost allocation ────────────────────────────────────────────────────────

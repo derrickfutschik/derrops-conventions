@@ -165,10 +165,10 @@ export type IsLiteralString<T extends string> = string extends T ? false : true
  */
 export type CfgKeyBase<TDomain extends string, TService extends string, K extends string> =
   IsLiteralString<TDomain> extends true
-  ? IsLiteralString<TService> extends true
-  ? `${TDomain}.${TService}.${K}`
-  : `${TDomain}.${K}`
-  : string
+    ? IsLiteralString<TService> extends true
+      ? `${TDomain}.${TService}.${K}`
+      : `${TDomain}.${K}`
+    : string
 
 /** A mapping from domain names to their valid service names. */
 export type AnyDomainMap = Record<string, readonly string[]>
@@ -186,7 +186,7 @@ export type ServiceForDomain<
 > = string extends keyof TMap
   ? string
   : string extends D
-  ? TMap[keyof TMap][number]
-  : D extends keyof TMap
-  ? TMap[D][number]
-  : string
+    ? TMap[keyof TMap][number]
+    : D extends keyof TMap
+      ? TMap[D][number]
+      : string

@@ -357,8 +357,8 @@ export class DerropsConventions<
     map: TNewMap,
   ): DerropsConventions<
     Omit<C, 'domain' | 'service'> &
-    Record<'domain', keyof TNewMap & string> &
-    Record<'service', TNewMap[keyof TNewMap][number]>,
+      Record<'domain', keyof TNewMap & string> &
+      Record<'service', TNewMap[keyof TNewMap][number]>,
     TType,
     keyof TNewMap & string,
     TNewMap[keyof TNewMap][number],
@@ -370,8 +370,8 @@ export class DerropsConventions<
     >
     return this.domain(domains).service(services) as unknown as DerropsConventions<
       Omit<C, 'domain' | 'service'> &
-      Record<'domain', keyof TNewMap & string> &
-      Record<'service', TNewMap[keyof TNewMap][number]>,
+        Record<'domain', keyof TNewMap & string> &
+        Record<'service', TNewMap[keyof TNewMap][number]>,
       TType,
       keyof TNewMap & string,
       TNewMap[keyof TNewMap][number],
@@ -2018,7 +2018,7 @@ export class DerropsConventions<
 
   /** Register a custom resource type, or override an existing one. */
   static registerResourceType(name: string, config: ResourceTypeConfig): void {
-    ; (RESOURCE_TYPES as Record<string, ResourceTypeConfig>)[name] = config
+    ;(RESOURCE_TYPES as Record<string, ResourceTypeConfig>)[name] = config
   }
 
   /**
@@ -2073,11 +2073,11 @@ export class DerropsConventions<
     spec: ConventionSpec<TDomain, TService, TEnv, TKind, TPurpose, TAz>,
   ): DerropsConventions<
     MaybeConstrain<'domain', TDomain> &
-    MaybeConstrain<'service', TService> &
-    MaybeConstrain<'env', TEnv> &
-    MaybeConstrain<'kind', TKind> &
-    MaybeConstrain<'purpose', TPurpose> &
-    MaybeConstrain<'az', TAz>
+      MaybeConstrain<'service', TService> &
+      MaybeConstrain<'env', TEnv> &
+      MaybeConstrain<'kind', TKind> &
+      MaybeConstrain<'purpose', TPurpose> &
+      MaybeConstrain<'az', TAz>
   > {
     // Collect string values as segment defaults
     const defaults: Partial<Record<SegmentKey, string>> = {}
@@ -2189,11 +2189,11 @@ export function conventions<
   spec: ConventionSpec<TDomain, TService, TEnv, TKind, TPurpose, TAz>,
 ): DerropsConventions<
   MaybeConstrain<'domain', TDomain> &
-  MaybeConstrain<'service', TService> &
-  MaybeConstrain<'env', TEnv> &
-  MaybeConstrain<'kind', TKind> &
-  MaybeConstrain<'purpose', TPurpose> &
-  MaybeConstrain<'az', TAz>
+    MaybeConstrain<'service', TService> &
+    MaybeConstrain<'env', TEnv> &
+    MaybeConstrain<'kind', TKind> &
+    MaybeConstrain<'purpose', TPurpose> &
+    MaybeConstrain<'az', TAz>
 > {
   return DerropsConventions.create(spec)
 }

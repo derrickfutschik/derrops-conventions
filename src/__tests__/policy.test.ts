@@ -215,7 +215,6 @@ describe('StaticPolicyBuilder', () => {
     expect(gsiResource[0]).not.toContain('--gsi')
   })
 
-
   it('deduplicates identical ARNs', () => {
     const doc = c
       .staticPolicy()

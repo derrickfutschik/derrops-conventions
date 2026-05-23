@@ -48,7 +48,7 @@ describe('constraints() — runtime constraint store', () => {
   it('constraints() returns a copy — mutations do not affect the instance', () => {
     const c = new DerropsConventions({ org: 'acme' }).domain(['payments'])
     const snapshot = c.constraints()
-      ; (snapshot as Record<string, unknown>).domain = ['mutated']
+    ;(snapshot as Record<string, unknown>).domain = ['mutated']
     expect(c.constraints().domain).toEqual(['payments'])
   })
 

@@ -536,7 +536,9 @@ describe('DerropsConventions — naming', () => {
     const c = new DerropsConventions({ org: 'acme', domain: 'payments', service: 'api' })
 
     it('sqsFifoQueue appends .fifo via suffixDelimiter', () => {
-      expect(c.name({ type: 'sqsFifoQueue', key: 'events' })).toBe('acme--payments--api--events.fifo')
+      expect(c.name({ type: 'sqsFifoQueue', key: 'events' })).toBe(
+        'acme--payments--api--events.fifo',
+      )
     })
 
     it('sqsDlq appends --dlq via segmentDelimiter', () => {
@@ -549,7 +551,9 @@ describe('DerropsConventions — naming', () => {
 
     it('cloudMapNamespace appends .local via segmentDelimiter', () => {
       expect(
-        new DerropsConventions({ org: 'acme', domain: 'payments' }).name({ type: 'cloudMapNamespace' }),
+        new DerropsConventions({ org: 'acme', domain: 'payments' }).name({
+          type: 'cloudMapNamespace',
+        }),
       ).toBe('payments.acme.local')
     })
 
@@ -801,7 +805,9 @@ describe('DerropsConventions — naming', () => {
       })
 
       it('dynamodb endpoint', () => {
-        expect(c.name({ type: 'vpcEndpoint', service: 'dynamodb' })).toBe('acme--payments--dynamodb')
+        expect(c.name({ type: 'vpcEndpoint', service: 'dynamodb' })).toBe(
+          'acme--payments--dynamodb',
+        )
       })
 
       it('ecr-api endpoint (hyphen preserved — wordDelimiter is -)', () => {

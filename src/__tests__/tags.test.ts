@@ -264,9 +264,7 @@ describe('DerropsConventions — tags', () => {
 
     it('works with all four visible tags', () => {
       const c = new DerropsConventions(defaults)
-      expect(
-        c.tagKeys('org', 'domain', 'service', 'env').tagPrefix('derrops:').tags(),
-      ).toEqual({
+      expect(c.tagKeys('org', 'domain', 'service', 'env').tagPrefix('derrops:').tags()).toEqual({
         'derrops:org': 'acme',
         'derrops:domain': 'payments',
         'derrops:service': 'checkout-api',

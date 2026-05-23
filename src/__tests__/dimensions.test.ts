@@ -41,9 +41,7 @@ describe('DerropsConventions — dimensions()', () => {
 
     it('includes all five keys', () => {
       const c = makeBase().with({ tenant: 't-a3f8b2' })
-      expect(
-        c.dimensionKeys('org', 'domain', 'service', 'env', 'tenant').dimensions(),
-      ).toEqual([
+      expect(c.dimensionKeys('org', 'domain', 'service', 'env', 'tenant').dimensions()).toEqual([
         { Name: 'org', Value: 'acme' },
         { Name: 'domain', Value: 'payments' },
         { Name: 'service', Value: 'checkout-api' },
@@ -81,9 +79,7 @@ describe('DerropsConventions — dimensions()', () => {
     })
 
     it('override env at call time when included', () => {
-      expect(
-        makeBase().dimensionKeys('service', 'env').dimensions({ env: 'staging' }),
-      ).toEqual([
+      expect(makeBase().dimensionKeys('service', 'env').dimensions({ env: 'staging' })).toEqual([
         { Name: 'service', Value: 'checkout-api' },
         { Name: 'env', Value: 'staging' },
       ])
@@ -96,9 +92,7 @@ describe('DerropsConventions — dimensions()', () => {
     })
 
     it('env → env', () => {
-      expect(makeBase().dimensionKeys('env').dimensions()).toEqual([
-        { Name: 'env', Value: 'prod' },
-      ])
+      expect(makeBase().dimensionKeys('env').dimensions()).toEqual([{ Name: 'env', Value: 'prod' }])
     })
 
     it('tenant → tenant', () => {
