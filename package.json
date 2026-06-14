@@ -19,7 +19,7 @@
     "node": ">=18.17"
   },
   "scripts": {
-    "build": "tsup src/index.ts --format esm,cjs --dts --clean",
+    "build": "tsdown src/index.ts --format esm,cjs --dts --clean",
     "dev": "tsc -w",
     "test": "NODE_OPTIONS=--experimental-vm-modules jest",
     "test:watch": "NODE_OPTIONS=--experimental-vm-modules jest --watch",
@@ -32,7 +32,7 @@
     "@types/node": "^22.7.8",
     "jest": "*",
     "ts-jest": "*",
-    "tsup": "^8.3.0",
+    "tsdown": "^0.22.2",
     "typescript": "^5.6.3"
   }
 }
