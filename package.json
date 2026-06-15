@@ -1,6 +1,6 @@
 {
   "name": "derrops-conventions",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Repeatable naming conventions for AWS resources following Derrops conventions",
   "private": false,
   "type": "module",
