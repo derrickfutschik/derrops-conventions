@@ -219,6 +219,7 @@ describe('topology() — names and CIDRs', () => {
         name: 'acme--platform--private--1a',
         cidr: '10.0.0.0/24',
         az: '1a',
+        num: 1,
       })
     })
   })
@@ -600,6 +601,67 @@ describe('topology() — validation errors', () => {
   })
 })
 
+// ── domainBits — configurable domain-index field width ────────────────────────
+
+describe('topology() — domainBits', () => {
+  const orgC = new DerropsConventions({ org: 'acme' }).domain(['payments', 'identity'])
+
+  it('defaults to 4 bits — /16 VPC yields /20 domains and /24 subnets', () => {
+    const result = orgC.topology({ vpcCidr: '10.0.0.0/16', azs: ['1a'] })
+    expect(result.domains.payments?.cidr).toBe('10.0.0.0/20')
+    expect(result.domains.identity?.cidr).toBe('10.0.16.0/20')
+    expect(result.domains.payments?.subnets.private?.[0]?.cidr).toBe('10.0.0.0/24')
+  })
+
+  it('domainBits: 5 on a /16 VPC halves domain and subnet blocks (/21 and /25)', () => {
+    const result = orgC.topology({ vpcCidr: '10.0.0.0/16', domainBits: 5, azs: ['1a'] })
+    expect(result.domains.payments?.cidr).toBe('10.0.0.0/21')
+    // second domain now offset by a /21 (2048 addresses) instead of a /20
+    expect(result.domains.identity?.cidr).toBe('10.0.8.0/21')
+    expect(result.domains.payments?.subnets.private?.[0]?.cidr).toBe('10.0.0.0/25')
+  })
+
+  it('adding a bit to both domainBits and the VPC preserves subnet sizing', () => {
+    // /16 + domainBits 4  →  /15 + domainBits 5 : still /20 domains, /24 subnets
+    const result = orgC.topology({ vpcCidr: '10.0.0.0/15', domainBits: 5, azs: ['1a'] })
+    expect(result.domains.payments?.cidr).toBe('10.0.0.0/20')
+    expect(result.domains.payments?.subnets.private?.[0]?.cidr).toBe('10.0.0.0/24')
+  })
+
+  it('domainBits: 5 provides 32 domain slots', () => {
+    const many = Array.from({ length: 32 }, (_, i) => `d${i}`)
+    const c = new DerropsConventions({ org: 'acme' }).domain(many)
+    expect(() => c.topology({ vpcCidr: '10.0.0.0/11', domainBits: 5, azs: ['1a'] })).not.toThrow()
+  })
+
+  it('throws when the default-sized domains do not fit the VPC', () => {
+    // domainBits 2 on /16 → /18 domains (4 fit); a 5th spills past the VPC
+    const c = new DerropsConventions({ org: 'acme' }).domain(['a', 'b', 'c', 'd', 'e'])
+    expect(() => c.topology({ vpcCidr: '10.0.0.0/16', domainBits: 2, azs: ['1a'] })).toThrow(
+      'does not fit',
+    )
+  })
+
+  it('throws when domainBits does not leave room for the kind and AZ fields', () => {
+    // /24 VPC has only 8 host bits; 4 are reserved for tier+az, leaving max 4 for domains
+    expect(() =>
+      new DerropsConventions({ org: 'acme' })
+        .domain(['a'])
+        .topology({ vpcCidr: '10.0.0.0/24', domainBits: 5, azs: ['1a'] }),
+    ).toThrow('does not fit a /24 VPC')
+  })
+
+  it('throws on a non-integer or non-positive domainBits', () => {
+    const c = new DerropsConventions({ org: 'acme' }).domain(['a'])
+    expect(() => c.topology({ vpcCidr: '10.0.0.0/16', domainBits: 0, azs: ['1a'] })).toThrow(
+      'domainBits must be a positive integer',
+    )
+    expect(() => c.topology({ vpcCidr: '10.0.0.0/16', domainBits: 2.5, azs: ['1a'] })).toThrow(
+      'domainBits must be a positive integer',
+    )
+  })
+})
+
 // ── capacityReport() ──────────────────────────────────────────────────────────
 
 describe('capacityReport()', () => {
@@ -654,6 +716,29 @@ describe('capacityReport()', () => {
       kinds: ['private', 'isolated'],
     })
     expect(report.warnings).toHaveLength(0)
+  })
+
+  it('reports domain-slot usage against 2 ** domainBits', () => {
+    const report = orgC.capacityReport({ vpcCidr: '10.0.0.0/16', azs: ['1a'] })
+    expect(report.domainSlotsUsed).toBe(2)
+    expect(report.domainSlotsTotal).toBe(16)
+  })
+
+  it('domainSlotsTotal tracks a custom domainBits', () => {
+    const report = orgC.capacityReport({ vpcCidr: '10.0.0.0/16', domainBits: 5, azs: ['1a'] })
+    expect(report.domainSlotsTotal).toBe(32)
+  })
+
+  it('emits warning when the packed domains occupy >75% of the VPC addresses', () => {
+    const c = new DerropsConventions({ org: 'acme' }).domain(['a', 'b', 'c', 'd'])
+    const report = c.capacityReport({ vpcCidr: '10.0.0.0/16', domainBits: 2, azs: ['1a'] })
+    expect(report.warnings.some((w) => w.includes('addresses'))).toBe(true)
+  })
+
+  it('warns (without throwing) when domainBits exceeds the VPC capacity', () => {
+    const c = new DerropsConventions({ org: 'acme' }).domain(['a'])
+    const report = c.capacityReport({ vpcCidr: '10.0.0.0/24', domainBits: 5, azs: ['1a'] })
+    expect(report.warnings.some((w) => w.includes('exceeds'))).toBe(true)
   })
 })
 
@@ -759,5 +844,216 @@ describe('topology() — appending to an existing deployment', () => {
     expect(after['acme--payments--public--1a']).toEqual({ cidr: '10.0.8.0/24', az: '1a' })
     expect(after['acme--payments--public--1b']).toEqual({ cidr: '10.0.9.0/24', az: '1b' })
     expect(after['acme--payments--public--1c']).toEqual({ cidr: '10.0.10.0/24', az: '1c' })
+  })
+})
+
+// ── Expansion subnets — a second+ subnet in the same tier + AZ ─────────────────
+
+describe('topology() — expansion subnets (num-indexed)', () => {
+  const orgC = new DerropsConventions({ org: 'acme' }).domain(['payments'])
+
+  it('the first subnet in an AZ has num 1 and an un-indexed name', () => {
+    const r = orgC.topology({ vpcCidr: '10.0.0.0/16', azs: ['1a'] })
+    const s = r.domains.payments?.subnets.private?.[0]
+    expect(s?.name).toBe('acme--payments--private--1a')
+    expect(s?.num).toBe(1)
+  })
+
+  it('a second subnet in the same AZ gets an index and its own CIDR slot', () => {
+    const r = orgC.topology({
+      vpcCidr: '10.0.0.0/16',
+      azs: ['1a', '1b', '1c'],
+      domains: {
+        payments: {
+          azAllocations: [
+            { slot: 0, az: '1a' },
+            { slot: 1, az: '1b' },
+            { slot: 2, az: '1c' },
+            { slot: 3, az: '1a', num: 2 }, // expansion subnet in 1a
+          ],
+        },
+      },
+    })
+    const priv = r.domains.payments?.subnets.private
+    // primary 1a subnet is unchanged
+    expect(priv?.[0]).toEqual({ name: 'acme--payments--private--1a', cidr: '10.0.0.0/24', az: '1a', num: 1 })
+    // expansion subnet: indexed name, num 2, CIDR from slot 3
+    expect(priv?.[3]).toEqual({
+      name: 'acme--payments--private--1a--2',
+      cidr: '10.0.3.0/24',
+      az: '1a',
+      num: 2,
+    })
+  })
+
+  it('num is auto-derived from repeated AZ occurrences when omitted', () => {
+    const r = orgC.topology({
+      vpcCidr: '10.0.0.0/16',
+      azs: ['1a', '1b', '1c'],
+      domains: {
+        payments: {
+          azAllocations: [
+            { slot: 0, az: '1a' },
+            { slot: 1, az: '1b' },
+            { slot: 2, az: '1c' },
+            { slot: 3, az: '1a' }, // no explicit num → derived as 2
+          ],
+        },
+      },
+    })
+    expect(r.domains.payments?.subnets.private?.[3]?.name).toBe('acme--payments--private--1a--2')
+    expect(r.domains.payments?.subnets.private?.[3]?.num).toBe(2)
+  })
+
+  it('a repeated AZ in the global azs list produces expansion subnets across every kind', () => {
+    const r = orgC.topology({ vpcCidr: '10.0.0.0/16', azs: ['1a', '1a'] })
+    // slot 0 and slot 1 within each kind's /22, same AZ, indexed names
+    expect(r.domains.payments?.subnets.private?.[0]?.name).toBe('acme--payments--private--1a')
+    expect(r.domains.payments?.subnets.private?.[1]?.name).toBe('acme--payments--private--1a--2')
+    expect(r.domains.payments?.subnets.private?.[1]?.cidr).toBe('10.0.1.0/24')
+    expect(r.domains.payments?.subnets.public?.[1]?.name).toBe('acme--payments--public--1a--2')
+  })
+
+  it('parses an expansion subnet name back into segments including num', () => {
+    const parsed = orgC.parse('acme--payments--private--1a--2', { type: 'subnet' })
+    expect(parsed).toEqual({ org: 'acme', domain: 'payments', kind: 'private', az: '1a', num: '2' })
+  })
+
+  it('throws when two subnets collide on the same (AZ, num)', () => {
+    expect(() =>
+      orgC.topology({
+        vpcCidr: '10.0.0.0/16',
+        azs: ['1a'],
+        domains: {
+          payments: {
+            azAllocations: [
+              { slot: 0, az: '1a' },
+              { slot: 1, az: '1a' }, // same az, both derive to distinct nums (1, 2) — ok
+              { slot: 2, az: '1a', num: 2 }, // collides with the derived num 2 above
+            ],
+          },
+        },
+      }),
+    ).toThrow('duplicate subnet (AZ, num)')
+  })
+
+  it('throws on a non-positive or non-integer num', () => {
+    expect(() =>
+      orgC.topology({
+        vpcCidr: '10.0.0.0/16',
+        azs: ['1a'],
+        domains: { payments: { azAllocations: [{ slot: 0, az: '1a', num: 0 }] } },
+      }),
+    ).toThrow('must be a positive integer')
+  })
+})
+
+// ── Variable domain sizes — per-domain cidrPrefix ──────────────────────────────
+
+describe('topology() — per-domain CIDR sizing (cidrPrefix)', () => {
+  it('a small domain takes a tighter block, and its subnets scale down with it', () => {
+    // db-only domain sized /24 → /26 tiers → /28 subnets (AWS minimum, ~11 usable)
+    const r = new DerropsConventions({ org: 'acme' })
+      .domain(['db'])
+      .topology({
+        vpcCidr: '10.0.0.0/16',
+        azs: ['1a', '1b'],
+        domains: { db: { cidrPrefix: 24, includeKinds: ['isolated'] } },
+      })
+    expect(r.domains.db?.cidr).toBe('10.0.0.0/24')
+    // isolated is slot 2 → +2 × /26 (64 addresses) = +128 → 10.0.0.128/28
+    expect(r.domains.db?.subnets.isolated?.[0]).toEqual({
+      name: 'acme--db--isolated--1a',
+      cidr: '10.0.0.128/28',
+      az: '1a',
+      num: 1,
+    })
+    expect(r.domains.db?.subnets.isolated?.[1]?.cidr).toBe('10.0.0.144/28')
+  })
+
+  it('domains of different sizes are packed in order, each aligned to its own block', () => {
+    const r = new DerropsConventions({ org: 'acme' })
+      .domain(['payments', 'db', 'identity'])
+      .topology({
+        vpcCidr: '10.0.0.0/16',
+        azs: ['1a'],
+        domains: { db: { cidrPrefix: 24 } }, // payments & identity keep default /20
+      })
+    // payments: default /20 at the base
+    expect(r.domains.payments?.cidr).toBe('10.0.0.0/20')
+    // db: /24 packed right after payments' /20 (aligned to /24)
+    expect(r.domains.db?.cidr).toBe('10.0.16.0/24')
+    // identity: next default /20, aligned up to a /20 boundary → skips the rest of 10.0.16.0/20
+    expect(r.domains.identity?.cidr).toBe('10.0.32.0/20')
+  })
+
+  it('a larger-than-default domain reserves a bigger block', () => {
+    const r = new DerropsConventions({ org: 'acme' })
+      .domain(['big', 'small'])
+      .topology({
+        vpcCidr: '10.0.0.0/16',
+        azs: ['1a'],
+        domains: { big: { cidrPrefix: 18 } }, // /18 = 4× the default /20
+      })
+    expect(r.domains.big?.cidr).toBe('10.0.0.0/18')
+    // small default /20 packs after the /18 block
+    expect(r.domains.small?.cidr).toBe('10.0.64.0/20')
+  })
+
+  it('uniform default domains are unaffected by the packing refactor', () => {
+    const r = new DerropsConventions({ org: 'acme' })
+      .domain(['payments', 'identity'])
+      .topology({ vpcCidr: '10.0.0.0/16', azs: ['1a', '1b', '1c'] })
+    expect(r.domains.payments?.cidr).toBe('10.0.0.0/20')
+    expect(r.domains.identity?.cidr).toBe('10.0.16.0/20')
+    expect(r.domains.payments?.subnets.private?.[0]?.cidr).toBe('10.0.0.0/24')
+    expect(r.domains.identity?.subnets.isolated?.[0]?.cidr).toBe('10.0.24.0/24')
+  })
+
+  it('throws when a cidrPrefix is not smaller than the VPC', () => {
+    expect(() =>
+      new DerropsConventions({ org: 'acme' })
+        .domain(['d'])
+        .topology({ vpcCidr: '10.0.0.0/16', azs: ['1a'], domains: { d: { cidrPrefix: 16 } } }),
+    ).toThrow('must be smaller than')
+  })
+
+  it('throws when a cidrPrefix leaves no room for tiers and AZs', () => {
+    expect(() =>
+      new DerropsConventions({ org: 'acme' })
+        .domain(['d'])
+        .topology({ vpcCidr: '10.0.0.0/16', azs: ['1a'], domains: { d: { cidrPrefix: 30 } } }),
+    ).toThrow('no room')
+  })
+
+  it('throws when variably-sized domains overflow the VPC', () => {
+    // three /18 domains = 3 × 16384 = 49152, plus a /17 (32768) = 81920 > 65536
+    expect(() =>
+      new DerropsConventions({ org: 'acme' })
+        .domain(['a', 'b', 'c', 'big'])
+        .topology({
+          vpcCidr: '10.0.0.0/16',
+          azs: ['1a'],
+          domains: {
+            a: { cidrPrefix: 18 },
+            b: { cidrPrefix: 18 },
+            c: { cidrPrefix: 18 },
+            big: { cidrPrefix: 17 },
+          },
+        }),
+    ).toThrow('does not fit')
+  })
+
+  it('capacityReport reports packed address usage across mixed sizes', () => {
+    const report = new DerropsConventions({ org: 'acme' })
+      .domain(['payments', 'db'])
+      .capacityReport({
+        vpcCidr: '10.0.0.0/16',
+        azs: ['1a'],
+        domains: { db: { cidrPrefix: 24 } },
+      })
+    // payments /20 (4096) + db /24 (256) = 4352 addresses of the 65536-address VPC
+    expect(report.addressesTotal).toBe(65536)
+    expect(report.addressesUsed).toBe(4096 + 256)
   })
 })

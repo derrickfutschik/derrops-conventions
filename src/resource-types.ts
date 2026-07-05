@@ -845,10 +845,13 @@ export const RESOURCE_TYPES = {
   subnet: {
     // Domain boundary — one subnet group per domain per tier (private/public/isolated) per AZ.
     // 'service' is intentionally absent: subnets are domain-scoped, not service-scoped.
+    // Trailing 'num' disambiguates a second+ subnet in the same tier+AZ (capacity expansion):
+    // it is omitted for the first subnet (num 1) so existing names are unchanged, and rendered
+    // as e.g. '...--1a--2' for expansion subnets.
     global: false,
     segmentDelimiter: '--',
     wordDelimiter: '-',
-    segments: ['org', 'domain', 'kind', 'az'],
+    segments: ['org', 'domain', 'kind', 'az', 'num'],
   },
   routeTable: {
     // Domain + tier — one route table per subnet kind per domain.

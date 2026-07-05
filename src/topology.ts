@@ -25,12 +25,17 @@ export type SubnetKind = 'private' | 'public' | 'isolated'
 
 /** A single subnet with its convention name, CIDR block, and availability zone. */
 export interface SubnetEntry {
-  /** Convention name — e.g. `'acme--payments--private--1a'` */
+  /** Convention name — e.g. `'acme--payments--private--1a'` (or `'…--1a--2'` for an expansion subnet) */
   name: string
   /** CIDR block — e.g. `'10.0.0.0/24'` */
   cidr: string
   /** Availability zone suffix — e.g. `'1a'` */
   az: string
+  /**
+   * Ordinal within the tier + AZ. `1` for the first (and usually only) subnet; `2`, `3`, … for
+   * additional expansion subnets sharing the same AZ. The name carries this index only when > 1.
+   */
+  num: number
 }
 
 /** All networking resources for one domain. */
@@ -86,17 +91,36 @@ function parseCidr(cidr: string): { base: number; prefix: number } {
 
 const MAX_SLOT = 3
 
-function findDuplicates(nums: number[]): number[] {
-  const seen = new Set<number>()
-  const dupes = new Set<number>()
-  for (const n of nums) {
+function findDuplicates<T>(items: T[]): T[] {
+  const seen = new Set<T>()
+  const dupes = new Set<T>()
+  for (const n of items) {
     if (seen.has(n)) dupes.add(n)
     seen.add(n)
   }
   return [...dupes]
 }
 
+/**
+ * Resolve the ordinal `num` for each AZ allocation in a kind's list. An explicit `num` is used
+ * as-is; otherwise it defaults to the 1-based occurrence count of that AZ within the list, so a
+ * second allocation for the same AZ becomes the expansion subnet `num` 2.
+ */
+function resolveAzNums(azs: AzAllocation[]): number[] {
+  const occurrences = new Map<string, number>()
+  return azs.map((a) => {
+    const occ = (occurrences.get(a.az) ?? 0) + 1
+    occurrences.set(a.az, occ)
+    return a.num ?? occ
+  })
+}
+
 function validateAzAllocations(context: string, azs: AzAllocation[]): void {
+  for (const { az, num } of azs) {
+    if (num !== undefined && (!Number.isInteger(num) || num < 1)) {
+      throw new Error(`${context}: AZ "${az}" num ${num} must be a positive integer`)
+    }
+  }
   const dupes = findDuplicates(azs.map((a) => a.slot))
   if (dupes.length) {
     throw new Error(`${context}: duplicate AZ slots: ${dupes.join(', ')}`)
@@ -105,6 +129,16 @@ function validateAzAllocations(context: string, azs: AzAllocation[]): void {
     if (slot < 0 || slot > MAX_SLOT) {
       throw new Error(`${context}: AZ slot ${slot} is out of range 0–${MAX_SLOT}`)
     }
+  }
+  // Multiple subnets may share an AZ for capacity expansion, but each must have a unique name —
+  // i.e. a unique (az, num) pair. Otherwise two subnets would collide on the same name.
+  const nums = resolveAzNums(azs)
+  const nameDupes = findDuplicates(azs.map((a, i) => `${a.az}#${nums[i]}`))
+  if (nameDupes.length) {
+    throw new Error(
+      `${context}: duplicate subnet (AZ, num): ${nameDupes.join(', ')}. ` +
+        `Give the additional subnet in that AZ a distinct "num".`,
+    )
   }
 }
 
@@ -131,20 +165,107 @@ function validateKindAllocations(
   }
 }
 
+/** Default domain-index field width — 16 domains, the historical fixed value. */
+const DEFAULT_DOMAIN_BITS = 4
+
+/** Bits consumed below the domain block by the kind tier (2) and AZ (2). */
+const TIER_AND_AZ_BITS = 4
+
 /** Convert the flat global arrays into the internal slot-based form. */
 function normalizeTopologyOptions(options: TopologyOptions): {
   vpcCidr: string
+  domainBits: number
   globalAzAllocations: AzAllocation[]
   defaultKinds: KindAllocation[]
   domainConfigs: Record<string, DomainAllocationConfig>
 } {
-  const { vpcCidr, azs, kinds = ['private', 'public', 'isolated'], domains = {} } = options
+  const {
+    vpcCidr,
+    domainBits = DEFAULT_DOMAIN_BITS,
+    azs,
+    kinds = ['private', 'public', 'isolated'],
+    domains = {},
+  } = options
   return {
     vpcCidr,
+    domainBits,
     globalAzAllocations: azs.map((az, i) => ({ slot: i, az })),
     defaultKinds: kinds.map((name, i) => ({ slot: i, name })),
     domainConfigs: domains,
   }
+}
+
+/**
+ * Validate `domainBits` against the VPC prefix. Ensures the default domain block, plus its
+ * kind and AZ fields, fits inside the VPC. Whether the domains *collectively* fit is decided
+ * by the packing pass ({@link computeDomainLayout}), which also accounts for per-domain sizes.
+ */
+function validateDomainBits(domainBits: number, vpcPrefix: number): void {
+  if (!Number.isInteger(domainBits) || domainBits < 1) {
+    throw new Error(`domainBits must be a positive integer, got ${domainBits}`)
+  }
+  const maxDomainBits = 32 - TIER_AND_AZ_BITS - vpcPrefix
+  if (domainBits > maxDomainBits) {
+    throw new Error(
+      `domainBits ${domainBits} does not fit a /${vpcPrefix} VPC: ${TIER_AND_AZ_BITS} bits are ` +
+        `reserved for the kind tier and AZ, leaving at most ${maxDomainBits} for domains. ` +
+        `Widen the VPC (lower the prefix) or lower domainBits.`,
+    )
+  }
+}
+
+/** Validate a per-domain `cidrPrefix` — it must be smaller than the VPC and leave room for tiers/AZs. */
+function validateDomainPrefix(domain: string, cidrPrefix: number, vpcPrefix: number): void {
+  if (!Number.isInteger(cidrPrefix)) {
+    throw new Error(`domain "${domain}": cidrPrefix must be an integer, got ${cidrPrefix}`)
+  }
+  if (cidrPrefix <= vpcPrefix) {
+    throw new Error(
+      `domain "${domain}": cidrPrefix /${cidrPrefix} must be smaller than the /${vpcPrefix} VPC.`,
+    )
+  }
+  const maxPrefix = 32 - TIER_AND_AZ_BITS
+  if (cidrPrefix > maxPrefix) {
+    throw new Error(
+      `domain "${domain}": cidrPrefix /${cidrPrefix} leaves no room for the kind tier and AZ ` +
+        `(${TIER_AND_AZ_BITS} bits) — the maximum is /${maxPrefix}.`,
+    )
+  }
+}
+
+/** Round an address up to the next multiple of `size` (CIDR blocks must be size-aligned). */
+function alignUp(value: number, size: number): number {
+  return Math.ceil(value / size) * size
+}
+
+/**
+ * Pack domains into the VPC in declared order. Each domain takes a block sized by its own
+ * `cidrPrefix` (or `defaultDomainPrefix`), aligned up to that block's boundary — so mixing sizes
+ * may leave alignment gaps. Returns each domain's base address and prefix, the end cursor, and
+ * the first domain (if any) that spills past the VPC. Never throws — callers decide.
+ */
+function computeDomainLayout(
+  vpcBase: number,
+  vpcPrefix: number,
+  domains: string[],
+  prefixFor: (domain: string) => number,
+): {
+  layout: Array<{ domain: string; domainPrefix: number; base: number; size: number }>
+  endCursor: number
+  firstOverflow: string | null
+} {
+  const vpcEnd = vpcBase + 2 ** (32 - vpcPrefix)
+  let cursor = vpcBase
+  let firstOverflow: string | null = null
+  const layout = domains.map((domain) => {
+    const domainPrefix = prefixFor(domain)
+    const size = 2 ** (32 - domainPrefix)
+    const base = alignUp(cursor, size)
+    cursor = base + size
+    if (firstOverflow === null && cursor > vpcEnd) firstOverflow = domain
+    return { domain, domainPrefix, base, size }
+  })
+  return { layout, endCursor: cursor, firstOverflow }
 }
 
 function resolveKindsForDomain(
@@ -180,16 +301,26 @@ function resolveAzsForKind(
  * Generate the full network topology — names and CIDR blocks — for the org and all
  * constrained domains.
  *
- * CIDR allocation scheme (generalises to any VPC prefix):
+ * CIDR allocation scheme (generalises to any VPC prefix and `domainBits`, shown for the
+ * defaults — a /16 VPC with `domainBits: 4`):
  * ```
  * VPC:    /16  →  65,536 addresses
- * Domain: /20  →   4,096 per domain  (domainIndex × 4096 from VPC base)
+ * Domain: /20  →   4,096 per domain  (packed in order from VPC base; 2**domainBits domains)
  * Tier:   /22  →   1,024 per tier    (kindAllocation.slot × 1024 within domain)
  * AZ:     /24  →     256 per AZ      (azAllocation.slot × 256 within tier)
  * ```
  *
- * Domain ordering in `.domain([...])` is the CIDR allocation contract — domain 0
- * receives the first /20 block, domain 1 the second, etc. Changing the order changes CIDRs.
+ * The default domain block is `vpcPrefix + domainBits` wide, so `domainBits` trades domain count
+ * against per-domain (and per-subnet) size. Widen the VPC by the same number of bits to add
+ * domains without shrinking subnets.
+ *
+ * Domains may also be sized individually via `domains[name].cidrPrefix` — e.g. a database-only
+ * domain can take a tight `/24` while others keep the default. Domains are then packed into the
+ * VPC in declared order, each aligned to its own block size, so mixing sizes can leave alignment
+ * gaps; declare larger domains first for tight packing.
+ *
+ * Domain ordering in `.domain([...])` is the CIDR allocation contract — domain 0 is placed first,
+ * domain 1 next, etc. Changing the order (or an earlier domain's size) shifts later domains' CIDRs.
  *
  * Kind and AZ positions are determined by their explicit `slot` numbers, not array positions.
  * This means new kinds or AZs can be appended with higher slot numbers without disturbing
@@ -197,13 +328,16 @@ function resolveAzsForKind(
  *
  * @throws if the convention has no constrained domain values
  * @throws if slot numbers are out of range (0–3) or duplicated within a domain/kind
+ * @throws if `domainBits` or a domain's `cidrPrefix` is invalid or too wide for the VPC
+ * @throws if the domains' combined size does not fit in the VPC
+ * @throws if two subnets collide on the same (AZ, num) within a tier
  */
 export function buildNetworkTopology(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   convention: DerropsConventions<any, any, any, any, any>,
   options: TopologyOptions,
 ): OrgNetworkTopology {
-  const { vpcCidr, globalAzAllocations, defaultKinds, domainConfigs } =
+  const { vpcCidr, domainBits, globalAzAllocations, defaultKinds, domainConfigs } =
     normalizeTopologyOptions(options)
 
   const domains = convention.constraints().domain as string[] | undefined
@@ -213,6 +347,10 @@ export function buildNetworkTopology(
       "topology() requires domain to be constrained — call .domain(['payments', 'identity', ...]) first",
     )
   }
+
+  const { base: vpcBase, prefix: vpcPrefix } = parseCidr(vpcCidr)
+  const defaultDomainPrefix = vpcPrefix + domainBits
+  validateDomainBits(domainBits, vpcPrefix)
 
   // Validate all allocations up-front so errors surface before any CIDR is computed.
   validateAzAllocations('global', globalAzAllocations)
@@ -227,6 +365,9 @@ export function buildNetworkTopology(
         `Domain "${domain}": only one of "kinds", "includeKinds", or "additionalKinds" may be set`,
       )
     }
+    if (config.cidrPrefix !== undefined) {
+      validateDomainPrefix(domain, config.cidrPrefix, vpcPrefix)
+    }
     if (config.azAllocations) {
       validateAzAllocations(`domain "${domain}"`, config.azAllocations)
     }
@@ -238,13 +379,18 @@ export function buildNetworkTopology(
     )
   }
 
-  const { base: vpcBase, prefix: vpcPrefix } = parseCidr(vpcCidr)
-  const domainPrefix = vpcPrefix + 4
-  const tierPrefix = domainPrefix + 2
-  const azPrefix = tierPrefix + 2
-  const domainSize = 2 ** (32 - domainPrefix)
-  const tierSize = 2 ** (32 - tierPrefix)
-  const azSize = 2 ** (32 - azPrefix)
+  // Pack domains into the VPC, each sized by its own cidrPrefix or the default.
+  const prefixFor = (domain: string): number =>
+    domainConfigs[domain]?.cidrPrefix ?? defaultDomainPrefix
+  const { layout, firstOverflow } = computeDomainLayout(vpcBase, vpcPrefix, domains, prefixFor)
+  if (firstOverflow !== null) {
+    throw new Error(
+      `topology(): domain "${firstOverflow}" (/${prefixFor(firstOverflow)}) does not fit — the ` +
+        `domains' combined size exceeds the /${vpcPrefix} VPC. Use smaller domain blocks ` +
+        `(larger cidrPrefix), fewer domains, order larger domains first, or a larger VPC.`,
+    )
+  }
+  const layoutByDomain = new Map(layout.map((d) => [d.domain, d]))
 
   const orgLayer = convention.orgNetworkLayer()
 
@@ -254,8 +400,12 @@ export function buildNetworkTopology(
 
   const resultDomains: Record<string, DomainNetworkTopology> = {}
 
-  domains.forEach((domain, di) => {
-    const domainBase = vpcBase + di * domainSize
+  domains.forEach((domain) => {
+    const { domainPrefix, base: domainBase } = layoutByDomain.get(domain)!
+    const tierPrefix = domainPrefix + 2
+    const azPrefix = tierPrefix + 2
+    const tierSize = 2 ** (32 - tierPrefix)
+    const azSize = 2 ** (32 - azPrefix)
     const domainConfig = domainConfigs[domain]
     const resolvedKinds = resolveKindsForDomain(domain, defaultKinds, domainConfig)
 
@@ -266,12 +416,24 @@ export function buildNetworkTopology(
       const tierBase = domainBase + kindAlloc.slot * tierSize
       const resolvedAzs = resolveAzsForKind(kindAlloc, domainConfig, globalAzAllocations)
 
+      const azNums = resolveAzNums(resolvedAzs)
+
       routeTables[kindAlloc.name] = n(domain, { type: 'routeTable', kind: kindAlloc.name })
-      subnets[kindAlloc.name] = resolvedAzs.map((azAlloc) => ({
-        name: n(domain, { type: 'subnet', kind: kindAlloc.name, az: azAlloc.az }),
-        cidr: `${intToIp(tierBase + azAlloc.slot * azSize)}/${azPrefix}`,
-        az: azAlloc.az,
-      }))
+      subnets[kindAlloc.name] = resolvedAzs.map((azAlloc, azIdx) => {
+        const num = azNums[azIdx]!
+        return {
+          // num is rendered into the name only when > 1, keeping first-subnet names unchanged.
+          name: n(domain, {
+            type: 'subnet',
+            kind: kindAlloc.name,
+            az: azAlloc.az,
+            ...(num > 1 ? { num: String(num) } : {}),
+          }),
+          cidr: `${intToIp(tierBase + azAlloc.slot * azSize)}/${azPrefix}`,
+          az: azAlloc.az,
+          num,
+        }
+      })
     })
 
     resultDomains[domain] = {
@@ -302,7 +464,8 @@ export function buildCapacityReport(
   convention: DerropsConventions<any, any, any, any, any>,
   options: TopologyOptions,
 ): TopologyCapacityReport {
-  const { globalAzAllocations, defaultKinds, domainConfigs } = normalizeTopologyOptions(options)
+  const { vpcCidr, domainBits, globalAzAllocations, defaultKinds, domainConfigs } =
+    normalizeTopologyOptions(options)
   const domains = (convention.constraints().domain as string[] | undefined) ?? []
 
   const TOTAL_SLOTS = MAX_SLOT + 1
@@ -310,6 +473,34 @@ export function buildCapacityReport(
 
   const warnings: string[] = []
   const domainReports: DomainCapacityReport[] = []
+
+  const { base: vpcBase, prefix: vpcPrefix } = parseCidr(vpcCidr)
+  const domainSlotsTotal = 2 ** domainBits
+  const domainSlotsUsed = domains.length
+
+  // Address utilisation from the actual packed layout — correct for uniform and mixed sizes.
+  const defaultDomainPrefix = vpcPrefix + domainBits
+  const prefixFor = (domain: string): number =>
+    domainConfigs[domain]?.cidrPrefix ?? defaultDomainPrefix
+  const addressesTotal = 2 ** (32 - vpcPrefix)
+  const { endCursor, firstOverflow } = computeDomainLayout(vpcBase, vpcPrefix, domains, prefixFor)
+  const addressesUsed = Math.min(endCursor - vpcBase, addressesTotal)
+  if (firstOverflow !== null) {
+    warnings.push(
+      `VPC: domains do not fit — "${firstOverflow}" spills past the /${vpcPrefix} VPC. topology() will throw.`,
+    )
+  } else if (addressesUsed / addressesTotal > WARN_THRESHOLD) {
+    warnings.push(
+      `VPC: domains occupy ${addressesUsed} of ${addressesTotal} addresses ` +
+        `(${Math.round((addressesUsed / addressesTotal) * 100)}%). Free space is limited before more domains fit.`,
+    )
+  }
+  const maxDomainBits = 32 - TIER_AND_AZ_BITS - vpcPrefix
+  if (domainBits > maxDomainBits) {
+    warnings.push(
+      `domainBits ${domainBits} exceeds the ${maxDomainBits} that fit a /${vpcPrefix} VPC — topology() will throw.`,
+    )
+  }
 
   for (const domain of domains) {
     const domainConfig = domainConfigs[domain]
@@ -348,5 +539,12 @@ export function buildCapacityReport(
     })
   }
 
-  return { domains: domainReports, warnings }
+  return {
+    domainSlotsUsed,
+    domainSlotsTotal,
+    addressesUsed,
+    addressesTotal,
+    domains: domainReports,
+    warnings,
+  }
 }

@@ -271,7 +271,8 @@ export interface ArnConfig {
   policyResourceSuffix?: string
   /**
    * When set, this string is stripped from the end of the resource name before ARN construction.
-   * Used for `dynamoDbGsi` where the `--gsi` naming suffix must not appear in the table ARN.
+   * Use when a naming suffix must not appear in the ARN. Currently unused by the built-in
+   * resource types (no type declares a naming suffix that needs stripping).
    */
   stripSuffix?: string
 }

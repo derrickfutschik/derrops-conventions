@@ -138,11 +138,11 @@ describe('resource() — ARN format', () => {
     expect(r.arns).toHaveLength(1)
   })
 
-  it('dynamoDbGsi: ARN targets parent table (--gsi stripped), appends /index/*', () => {
+  it('dynamoDbGsi: ARN targets parent table, appends /index/*', () => {
     const r = base.resource({ type: 'dynamoDbGsi', key: 'orders' })
-    // name has --gsi suffix
+    // GSI name carries no suffix
     expect(r.name).toBe('derrops--platform--api--orders')
-    // ARN must not contain --gsi and must end with /index/*
+    // ARN targets the parent table and ends with /index/*
     expect(r.arn).toContain('table/derrops--platform--api--orders/index/*')
     expect(r.arns).toHaveLength(1)
   })
