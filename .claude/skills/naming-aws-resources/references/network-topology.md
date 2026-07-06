@@ -36,17 +36,15 @@ orgC.with({ domain: 'payments', service: 'checkout-api' })
 ```typescript
 const plan = orgC.domain(['payments', 'identity']).topology({
   vpcCidr: '10.0.0.0/16',
-  azAllocations: [{ slot: 0, az: '1a' }, { slot: 1, az: '1b' }, { slot: 2, az: '1c' }],
-  defaultKinds: [
-    { slot: 0, name: 'private' },
-    { slot: 1, name: 'public' },
-    { slot: 2, name: 'isolated' },
-  ],
+  azs: ['1a', '1b', '1c'],                    // array position is the CIDR slot — append only
+  kinds: ['private', 'public', 'isolated'],   // the default if omitted
 })
 // plan.vpc.{name,cidr}, plan.domains[d].{subnets,nacl,routeTables,tgwAttachment}
 ```
 
-See the repo `README.md` "CDK — provisioning the VPC" for the full construct loop.
+For the full construct loop, the tier-first `tieredTopology()` model, and CDK wiring, use the
+[`creating-vpc-topologies`](../../creating-vpc-topologies/SKILL.md) skill, or see the repo
+`README.md` "Network topology" / "Tier-based segmentation" sections.
 
 ## Subnet kinds
 

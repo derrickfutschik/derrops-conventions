@@ -16,7 +16,7 @@ export type {
   DomainCapacityReport,
   TopologyCapacityReport,
 } from './topology-types.js'
-export { buildTieredTopology, subnetsFor } from './tiered-topology.js'
+export { buildTieredTopology } from './tiered-topology.js'
 export type {
   TierRole,
   TierSpec,

@@ -22,7 +22,7 @@ import { PolicyBuilder } from './policy/PolicyBuilder.js'
 import type { Resource, SqsPair } from './policy/Resource.js'
 import type { ArnContext } from './policy/types.js'
 import { buildNetworkTopology, buildCapacityReport } from './topology.js'
-import type { OrgNetworkTopology } from './topology.js'
+import type { OrgNetworkTopology, SubnetEntry } from './topology.js'
 import type { TopologyOptions, TopologyCapacityReport } from './topology-types.js'
 import { buildTieredTopology } from './tiered-topology.js'
 import type { TieredTopologyOptions, TieredTopology } from './tiered-topology-types.js'
@@ -1576,8 +1576,8 @@ export class DerropsConventions<
    * generated. Subnet count is `#tiers × AZs`, independent of the number of domains, which collapses
    * the subnet sprawl of the domain-per-subnet `topology()` model.
    *
-   * Find where a deployment artifact goes with `plan.domains[domain].subnets[role]` or the exported
-   * `subnetsFor(plan, domain, role)` helper.
+   * Find where a deployment artifact goes with `plan.domains[domain].subnets[role]` or the
+   * {@link subnetsFor} method (which type-checks `domain` against `.domain([...])`).
    *
    * @example
    * const plan = conv.domain(['payments', 'ledger']).tieredTopology({
@@ -1596,6 +1596,42 @@ export class DerropsConventions<
    */
   tieredTopology(options: TieredTopologyOptions): TieredTopology {
     return buildTieredTopology(this, options)
+  }
+
+  /**
+   * Resolve the subnets a deployment artifact belongs in, given a `plan` from
+   * {@link tieredTopology} and the artifact's `domain` + `role` (`public`/`app`/`data`) — e.g.
+   * an ECS service → `conv.subnetsFor(plan, 'payments', 'app')`, an RDS subnet group →
+   * `conv.subnetsFor(plan, 'payments', 'data')`. Omit `role` to get every assigned tier's subnets
+   * flattened.
+   *
+   * When `domain` has been constrained via `.domain([...])`, the `domain` argument is checked against
+   * that literal union at compile time, so a typo or an unassigned domain is a TypeScript error rather
+   * than a runtime throw.
+   *
+   * @example
+   * const conv = new DerropsConventions({ org: 'acme' }).domain(['payments', 'ledger'])
+   * const plan = conv.tieredTopology({ ... })
+   * conv.subnetsFor(plan, 'payments', 'app')  // ✅ typed to 'payments' | 'ledger'
+   * conv.subnetsFor(plan, 'nope', 'app')      // ❌ TS error — not a declared domain
+   *
+   * @throws if the domain is unknown, or has no tier assigned for the requested role.
+   */
+  subnetsFor(
+    plan: TieredTopology,
+    domain: 'domain' extends keyof C ? C['domain'] & string : string,
+    role?: 'public' | 'app' | 'data',
+  ): SubnetEntry[] {
+    const placement = plan.domains[domain]
+    if (!placement) throw new Error(`subnetsFor(): domain "${domain}" is not in the topology`)
+    if (role === undefined) {
+      return [placement.subnets.public, placement.subnets.app, placement.subnets.data]
+        .filter((s): s is SubnetEntry[] => s !== undefined)
+        .flat()
+    }
+    const subnets = placement.subnets[role]
+    if (!subnets) throw new Error(`subnetsFor(): domain "${domain}" has no ${role} tier assigned`)
+    return subnets
   }
 
   // ── IAM policy generation ─────────────────────────────────────────────────

@@ -1,6 +1,5 @@
 import { describe, it, expect } from '@jest/globals'
 import { DerropsConventions } from '../DerropsConventions.js'
-import { subnetsFor } from '../tiered-topology.js'
 import type { TieredTopologyOptions } from '../tiered-topology-types.js'
 
 const baseConv = () =>
@@ -84,7 +83,8 @@ describe('tieredTopology() — tier subnets and CIDRs', () => {
 })
 
 describe('tieredTopology() — finding subnets for a deployment artifact', () => {
-  const plan = build()
+  const conv = baseConv()
+  const plan = conv.tieredTopology(baseOptions)
 
   it('domains[d].subnets[role] resolves to the assigned tier subnets', () => {
     expect(plan.domains['payments']?.subnets.app).toBe(plan.tiers['app']?.subnets)
@@ -92,23 +92,38 @@ describe('tieredTopology() — finding subnets for a deployment artifact', () =>
     expect(plan.domains['ledger']?.subnets.data?.[0]?.name).toBe('acme--data-2--1a')
   })
 
-  it('subnetsFor(plan, domain, role) returns the tier subnets', () => {
-    expect(subnetsFor(plan, 'payments', 'app')).toBe(plan.tiers['app']?.subnets)
-    expect(subnetsFor(plan, 'payments', 'data')[0]?.name).toBe('acme--data-1--1a')
+  it('conv.subnetsFor(plan, domain, role) returns the tier subnets', () => {
+    expect(conv.subnetsFor(plan, 'payments', 'app')).toBe(plan.tiers['app']?.subnets)
+    expect(conv.subnetsFor(plan, 'payments', 'data')[0]?.name).toBe('acme--data-1--1a')
+    expect(conv.subnetsFor(plan, 'ledger', 'data')[0]?.name).toBe('acme--data-2--1a')
   })
 
   it('two domains on the same app tier resolve to the same subnets', () => {
-    expect(subnetsFor(plan, 'payments', 'app')).toBe(subnetsFor(plan, 'ledger', 'app'))
+    expect(conv.subnetsFor(plan, 'payments', 'app')).toBe(conv.subnetsFor(plan, 'ledger', 'app'))
   })
 
-  it('subnetsFor without a role flattens all assigned tiers', () => {
-    expect(subnetsFor(plan, 'payments').length).toBe(3 * 3) // public+app+data × 3 AZs
-    expect(subnetsFor(plan, 'reporting').length).toBe(1 * 3) // app only
+  it('conv.subnetsFor without a role flattens all assigned tiers', () => {
+    expect(conv.subnetsFor(plan, 'payments').length).toBe(3 * 3) // public+app+data × 3 AZs
+    expect(conv.subnetsFor(plan, 'reporting').length).toBe(1 * 3) // app only
   })
 
   it('throws when the domain has no tier for the requested role', () => {
-    expect(() => subnetsFor(plan, 'reporting', 'data')).toThrow('no data tier')
-    expect(() => subnetsFor(plan, 'nope', 'app')).toThrow('not in the topology')
+    expect(() => conv.subnetsFor(plan, 'reporting', 'data')).toThrow('no data tier')
+  })
+
+  it('rejects an undeclared domain at compile time', () => {
+    // @ts-expect-error 'nope' is not one of the constrained domains 'payments' | 'ledger' | 'reporting'
+    expect(() => conv.subnetsFor(plan, 'nope', 'app')).toThrow('not in the topology')
+  })
+
+  it('an unconstrained convention accepts any domain string', () => {
+    const loose = new DerropsConventions({ org: 'acme' }) // no .domain() → domain widens to string
+    const loosePlan = loose.tieredTopology({
+      ...baseOptions,
+      assign: { anything: { app: 'app' } },
+      access: {},
+    })
+    expect(loose.subnetsFor(loosePlan, 'anything', 'app')).toBe(loosePlan.tiers['app']?.subnets)
   })
 
   it('domains[d].tiers and tierCidrs reflect the assignment; unassigned roles omitted', () => {

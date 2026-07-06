@@ -805,16 +805,8 @@ const orgC = new DerropsConventions({ org: 'acme', env: 'prod', region })
 // This object is the authoritative source of truth for all network resource names.
 const plan = orgC.topology({
   vpcCidr: '10.0.0.0/16',
-  azAllocations: [
-    { slot: 0, az: '1a' },
-    { slot: 1, az: '1b' },
-    { slot: 2, az: '1c' },
-  ],
-  defaultKinds: [
-    { slot: 0, name: 'private' },
-    { slot: 1, name: 'public' },
-    { slot: 2, name: 'isolated' },
-  ],
+  azs: ['1a', '1b', '1c'],
+  kinds: ['private', 'public', 'isolated'], // the default — array position is the CIDR slot
 })
 
 export class VpcStack extends Stack {
@@ -919,16 +911,8 @@ Not every domain needs all three tiers. Use `includeKinds` to declare which tier
 ```typescript
 const plan = orgC.topology({
   vpcCidr: '10.0.0.0/16',
-  azAllocations: [
-    { slot: 0, az: '1a' },
-    { slot: 1, az: '1b' },
-    { slot: 2, az: '1c' },
-  ],
-  defaultKinds: [
-    { slot: 0, name: 'private' },
-    { slot: 1, name: 'public' },
-    { slot: 2, name: 'isolated' },
-  ],
+  azs: ['1a', '1b', '1c'],
+  kinds: ['private', 'public', 'isolated'],
   domains: {
     // identity has no public-facing load balancers — drop the public tier
     identity: { includeKinds: ['private', 'isolated'] },
@@ -953,7 +937,7 @@ The `isolated` subnets for `identity` keep their slot 2 CIDRs (`10.0.24.0/24`, e
 
 ### CDK — growing infrastructure without downtime
 
-Subnet `slot` numbers determine CIDR offsets. Adding new subnets — a fourth AZ or a new kind tier — never changes the CIDRs of existing subnets. CloudFormation sees the existing resources as unchanged and only provisions the new ones.
+Global `azs` and `kinds` are **append-only ordered arrays** — array position is the CIDR slot (position 0 → slot 0, etc.). Appending a fourth AZ or a new kind tier never changes the CIDRs of existing subnets. CloudFormation sees the existing resources as unchanged and only provisions the new ones. (Never insert or reorder existing entries — that shifts every following slot's CIDR.)
 
 **Adding a third AZ after initial deployment:**
 
@@ -961,31 +945,17 @@ Subnet `slot` numbers determine CIDR offsets. Adding new subnets — a fourth AZ
 // v1 — initial deployment (2 AZs)
 const plan = orgC.topology({
   vpcCidr: '10.0.0.0/16',
-  azAllocations: [
-    { slot: 0, az: '1a' },
-    { slot: 1, az: '1b' },
-  ],
-  defaultKinds: [
-    { slot: 0, name: 'private' },
-    { slot: 1, name: 'public' },
-    { slot: 2, name: 'isolated' },
-  ],
+  azs: ['1a', '1b'],
+  kinds: ['private', 'public', 'isolated'],
 })
 
-// v2 — later, add a third AZ by appending slot 2
-// Slots 0 and 1 are untouched → existing subnets are not modified
+// v2 — later, add a third AZ by appending it
+// '1a'→slot 0 and '1b'→slot 1 are untouched → their subnets are not modified;
+// '1c'→slot 2 is new and provisioned on the next deploy.
 const plan = orgC.topology({
   vpcCidr: '10.0.0.0/16',
-  azAllocations: [
-    { slot: 0, az: '1a' }, // existing — CIDR unchanged
-    { slot: 1, az: '1b' }, // existing — CIDR unchanged
-    { slot: 2, az: '1c' }, // new — provisioned on next deploy
-  ],
-  defaultKinds: [
-    { slot: 0, name: 'private' },
-    { slot: 1, name: 'public' },
-    { slot: 2, name: 'isolated' },
-  ],
+  azs: ['1a', '1b', '1c'], // appended '1c' — existing entries kept in place
+  kinds: ['private', 'public', 'isolated'],
 })
 ```
 
@@ -996,26 +966,19 @@ const plan = orgC.topology({
 const plan = orgC.topology({
   vpcCidr: '10.0.0.0/16',
   azs: ['1a', '1b', '1c'],
-  defaultKinds: [
-    { slot: 0, name: 'private' },
-    { slot: 2, name: 'isolated' },
-    // slot 1 intentionally left vacant to insert public later between them,
-    // or just use slot 3 if order doesn't matter
-  ],
+  kinds: ['private', 'isolated'], // slots 0 and 1
 })
 
-// v2 — add public tier by filling slot 1
-// Slots 0 and 2 are untouched → private and isolated CIDRs are unchanged
+// v2 — add a public tier by appending it (slot 2)
+// 'private' (0) and 'isolated' (1) keep their positions → their CIDRs are unchanged
 const plan = orgC.topology({
   vpcCidr: '10.0.0.0/16',
   azs: ['1a', '1b', '1c'],
-  defaultKinds: [
-    { slot: 0, name: 'private' },
-    { slot: 1, name: 'public' }, // new
-    { slot: 2, name: 'isolated' },
-  ],
+  kinds: ['private', 'isolated', 'public'], // appended 'public'
 })
 ```
+
+> To pin a kind to a **specific** CIDR slot — e.g. keep a gap so a future tier lands between two existing ones — use a domain-level slot-based override (`domains[name].kinds` / `additionalKinds` with explicit `slot` numbers) rather than the global array. See [Per-domain kind configuration](#per-domain-kind-configuration).
 
 The capacity limit is 4 slots per axis (0–3). With 4 kind slots and 4 AZ slots, one domain can hold up to 16 subnets. Use `capacityReport()` to check utilisation before deploying:
 
@@ -1154,9 +1117,10 @@ The domain-based `topology()` above nests tiers (`kind` = public/private/isolate
 `tieredTopology()` implements that model. Subnet count collapses to **`#tiers × AZs`**, independent of how many domains you run. Tiers own the subnets (named `acme--data-1--1a`); a domain deploys into its assigned tiers and is isolated by its own security groups.
 
 ```typescript
-const plan = new DerropsConventions({ org: 'acme', env: 'prod' })
+const conv = new DerropsConventions({ org: 'acme', env: 'prod' })
   .domain(['payments', 'ledger', 'reporting'])
-  .tieredTopology({
+
+const plan = conv.tieredTopology({
     vpcCidr: '10.0.0.0/16',
     azs: ['1a', '1b', '1c'],
     tiers: [
@@ -1185,7 +1149,7 @@ data-2   10.0.12.0/22  → 10.0.12.0/24 (1a), ...
 
 ### Finding the subnets a deployment artifact belongs in
 
-Every deployment artifact has a **domain** and a **role**. Read `plan.domains[domain].subnets[role]` (or the `subnetsFor` helper) — no CIDR math:
+Every deployment artifact has a **domain** and a **role**. Read `plan.domains[domain].subnets[role]` (or the `conv.subnetsFor(...)` method) — no CIDR math:
 
 | Artifact | role | resolves to |
 | --- | --- | --- |
@@ -1194,10 +1158,10 @@ Every deployment artifact has a **domain** and a **role**. Read `plan.domains[do
 | ALB for `payments` | `public` | `plan.domains.payments.subnets.public` |
 
 ```typescript
-import { subnetsFor } from 'derrops-conventions'
-
-subnetsFor(plan, 'payments', 'app')   // → SubnetEntry[] for the app tier (one per AZ)
-subnetsFor(plan, 'reporting', 'data') // throws — reporting has no data tier
+// `conv` carries the `.domain([...])` constraint, so the domain argument is type-checked.
+conv.subnetsFor(plan, 'payments', 'app')   // → SubnetEntry[] for the app tier (one per AZ)
+conv.subnetsFor(plan, 'reporting', 'data') // throws — reporting has no data tier
+conv.subnetsFor(plan, 'nope', 'app')       // ✗ compile error — not a declared domain
 ```
 
 Two domains assigned the same `app` tier resolve to the **same** subnets — that is the sprawl reduction; their isolation comes from their per-service security groups, not separate subnets.

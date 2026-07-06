@@ -306,28 +306,3 @@ export function buildTieredTopology(
     warnings,
   }
 }
-
-/**
- * Find the subnets a deployment artifact belongs in. Given a `domain` and a `role`
- * (`public`/`app`/`data`), returns the `SubnetEntry[]` of the tier assigned to that domain+role —
- * e.g. an ECS service → `subnetsFor(plan, 'payments', 'app')`, an RDS subnet group →
- * `subnetsFor(plan, 'payments', 'data')`. Omit `role` to get every assigned tier's subnets flattened.
- *
- * @throws if the domain is unknown, or has no tier assigned for the requested role.
- */
-export function subnetsFor(
-  plan: TieredTopology,
-  domain: string,
-  role?: 'public' | 'app' | 'data',
-): SubnetEntry[] {
-  const placement = plan.domains[domain]
-  if (!placement) throw new Error(`subnetsFor(): domain "${domain}" is not in the topology`)
-  if (role === undefined) {
-    return [placement.subnets.public, placement.subnets.app, placement.subnets.data]
-      .filter((s): s is SubnetEntry[] => s !== undefined)
-      .flat()
-  }
-  const subnets = placement.subnets[role]
-  if (!subnets) throw new Error(`subnetsFor(): domain "${domain}" has no ${role} tier assigned`)
-  return subnets
-}
