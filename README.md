@@ -1147,6 +1147,106 @@ See the [network topology guide](https://blog.derrops.com/blog/derrops-network-t
 
 ---
 
+## Tier-based segmentation (`tieredTopology()`)
+
+The domain-based `topology()` above nests tiers (`kind` = public/private/isolated) **inside every domain**, so each domain replicates a full subnet set and the subnet count grows `#domains × kinds × AZs`. AWS's [recommended model](https://maturitymodel.security.aws.dev/en/2.-foundational/vpcs/) is the inverse: a small fixed set of **tiers** (public / app / data) own the subnets, workloads are **assigned to tiers**, and isolation — especially between **multiple data tiers** — is enforced with NACLs and, for operator access, Client VPN authorization rules.
+
+`tieredTopology()` implements that model. Subnet count collapses to **`#tiers × AZs`**, independent of how many domains you run. Tiers own the subnets (named `acme--data-1--1a`); a domain deploys into its assigned tiers and is isolated by its own security groups.
+
+```typescript
+const plan = new DerropsConventions({ org: 'acme', env: 'prod' })
+  .domain(['payments', 'ledger', 'reporting'])
+  .tieredTopology({
+    vpcCidr: '10.0.0.0/16',
+    azs: ['1a', '1b', '1c'],
+    tiers: [
+      { name: 'public', role: 'public' },     // IGW route  — ALBs, NAT, bastion
+      { name: 'app',    role: 'private' },     // NAT route  — ECS, app servers, Lambda-in-VPC
+      { name: 'data-1', role: 'isolated' },    // no internet — databases
+      { name: 'data-2', role: 'isolated' },    // 2nd data tier — isolated from data-1
+    ],
+    assign: {
+      payments:  { public: 'public', app: 'app', data: 'data-1' },
+      ledger:    { public: 'public', app: 'app', data: 'data-2' },
+      reporting: {                   app: 'app'                 },  // no public, no data
+    },
+    access: { 'ledger-admins': ['ledger'] },   // Client VPN: group → domains it may reach
+  })
+```
+
+Each tier is packed into the VPC in declared order (default `/22`, override per tier with `cidrPrefix`):
+
+```
+public   10.0.0.0/22   → 10.0.0.0/24 (1a), 10.0.1.0/24 (1b), 10.0.2.0/24 (1c)
+app      10.0.4.0/22   → 10.0.4.0/24 (1a), ...
+data-1   10.0.8.0/22   → 10.0.8.0/24 (1a), ...
+data-2   10.0.12.0/22  → 10.0.12.0/24 (1a), ...
+```
+
+### Finding the subnets a deployment artifact belongs in
+
+Every deployment artifact has a **domain** and a **role**. Read `plan.domains[domain].subnets[role]` (or the `subnetsFor` helper) — no CIDR math:
+
+| Artifact | role | resolves to |
+| --- | --- | --- |
+| ECS service / ASG / Lambda-in-VPC for `payments` | `app` | `plan.domains.payments.subnets.app` |
+| RDS/Aurora subnet group for `payments` | `data` | `plan.domains.payments.subnets.data` (tier `data-1`) |
+| ALB for `payments` | `public` | `plan.domains.payments.subnets.public` |
+
+```typescript
+import { subnetsFor } from 'derrops-conventions'
+
+subnetsFor(plan, 'payments', 'app')   // → SubnetEntry[] for the app tier (one per AZ)
+subnetsFor(plan, 'reporting', 'data') // throws — reporting has no data tier
+```
+
+Two domains assigned the same `app` tier resolve to the **same** subnets — that is the sprawl reduction; their isolation comes from their per-service security groups, not separate subnets.
+
+### Generated isolation — NACLs and Client VPN
+
+- **`plan.tiers[t].naclRules`** are ready-to-apply NACL entries. Each **data tier explicitly denies ingress from every other data tier's CIDR** (lower rule numbers, evaluated first) and allows only the app tier on `dataPorts` (default `[5432, 3306, 6379]`) — the isolation that makes multiple data tiers meaningful. Public↔app and NAT egress allows are generated too.
+- **`plan.clientVpnAuthRules`** are `{ group, targetCidr }` grants resolved from `access` (the domains a group may reach → their tier CIDRs). AWS Client VPN is default-deny, so these are grants only. Because tiers are shared, granting a group a domain whose tier is shared surfaces a **`plan.warnings`** leak notice — domain-expressed VPN access is exact only for a domain's dedicated (data) tier.
+
+### CDK wiring
+
+```typescript
+// 1. Create each tier's subnets ONCE (subnet.name is the CloudFormation logical ID).
+for (const [tierName, tier] of Object.entries(plan.tiers)) {
+  const rt = new ec2.CfnRouteTable(this, tier.routeTable, { vpcId: vpc.ref })
+  rt.overrideLogicalId(tier.routeTable)
+  const nacl = new ec2.CfnNetworkAcl(this, tier.nacl, { vpcId: vpc.ref })
+  nacl.overrideLogicalId(tier.nacl)
+  for (const rule of tier.naclRules) {
+    new ec2.CfnNetworkAclEntry(this, `${tier.nacl}--${rule.direction}--${rule.ruleNumber}`, {
+      networkAclId: nacl.ref, ruleNumber: rule.ruleNumber, egress: rule.direction === 'egress',
+      protocol: rule.protocol === 'tcp' ? 6 : rule.protocol === 'udp' ? 17 : -1,
+      ruleAction: rule.action, cidrBlock: rule.cidr,
+      portRange: rule.fromPort ? { from: rule.fromPort, to: rule.toPort } : undefined,
+    })
+  }
+  for (const s of tier.subnets) {
+    const subnet = new ec2.CfnSubnet(this, s.name, { vpcId: vpc.ref, cidrBlock: s.cidr,
+      availabilityZone: `ap-southeast-2${s.az}`, mapPublicIpOnLaunch: tier.role === 'public' })
+    subnet.overrideLogicalId(s.name)
+    // ... associate with rt and nacl
+  }
+}
+
+// 2. Deploy a domain's artifacts into its assigned tiers.
+const appSubnetIds = plan.domains.payments.subnets.app!.map((s) => Fn.ref(s.name))
+
+// 3. Apply the generated Client VPN authorization rules.
+for (const r of plan.clientVpnAuthRules) {
+  new ec2.CfnClientVpnAuthorizationRule(this, `cvpn--${r.group}--${r.targetCidr}`, {
+    clientVpnEndpointId: endpoint.ref, targetNetworkCidr: r.targetCidr, accessGroupId: r.group,
+  })
+}
+```
+
+Tiers and domain-based `topology()` are independent modes — use whichever fits; the domain-based generator is untouched.
+
+---
+
 ## DNS subdomain patterns
 
 Four patterns are supported. Use `.apexMapping()` to derive the effective zone per environment.

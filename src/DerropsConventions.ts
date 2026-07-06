@@ -24,6 +24,8 @@ import type { ArnContext } from './policy/types.js'
 import { buildNetworkTopology, buildCapacityReport } from './topology.js'
 import type { OrgNetworkTopology } from './topology.js'
 import type { TopologyOptions, TopologyCapacityReport } from './topology-types.js'
+import { buildTieredTopology } from './tiered-topology.js'
+import type { TieredTopologyOptions, TieredTopology } from './tiered-topology-types.js'
 import { renderMermaid } from './mermaid.js'
 import type { MermaidOptions } from './mermaid.js'
 import type {
@@ -1565,6 +1567,35 @@ export class DerropsConventions<
    */
   capacityReport(options: TopologyOptions): TopologyCapacityReport {
     return buildCapacityReport(this, options)
+  }
+
+  /**
+   * Generate a **tier-first** VPC topology: workload tiers (public / app / data-N) own the subnets,
+   * domains are assigned one tier per role, and the isolation artifacts — per-tier NACL rule bodies
+   * and Client VPN authorization rules (expressed as the domains each group may reach) — are
+   * generated. Subnet count is `#tiers × AZs`, independent of the number of domains, which collapses
+   * the subnet sprawl of the domain-per-subnet `topology()` model.
+   *
+   * Find where a deployment artifact goes with `plan.domains[domain].subnets[role]` or the exported
+   * `subnetsFor(plan, domain, role)` helper.
+   *
+   * @example
+   * const plan = conv.domain(['payments', 'ledger']).tieredTopology({
+   *   vpcCidr: '10.0.0.0/16', azs: ['1a', '1b', '1c'],
+   *   tiers: [
+   *     { name: 'public', role: 'public' }, { name: 'app', role: 'private' },
+   *     { name: 'data-1', role: 'isolated' }, { name: 'data-2', role: 'isolated' },
+   *   ],
+   *   assign: {
+   *     payments: { public: 'public', app: 'app', data: 'data-1' },
+   *     ledger:   { public: 'public', app: 'app', data: 'data-2' },
+   *   },
+   *   access: { 'ledger-admins': ['ledger'] },
+   * })
+   * plan.domains.payments.subnets.app  // subnets for payments' compute
+   */
+  tieredTopology(options: TieredTopologyOptions): TieredTopology {
+    return buildTieredTopology(this, options)
   }
 
   // ── IAM policy generation ─────────────────────────────────────────────────

@@ -73,7 +73,7 @@ function ipToInt(ip: string): number {
   return a! * 16777216 + b! * 65536 + c! * 256 + d!
 }
 
-function intToIp(n: number): string {
+export function intToIp(n: number): string {
   return [
     Math.floor(n / 16777216) % 256,
     Math.floor(n / 65536) % 256,
@@ -82,14 +82,14 @@ function intToIp(n: number): string {
   ].join('.')
 }
 
-function parseCidr(cidr: string): { base: number; prefix: number } {
+export function parseCidr(cidr: string): { base: number; prefix: number } {
   const [ip, prefix] = cidr.split('/')
   return { base: ipToInt(ip!), prefix: Number(prefix) }
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-const MAX_SLOT = 3
+export const MAX_SLOT = 3
 
 function findDuplicates<T>(items: T[]): T[] {
   const seen = new Set<T>()
@@ -106,7 +106,7 @@ function findDuplicates<T>(items: T[]): T[] {
  * as-is; otherwise it defaults to the 1-based occurrence count of that AZ within the list, so a
  * second allocation for the same AZ becomes the expansion subnet `num` 2.
  */
-function resolveAzNums(azs: AzAllocation[]): number[] {
+export function resolveAzNums(azs: AzAllocation[]): number[] {
   const occurrences = new Map<string, number>()
   return azs.map((a) => {
     const occ = (occurrences.get(a.az) ?? 0) + 1
@@ -215,7 +215,7 @@ function validateDomainBits(domainBits: number, vpcPrefix: number): void {
 }
 
 /** Validate a per-domain `cidrPrefix` — it must be smaller than the VPC and leave room for tiers/AZs. */
-function validateDomainPrefix(domain: string, cidrPrefix: number, vpcPrefix: number): void {
+export function validateDomainPrefix(domain: string, cidrPrefix: number, vpcPrefix: number): void {
   if (!Number.isInteger(cidrPrefix)) {
     throw new Error(`domain "${domain}": cidrPrefix must be an integer, got ${cidrPrefix}`)
   }
@@ -234,7 +234,7 @@ function validateDomainPrefix(domain: string, cidrPrefix: number, vpcPrefix: num
 }
 
 /** Round an address up to the next multiple of `size` (CIDR blocks must be size-aligned). */
-function alignUp(value: number, size: number): number {
+export function alignUp(value: number, size: number): number {
   return Math.ceil(value / size) * size
 }
 
@@ -244,7 +244,7 @@ function alignUp(value: number, size: number): number {
  * may leave alignment gaps. Returns each domain's base address and prefix, the end cursor, and
  * the first domain (if any) that spills past the VPC. Never throws — callers decide.
  */
-function computeDomainLayout(
+export function computeDomainLayout(
   vpcBase: number,
   vpcPrefix: number,
   domains: string[],

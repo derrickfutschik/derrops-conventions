@@ -13,6 +13,7 @@ export type SegmentKey =
   | 'kind'
   | 'az'
   | 'num'
+  | 'tier'
   | 'consumer'
   | 'target'
   | 'version'
@@ -53,6 +54,13 @@ export interface Segments {
   az?: string
   /** Ordinal instance number — e.g. `01`, `02`, `03` */
   num?: string
+  /**
+   * Workload network tier — e.g. `public`, `app`, `data-1`, `data-2`. Used by the tier-based
+   * topology (`tieredTopology()`) resource types (`tierSubnet`/`tierRouteTable`/`tierNetworkAcl`).
+   * Like `entity`, intentionally absent from `DEFAULT_SEGMENT_ORDER`; only participates in resource
+   * types that declare it explicitly in their `segments` list.
+   */
+  tier?: string
   /** Consuming service or principal for API keys and similar — e.g. `partner-a` */
   consumer?: string
   /** Target resource or data source — e.g. `user-table`, `events-bus`; or remote org name for VPC peering — e.g. `globex` */

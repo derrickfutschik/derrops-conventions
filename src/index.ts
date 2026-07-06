@@ -16,6 +16,18 @@ export type {
   DomainCapacityReport,
   TopologyCapacityReport,
 } from './topology-types.js'
+export { buildTieredTopology, subnetsFor } from './tiered-topology.js'
+export type {
+  TierRole,
+  TierSpec,
+  TierAssignment,
+  TieredTopologyOptions,
+  NaclRule,
+  TierTopology,
+  DomainTierPlacement,
+  ClientVpnAuthRule,
+  TieredTopology,
+} from './tiered-topology-types.js'
 export { cfgKey } from './config-key.js'
 export type { ConfigDomain } from './config-key.js'
 export { buildConsoleUrl } from './console.js'

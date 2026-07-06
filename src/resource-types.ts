@@ -868,6 +868,32 @@ export const RESOURCE_TYPES = {
     wordDelimiter: '-',
     segments: ['org', 'domain'],
   },
+
+  // ── Tier-based topology (tieredTopology()) ───────────────────────────────
+  // In the tier-first model the subnet-owning unit is a workload TIER (public/app/data-N),
+  // not a domain. Domains are assigned to tiers and share them; isolation is via NACLs +
+  // security groups. 'domain' is intentionally absent — these are tier-scoped.
+  tierSubnet: {
+    // One subnet group per tier per AZ. Trailing 'num' disambiguates expansion subnets (see subnet).
+    global: false,
+    segmentDelimiter: '--',
+    wordDelimiter: '-',
+    segments: ['org', 'tier', 'az', 'num'],
+  },
+  tierRouteTable: {
+    // One route table per tier (routing determined by the tier's role: public/private/isolated).
+    global: false,
+    segmentDelimiter: '--',
+    wordDelimiter: '-',
+    segments: ['org', 'tier'],
+  },
+  tierNetworkAcl: {
+    // One NACL per tier — the subnet-range guard that isolates data tiers from one another.
+    global: false,
+    segmentDelimiter: '--',
+    wordDelimiter: '-',
+    segments: ['org', 'tier'],
+  },
   alb: {
     global: false,
     segmentDelimiter: '--',
