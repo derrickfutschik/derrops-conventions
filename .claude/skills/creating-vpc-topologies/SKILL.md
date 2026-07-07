@@ -7,7 +7,7 @@ description: Generate a full VPC network topology — VPC, subnets, route tables
 
 This repo encodes the [Derrops conventions](https://blog.derrops.com/blog/derrops-conventions) into a fluent TypeScript builder. For networking it does one job: **turn a VPC CIDR + a list of AZs + a tier layout into every subnet/route-table/NACL name and its CIDR block**, deterministically and append-stably, so you can feed the result straight into CDK L1 (`Cfn*`) constructs.
 
-The builder computes **names and CIDRs only** — it never calls AWS. You create the CDK constructs; each convention name becomes the CloudFormation **logical ID** (`overrideLogicalId()`), which is what makes redeploys non-destructive.
+The builder computes **names and CIDRs only** — it never calls AWS. You create the CDK constructs; each convention name becomes the CloudFormation **logical ID** (`overrideLogicalId()`), which is what makes redeploys non-destructive. Each subnet is a convention **`Resource`** (`entry.resource`): use `resource.name` for the name/logical id and `resource.applyTags((k,v)=>…)` to tag it. Because subnets are Resources, the convention must carry an `.arnContext({ accountId })` before calling `topology()`/`tieredTopology()`.
 
 **Deeper material in this skill:**
 - [`examples/build-topology.ts`](examples/build-topology.ts) — runnable; prints real plans for both modes. Run it from the repo root: `npx tsx .claude/skills/creating-vpc-topologies/examples/build-topology.ts`.
@@ -73,19 +73,24 @@ Flow is one-way: `internet ↔ public → private → isolated`. Not every domai
 2. **Constrain domains**: `.domain(['payments', 'identity', ...])` — this order is the CIDR contract, so fix it early and only append later.
 3. **Call the generator** with `vpcCidr` + `azs` (+ `kinds`/`tiers`/`assign`). Omit `kinds` to get the default `['private','public','isolated']`.
 4. **Audit** with `.capacityReport(...)` (domain-first) or check `plan.warnings` (tier-first) before deploying.
-5. **Wire into CDK**: iterate the plan, create one `Cfn*` per name, and call `overrideLogicalId(name)` on each. For tier-first, also emit `plan.tiers[t].naclRules` as `CfnNetworkAclEntry` and `plan.clientVpnAuthRules` as `CfnClientVpnAuthorizationRule`.
+5. **Wire into CDK**: iterate the plan, create one `Cfn*` per resource, and for each subnet call `overrideLogicalId(entry.resource.name)` and `entry.resource.applyTags((k,v)=>Tags.of(sn).add(k,v))`. For tier-first, also emit `plan.tiers[t].naclRules` as `CfnNetworkAclEntry` and `plan.clientVpnAuthRules` as `CfnClientVpnAuthorizationRule`.
 6. **Resolve placement** (tier-first): `conv.subnetsFor(plan, domain, role)` gives an artifact's subnets — no CIDR math, and `domain` is type-checked against `.domain([...])`. ALB → `public`, ECS/Lambda → `app`, RDS → `data`.
 
 ## Minimal calls
 
 ```typescript
-// Domain-first
-const plan = orgC.domain(['payments', 'identity']).topology({
-  vpcCidr: '10.0.0.0/16',
-  azs: ['1a', '1b', '1c'],           // append only
-  kinds: ['private', 'public', 'isolated'],   // the default
-})
+// Domain-first. `.arnContext({ accountId })` is required because subnets are Resources.
+const plan = orgC
+  .domain(['payments', 'identity'])
+  .arnContext({ accountId: '123456789012' })
+  .topology({
+    vpcCidr: '10.0.0.0/16',
+    azs: ['1a', '1b', '1c'],           // append only
+    kinds: ['private', 'public', 'isolated'],   // the default
+  })
 // → plan.vpc.{name,cidr}; plan.domains[d].{cidr, subnets, routeTables, nacl, tgwAttachment}
+// each subnet in plan.domains[d].subnets[kind] is { resource, cidr, az, num }
+
 
 // Tier-first (see references/tiered-topology.md for the full option set)
 const tiered = orgC.domain(['payments', 'ledger']).tieredTopology({

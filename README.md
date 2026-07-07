@@ -786,7 +786,7 @@ Not every domain needs all three tiers. A data-only domain (no load balancers) n
 
 `topology()` returns names and CIDR blocks for every subnet, route table, NACL, and TGW attachment across all domains. Pass those directly to CDK L1 constructs.
 
-The convention name (`subnet.name`) is used as the CloudFormation logical ID via `overrideLogicalId()`. This is what makes the infrastructure stable — as long as the name doesn't change, CloudFormation recognises the resource as existing and leaves it alone.
+Each subnet is a convention **`Resource`** (`subnet.resource`), so `subnet.resource.name` is used as the CloudFormation logical ID via `overrideLogicalId()` — this is what makes the infrastructure stable (as long as the name doesn't change, CloudFormation leaves the resource alone) — and `subnet.resource.applyTags(...)` tags it directly from the segments that built its name (org, domain, kind, az, and the overflow index). `topology()` builds these `Resource` objects, so the convention needs an `.arnContext({ accountId })`.
 
 ```typescript
 import { Stack, Tags, type StackProps } from 'aws-cdk-lib'
@@ -798,6 +798,7 @@ const region = 'ap-southeast-2'
 
 const orgC = new DerropsConventions({ org: 'acme', env: 'prod', region })
   .domain(['payments', 'identity'])
+  .arnContext({ accountId: '123456789012' }) // subnets are Resources → needs an ARN context
   .tagPrefix('acme:')
   .tagKeys('org', 'domain', 'environment')
 
@@ -858,26 +859,29 @@ export class VpcStack extends Stack {
         }
       }
 
-      // Subnets — only the kinds this domain has, each with its stable CIDR
+      // Subnets — only the kinds this domain has, each with its stable CIDR.
+      // `subnet.resource` is the convention Resource: `.name` is the logical id, `.applyTags` tags it.
       for (const [kind, subnets] of Object.entries(domain.subnets)) {
-        for (const subnet of subnets) {
-          const cfnSubnet = new ec2.CfnSubnet(this, subnet.name, {
+        for (const { resource, cidr, az } of subnets) {
+          const cfnSubnet = new ec2.CfnSubnet(this, resource.name, {
             vpcId: vpc.ref,
-            cidrBlock: subnet.cidr,
-            availabilityZone: `${region}${subnet.az}`,
+            cidrBlock: cidr,
+            availabilityZone: `${region}${az}`,
             // Only public subnets assign a public IP automatically
             mapPublicIpOnLaunch: kind === 'public',
           })
-          cfnSubnet.overrideLogicalId(subnet.name)
-          domainC.applyTags((k, v) => Tags.of(cfnSubnet).add(k, v))
+          cfnSubnet.overrideLogicalId(resource.name)
+          // Tag each subnet from its OWN resource — includes az (and the overflow index for
+          // expansion subnets), which the domain-level applyTags would not carry.
+          resource.applyTags((k, v) => Tags.of(cfnSubnet).add(k, v))
 
-          new ec2.CfnSubnetRouteTableAssociation(this, `${subnet.name}--rta`, {
+          new ec2.CfnSubnetRouteTableAssociation(this, `${resource.name}--rta`, {
             subnetId: cfnSubnet.ref,
             routeTableId: routeTableRefs[kind]!,
           })
 
           // NACLs — associate each subnet with the domain NACL
-          new ec2.CfnSubnetNetworkAclAssociation(this, `${subnet.name}--nacl`, {
+          new ec2.CfnSubnetNetworkAclAssociation(this, `${resource.name}--nacl`, {
             subnetId: cfnSubnet.ref,
             networkAclId: nacl.ref,
           })
@@ -1174,7 +1178,13 @@ Two domains assigned the same `app` tier resolve to the **same** subnets — tha
 ### CDK wiring
 
 ```typescript
-// 1. Create each tier's subnets ONCE (subnet.name is the CloudFormation logical ID).
+// The convention needs an ARN context because each subnet is a Resource:
+//   const conv = new DerropsConventions({ org: 'acme', env: 'prod' })
+//     .domain(['payments', 'ledger', 'reporting']).arnContext({ accountId: '123456789012' })
+//   const plan = conv.tieredTopology({ ... })
+
+// 1. Create each tier's subnets ONCE. Each subnet is a Resource: `s.resource.name` is the
+//    CloudFormation logical id, `s.resource.applyTags(...)` tags it from its segments.
 for (const [tierName, tier] of Object.entries(plan.tiers)) {
   const rt = new ec2.CfnRouteTable(this, tier.routeTable, { vpcId: vpc.ref })
   rt.overrideLogicalId(tier.routeTable)
@@ -1188,16 +1198,17 @@ for (const [tierName, tier] of Object.entries(plan.tiers)) {
       portRange: rule.fromPort ? { from: rule.fromPort, to: rule.toPort } : undefined,
     })
   }
-  for (const s of tier.subnets) {
-    const subnet = new ec2.CfnSubnet(this, s.name, { vpcId: vpc.ref, cidrBlock: s.cidr,
-      availabilityZone: `ap-southeast-2${s.az}`, mapPublicIpOnLaunch: tier.role === 'public' })
-    subnet.overrideLogicalId(s.name)
+  for (const { resource, cidr, az } of tier.subnets) {
+    const subnet = new ec2.CfnSubnet(this, resource.name, { vpcId: vpc.ref, cidrBlock: cidr,
+      availabilityZone: `ap-southeast-2${az}`, mapPublicIpOnLaunch: tier.role === 'public' })
+    subnet.overrideLogicalId(resource.name)
+    resource.applyTags((k, v) => Tags.of(subnet).add(k, v)) // tag from the convention
     // ... associate with rt and nacl
   }
 }
 
 // 2. Deploy a domain's artifacts into its assigned tiers.
-const appSubnetIds = plan.domains.payments.subnets.app!.map((s) => Fn.ref(s.name))
+const appSubnetIds = plan.domains.payments.subnets.app!.map((s) => Fn.ref(s.resource.name))
 
 // 3. Apply the generated Client VPN authorization rules.
 for (const r of plan.clientVpnAuthRules) {

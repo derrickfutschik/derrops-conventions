@@ -31,15 +31,19 @@ orgC.with({ domain: 'payments', service: 'checkout-api' })
 
 ## Full plan for CDK — `.topology()`
 
-`.topology(options)` returns names **and** stable CIDR blocks for every subnet, route table, NACL, and TGW attachment across all domains. Feed each into CDK L1 constructs and set the convention name as the CloudFormation logical ID via `overrideLogicalId()` — that stable ID is what makes the infrastructure non-destructive to redeploy.
+`.topology(options)` returns names **and** stable CIDR blocks for every subnet, route table, NACL, and TGW attachment across all domains. Each subnet is a convention `Resource` (`entry.resource`): `resource.name` is the CloudFormation logical ID (via `overrideLogicalId()`) and `resource.applyTags(fn)` tags it. Because subnets are Resources, the convention needs an `.arnContext({ accountId })`.
 
 ```typescript
-const plan = orgC.domain(['payments', 'identity']).topology({
-  vpcCidr: '10.0.0.0/16',
-  azs: ['1a', '1b', '1c'],                    // array position is the CIDR slot — append only
-  kinds: ['private', 'public', 'isolated'],   // the default if omitted
-})
+const plan = orgC
+  .domain(['payments', 'identity'])
+  .arnContext({ accountId: '123456789012' })  // subnets are Resources → needs an ARN context
+  .topology({
+    vpcCidr: '10.0.0.0/16',
+    azs: ['1a', '1b', '1c'],                    // array position is the CIDR slot — append only
+    kinds: ['private', 'public', 'isolated'],   // the default if omitted
+  })
 // plan.vpc.{name,cidr}, plan.domains[d].{subnets,nacl,routeTables,tgwAttachment}
+// each subnet: { resource, cidr, az, num } — resource.name is the subnet name
 ```
 
 For the full construct loop, the tier-first `tieredTopology()` model, and CDK wiring, use the

@@ -10,8 +10,11 @@
  */
 import { DerropsConventions } from 'derrops-conventions'
 
+// Each subnet is a convention `Resource` (name + tags), so topology() currently needs an ARN
+// context (accountId) — see TODO(topology-resource-arn) in src/topology.ts.
 const orgC = new DerropsConventions({ org: 'acme', env: 'prod', region: 'ap-southeast-2' })
   .domain(['payments', 'identity'])
+  .arnContext({ accountId: '123456789012' })
 
 // ── Mode A — domain-first `topology()` ────────────────────────────────────────
 // Tiers (kinds) are nested INSIDE every domain. Subnet count grows
@@ -27,7 +30,11 @@ const plan = orgC.topology({
 
 console.log('VPC:', plan.vpc) // { name, cidr }
 console.log('payments CIDR:', plan.domains.payments!.cidr)
-console.log('payments private subnets:', plan.domains.payments!.subnets.private)
+// Each subnet is a `SubnetEntry` — `entry.resource` is the convention Resource (name + tags).
+console.log(
+  'payments private subnets:',
+  plan.domains.payments!.subnets.private!.map((s) => ({ name: s.resource.name, cidr: s.cidr })),
+)
 console.log('payments route tables:', plan.domains.payments!.routeTables)
 
 // Drop a tier per domain with includeKinds — identity has no public-facing LB.
@@ -52,6 +59,7 @@ console.log('capacity warnings:', report.warnings)
 // bodies and Client VPN authorization rules are generated for you.
 const tieredConv = new DerropsConventions({ org: 'acme', env: 'prod', region: 'ap-southeast-2' })
   .domain(['payments', 'ledger', 'reporting'])
+  .arnContext({ accountId: '123456789012' })
 
 const tiered = tieredConv.tieredTopology({
     vpcCidr: '10.0.0.0/16',
@@ -74,24 +82,32 @@ console.log('tier CIDRs:', Object.fromEntries(Object.entries(tiered.tiers).map((
 
 // Resolve where a deployment artifact goes — by (domain, role), no CIDR math.
 // conv.subnetsFor type-checks the domain against .domain([...]) — a typo is a compile error.
-console.log('payments app subnets:', tieredConv.subnetsFor(tiered, 'payments', 'app').map((s) => s.name))
+console.log(
+  'payments app subnets:',
+  tieredConv.subnetsFor(tiered, 'payments', 'app').map((s) => s.resource.name),
+)
 console.log('data-1 NACL rules:', tiered.tiers['data-1']!.naclRules.length, 'rules')
 console.log('Client VPN grants:', tiered.clientVpnAuthRules)
 console.log('leak warnings:', tiered.warnings)
 
+// A subnet's tags come straight off its resource — the segments that built the name (org, the
+// tier/domain, az, and the overflow index) are emitted as tags:
+console.log('app--1a tags:', tiered.tiers['app']!.subnets[0]!.resource.tags)
+
 // ── Wiring a plan into CDK (sketch — no CDK dependency in this file) ──────────
-// The convention name is used as the CloudFormation LOGICAL ID via
-// overrideLogicalId() — that stable ID is what makes redeploys non-destructive.
+// Each subnet's `resource.name` is used as the CloudFormation LOGICAL ID via overrideLogicalId()
+// — that stable ID is what makes redeploys non-destructive — and `resource.applyTags()` tags it.
 //
 //   const vpc = new ec2.CfnVPC(this, plan.vpc.name, { cidrBlock: plan.vpc.cidr })
 //   vpc.overrideLogicalId(plan.vpc.name)
 //   for (const [tierName, tier] of Object.entries(tiered.tiers)) {
-//     for (const s of tier.subnets) {
-//       const sn = new ec2.CfnSubnet(this, s.name, {
-//         vpcId: vpc.ref, cidrBlock: s.cidr,
-//         availabilityZone: `ap-southeast-2${s.az}`,
+//     for (const { resource, cidr, az } of tier.subnets) {
+//       const sn = new ec2.CfnSubnet(this, resource.name, {
+//         vpcId: vpc.ref, cidrBlock: cidr,
+//         availabilityZone: `ap-southeast-2${az}`,
 //         mapPublicIpOnLaunch: tier.role === 'public',
 //       })
-//       sn.overrideLogicalId(s.name)
+//       sn.overrideLogicalId(resource.name)
+//       resource.applyTags((k, v) => Tags.of(sn).add(k, v)) // tag from the convention
 //     }
 //   }

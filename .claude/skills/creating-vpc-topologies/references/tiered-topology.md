@@ -19,7 +19,11 @@ Multiple `isolated` tiers (`data-1`, `data-2`) give per-dataset isolation — th
 ## Options
 
 ```typescript
-conv.domain(['payments', 'ledger', 'reporting']).tieredTopology({
+// Subnets are convention Resources, so the convention needs an ARN context (accountId).
+conv
+  .domain(['payments', 'ledger', 'reporting'])
+  .arnContext({ accountId: '123456789012' })
+  .tieredTopology({
   vpcCidr: '10.0.0.0/16',
   azs: ['1a', '1b', '1c'],           // array position is the CIDR slot; ≤ 4 AZs
   tiers: [                            // declared order is the CIDR packing order
@@ -49,9 +53,15 @@ plan.tiers[name]            { role, cidr, subnets[], routeTable, nacl, naclRules
 plan.domains[domain]        { tiers, subnets:{public?,app?,data?}, tierCidrs[] }
 plan.clientVpnAuthRules     [{ group, targetCidr, description }]
 plan.warnings              string[]   — shared-tier VPN leak notices
+
+Each SubnetEntry = { resource, cidr, az, num }  — `resource` is the convention `subnet` Resource
+(`resource.name` = the subnet name, `resource.applyTags(fn)` tags it, `resource.logicalId` for CDK).
 ```
 
-Subnets are named by **tier**, not domain: `acme--app--1a`. Two domains assigned the same `app` tier resolve to the **same** subnets — that is the sprawl reduction. Their isolation comes from per-service security groups.
+Subnets are named by **tier**, not domain: `acme--app--1a` (a single `subnet` resource type serves
+both models — the tier occupies the `domain` segment slot, so the name still round-trips through
+`parse()`). Two domains assigned the same `app` tier resolve to the **same** subnets — that is the
+sprawl reduction. Their isolation comes from per-service security groups.
 
 ## Resolving where an artifact deploys — `conv.subnetsFor`
 
@@ -60,7 +70,9 @@ Subnets are named by **tier**, not domain: `acme--app--1a`. Two domains assigned
 a typo or an unassigned domain is a compile error, not just a runtime throw.
 
 ```typescript
-const conv = new DerropsConventions({ org: 'acme' }).domain(['payments', 'ledger', 'reporting'])
+const conv = new DerropsConventions({ org: 'acme' })
+  .domain(['payments', 'ledger', 'reporting'])
+  .arnContext({ accountId: '123456789012' })
 const plan = conv.tieredTopology({ /* ... */ })
 
 conv.subnetsFor(plan, 'payments', 'app')    // → SubnetEntry[] for payments' app tier (one per AZ)
@@ -97,13 +109,15 @@ for (const [tierName, tier] of Object.entries(plan.tiers)) {
       portRange: rule.fromPort ? { from: rule.fromPort, to: rule.toPort } : undefined,
     })
   }
-  for (const s of tier.subnets) {
-    const sn = new ec2.CfnSubnet(this, s.name, {
-      vpcId: vpc.ref, cidrBlock: s.cidr,
-      availabilityZone: `ap-southeast-2${s.az}`,
+  // Each subnet is a convention Resource: `.resource.name` is the logical id, `.resource.applyTags` tags it.
+  for (const { resource, cidr, az } of tier.subnets) {
+    const sn = new ec2.CfnSubnet(this, resource.name, {
+      vpcId: vpc.ref, cidrBlock: cidr,
+      availabilityZone: `ap-southeast-2${az}`,
       mapPublicIpOnLaunch: tier.role === 'public',
     })
-    sn.overrideLogicalId(s.name)
+    sn.overrideLogicalId(resource.name)
+    resource.applyTags((k, v) => Tags.of(sn).add(k, v))
     // ...associate sn with rt and nacl
   }
 }
