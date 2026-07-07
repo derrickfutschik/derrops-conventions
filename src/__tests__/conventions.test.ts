@@ -137,7 +137,10 @@ describe('conventions() — type-safe factory', () => {
 
   describe('topology() integration', () => {
     it('conventions() with domain array feeds directly into topology()', () => {
-      const c = conventions({ org: 'acme', domain: ['payments', 'identity'] })
+      // topology() builds subnet Resources which currently require an ARN context — mock account id.
+      const c = conventions({ org: 'acme', domain: ['payments', 'identity'] }).arnContext({
+        accountId: '123456789012',
+      })
       const plan = c.topology({ vpcCidr: '10.0.0.0/16', azs: ['1a', '1b'] })
       expect(plan.vpc.name).toBe('acme')
       expect(plan.domains.payments?.cidr).toBe('10.0.0.0/20')

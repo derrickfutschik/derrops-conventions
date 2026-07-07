@@ -1,6 +1,11 @@
 import { describe, it, expect } from '@jest/globals'
 import { DerropsConventions } from '../DerropsConventions.js'
 
+// topology() builds subnet `Resource` objects, which currently require an ARN context even for the
+// naming-only `subnet` type. See TODO(topology-resource-arn) in src/topology.ts. Until that is
+// resolved, conventions that call topology() carry this mock account id.
+const MOCK_ACCOUNT_ID = '123456789012'
+
 // ── constraints() ─────────────────────────────────────────────────────────────
 
 describe('constraints() — runtime constraint store', () => {
@@ -77,7 +82,9 @@ describe('constraints() — runtime constraint store', () => {
 // ── topology() ────────────────────────────────────────────────────────────────
 
 describe('topology() — names and CIDRs', () => {
-  const orgC = new DerropsConventions({ org: 'acme' }).domain(['payments', 'identity'])
+  const orgC = new DerropsConventions({ org: 'acme' })
+    .domain(['payments', 'identity'])
+    .arnContext({ accountId: MOCK_ACCOUNT_ID })
 
   const result = orgC.topology({ vpcCidr: '10.0.0.0/16', azs: ['1a', '1b', '1c'] })
 
@@ -107,29 +114,29 @@ describe('topology() — names and CIDRs', () => {
 
   describe('subnet names match convention', () => {
     it('private subnet names follow acme--{domain}--private--{az}', () => {
-      expect(result.domains.payments?.subnets.private?.[0]?.name).toBe(
+      expect(result.domains.payments?.subnets.private?.[0]?.resource.name).toBe(
         'acme--payments--private--1a',
       )
-      expect(result.domains.payments?.subnets.private?.[1]?.name).toBe(
+      expect(result.domains.payments?.subnets.private?.[1]?.resource.name).toBe(
         'acme--payments--private--1b',
       )
-      expect(result.domains.payments?.subnets.private?.[2]?.name).toBe(
+      expect(result.domains.payments?.subnets.private?.[2]?.resource.name).toBe(
         'acme--payments--private--1c',
       )
     })
 
     it('public subnet names', () => {
-      expect(result.domains.payments?.subnets.public?.[0]?.name).toBe('acme--payments--public--1a')
+      expect(result.domains.payments?.subnets.public?.[0]?.resource.name).toBe('acme--payments--public--1a')
     })
 
     it('isolated subnet names', () => {
-      expect(result.domains.payments?.subnets.isolated?.[0]?.name).toBe(
+      expect(result.domains.payments?.subnets.isolated?.[0]?.resource.name).toBe(
         'acme--payments--isolated--1a',
       )
     })
 
     it('identity domain subnet names', () => {
-      expect(result.domains.identity?.subnets.private?.[0]?.name).toBe(
+      expect(result.domains.identity?.subnets.private?.[0]?.resource.name).toBe(
         'acme--identity--private--1a',
       )
     })
@@ -213,10 +220,12 @@ describe('topology() — names and CIDRs', () => {
     it('works with a single domain and single AZ', () => {
       const r = new DerropsConventions({ org: 'acme' })
         .domain(['platform'])
+        .arnContext({ accountId: MOCK_ACCOUNT_ID })
         .topology({ vpcCidr: '10.0.0.0/16', azs: ['1a'] })
       expect(r.domains.platform?.cidr).toBe('10.0.0.0/20')
-      expect(r.domains.platform?.subnets.private?.[0]).toEqual({
-        name: 'acme--platform--private--1a',
+      const subnet = r.domains.platform?.subnets.private?.[0]
+      expect(subnet?.resource.name).toBe('acme--platform--private--1a')
+      expect({ cidr: subnet?.cidr, az: subnet?.az, num: subnet?.num }).toEqual({
         cidr: '10.0.0.0/24',
         az: '1a',
         num: 1,
@@ -235,7 +244,9 @@ describe('topology() — names and CIDRs', () => {
 // ── CIDR stability — append-only at global level ──────────────────────────────
 
 describe('topology() — CIDR stability', () => {
-  const orgC = new DerropsConventions({ org: 'acme' }).domain(['payments', 'identity'])
+  const orgC = new DerropsConventions({ org: 'acme' })
+    .domain(['payments', 'identity'])
+    .arnContext({ accountId: MOCK_ACCOUNT_ID })
 
   it('appending a kind to the global list does not change existing kind CIDRs', () => {
     const baseline = orgC.topology({
@@ -316,7 +327,9 @@ describe('topology() — CIDR stability', () => {
 // ── Per-domain kind control ────────────────────────────────────────────────────
 
 describe('topology() — per-domain kind control', () => {
-  const orgC = new DerropsConventions({ org: 'acme' }).domain(['payments', 'identity'])
+  const orgC = new DerropsConventions({ org: 'acme' })
+    .domain(['payments', 'identity'])
+    .arnContext({ accountId: MOCK_ACCOUNT_ID })
 
   it('domain with kinds override emits only those kinds', () => {
     const r = orgC.topology({
@@ -394,7 +407,9 @@ describe('topology() — per-domain kind control', () => {
 // ── includeKinds filter ───────────────────────────────────────────────────────
 
 describe('topology() — includeKinds filter', () => {
-  const orgC = new DerropsConventions({ org: 'acme' }).domain(['payments', 'identity'])
+  const orgC = new DerropsConventions({ org: 'acme' })
+    .domain(['payments', 'identity'])
+    .arnContext({ accountId: MOCK_ACCOUNT_ID })
 
   it('domain with includeKinds emits only the named tiers', () => {
     const r = orgC.topology({
@@ -478,7 +493,9 @@ describe('topology() — includeKinds filter', () => {
 // ── AZ configurability ────────────────────────────────────────────────────────
 
 describe('topology() — AZ configurability', () => {
-  const orgC = new DerropsConventions({ org: 'acme' }).domain(['payments', 'identity'])
+  const orgC = new DerropsConventions({ org: 'acme' })
+    .domain(['payments', 'identity'])
+    .arnContext({ accountId: MOCK_ACCOUNT_ID })
 
   it('per-domain azAllocations override global AZs for that domain only', () => {
     const r = orgC.topology({
@@ -521,7 +538,9 @@ describe('topology() — AZ configurability', () => {
 // ── Validation errors ─────────────────────────────────────────────────────────
 
 describe('topology() — validation errors', () => {
-  const orgC = new DerropsConventions({ org: 'acme' }).domain(['payments'])
+  const orgC = new DerropsConventions({ org: 'acme' })
+    .domain(['payments'])
+    .arnContext({ accountId: MOCK_ACCOUNT_ID })
 
   it('throws on duplicate kind slots in a domain kinds override', () => {
     expect(() =>
@@ -604,7 +623,9 @@ describe('topology() — validation errors', () => {
 // ── domainBits — configurable domain-index field width ────────────────────────
 
 describe('topology() — domainBits', () => {
-  const orgC = new DerropsConventions({ org: 'acme' }).domain(['payments', 'identity'])
+  const orgC = new DerropsConventions({ org: 'acme' })
+    .domain(['payments', 'identity'])
+    .arnContext({ accountId: MOCK_ACCOUNT_ID })
 
   it('defaults to 4 bits — /16 VPC yields /20 domains and /24 subnets', () => {
     const result = orgC.topology({ vpcCidr: '10.0.0.0/16', azs: ['1a'] })
@@ -630,7 +651,9 @@ describe('topology() — domainBits', () => {
 
   it('domainBits: 5 provides 32 domain slots', () => {
     const many = Array.from({ length: 32 }, (_, i) => `d${i}`)
-    const c = new DerropsConventions({ org: 'acme' }).domain(many)
+    const c = new DerropsConventions({ org: 'acme' })
+      .domain(many)
+      .arnContext({ accountId: MOCK_ACCOUNT_ID })
     expect(() => c.topology({ vpcCidr: '10.0.0.0/11', domainBits: 5, azs: ['1a'] })).not.toThrow()
   })
 
@@ -665,7 +688,9 @@ describe('topology() — domainBits', () => {
 // ── capacityReport() ──────────────────────────────────────────────────────────
 
 describe('capacityReport()', () => {
-  const orgC = new DerropsConventions({ org: 'acme' }).domain(['payments', 'identity'])
+  const orgC = new DerropsConventions({ org: 'acme' })
+    .domain(['payments', 'identity'])
+    .arnContext({ accountId: MOCK_ACCOUNT_ID })
 
   it('reports correct kindSlotsUsed', () => {
     const report = orgC.capacityReport({
@@ -745,7 +770,9 @@ describe('capacityReport()', () => {
 // ── Appending allocations to an existing deployed topology ────────────────────
 
 describe('topology() — appending to an existing deployment', () => {
-  const orgC = new DerropsConventions({ org: 'acme' }).domain(['payments', 'identity'])
+  const orgC = new DerropsConventions({ org: 'acme' })
+    .domain(['payments', 'identity'])
+    .arnContext({ accountId: MOCK_ACCOUNT_ID })
 
   /**
    * Helper: collect every SubnetEntry across all domains and kinds from a topology,
@@ -757,7 +784,7 @@ describe('topology() — appending to an existing deployment', () => {
     for (const domain of Object.values(topo.domains)) {
       for (const subnets of Object.values(domain.subnets)) {
         for (const s of subnets) {
-          map[s.name] = { cidr: s.cidr, az: s.az }
+          map[s.resource.name] = { cidr: s.cidr, az: s.az }
         }
       }
     }
@@ -850,12 +877,14 @@ describe('topology() — appending to an existing deployment', () => {
 // ── Expansion subnets — a second+ subnet in the same tier + AZ ─────────────────
 
 describe('topology() — expansion subnets (num-indexed)', () => {
-  const orgC = new DerropsConventions({ org: 'acme' }).domain(['payments'])
+  const orgC = new DerropsConventions({ org: 'acme' })
+    .domain(['payments'])
+    .arnContext({ accountId: MOCK_ACCOUNT_ID })
 
   it('the first subnet in an AZ has num 1 and an un-indexed name', () => {
     const r = orgC.topology({ vpcCidr: '10.0.0.0/16', azs: ['1a'] })
     const s = r.domains.payments?.subnets.private?.[0]
-    expect(s?.name).toBe('acme--payments--private--1a')
+    expect(s?.resource.name).toBe('acme--payments--private--1a')
     expect(s?.num).toBe(1)
   })
 
@@ -876,10 +905,15 @@ describe('topology() — expansion subnets (num-indexed)', () => {
     })
     const priv = r.domains.payments?.subnets.private
     // primary 1a subnet is unchanged
-    expect(priv?.[0]).toEqual({ name: 'acme--payments--private--1a', cidr: '10.0.0.0/24', az: '1a', num: 1 })
+    expect(priv?.[0]?.resource.name).toBe('acme--payments--private--1a')
+    expect({ cidr: priv?.[0]?.cidr, az: priv?.[0]?.az, num: priv?.[0]?.num }).toEqual({
+      cidr: '10.0.0.0/24',
+      az: '1a',
+      num: 1,
+    })
     // expansion subnet: indexed name, num 2, CIDR from slot 3
-    expect(priv?.[3]).toEqual({
-      name: 'acme--payments--private--1a--2',
+    expect(priv?.[3]?.resource.name).toBe('acme--payments--private--1a--2')
+    expect({ cidr: priv?.[3]?.cidr, az: priv?.[3]?.az, num: priv?.[3]?.num }).toEqual({
       cidr: '10.0.3.0/24',
       az: '1a',
       num: 2,
@@ -901,17 +935,17 @@ describe('topology() — expansion subnets (num-indexed)', () => {
         },
       },
     })
-    expect(r.domains.payments?.subnets.private?.[3]?.name).toBe('acme--payments--private--1a--2')
+    expect(r.domains.payments?.subnets.private?.[3]?.resource.name).toBe('acme--payments--private--1a--2')
     expect(r.domains.payments?.subnets.private?.[3]?.num).toBe(2)
   })
 
   it('a repeated AZ in the global azs list produces expansion subnets across every kind', () => {
     const r = orgC.topology({ vpcCidr: '10.0.0.0/16', azs: ['1a', '1a'] })
     // slot 0 and slot 1 within each kind's /22, same AZ, indexed names
-    expect(r.domains.payments?.subnets.private?.[0]?.name).toBe('acme--payments--private--1a')
-    expect(r.domains.payments?.subnets.private?.[1]?.name).toBe('acme--payments--private--1a--2')
+    expect(r.domains.payments?.subnets.private?.[0]?.resource.name).toBe('acme--payments--private--1a')
+    expect(r.domains.payments?.subnets.private?.[1]?.resource.name).toBe('acme--payments--private--1a--2')
     expect(r.domains.payments?.subnets.private?.[1]?.cidr).toBe('10.0.1.0/24')
-    expect(r.domains.payments?.subnets.public?.[1]?.name).toBe('acme--payments--public--1a--2')
+    expect(r.domains.payments?.subnets.public?.[1]?.resource.name).toBe('acme--payments--public--1a--2')
   })
 
   it('parses an expansion subnet name back into segments including num', () => {
@@ -955,6 +989,7 @@ describe('topology() — per-domain CIDR sizing (cidrPrefix)', () => {
     // db-only domain sized /24 → /26 tiers → /28 subnets (AWS minimum, ~11 usable)
     const r = new DerropsConventions({ org: 'acme' })
       .domain(['db'])
+      .arnContext({ accountId: MOCK_ACCOUNT_ID })
       .topology({
         vpcCidr: '10.0.0.0/16',
         azs: ['1a', '1b'],
@@ -962,8 +997,9 @@ describe('topology() — per-domain CIDR sizing (cidrPrefix)', () => {
       })
     expect(r.domains.db?.cidr).toBe('10.0.0.0/24')
     // isolated is slot 2 → +2 × /26 (64 addresses) = +128 → 10.0.0.128/28
-    expect(r.domains.db?.subnets.isolated?.[0]).toEqual({
-      name: 'acme--db--isolated--1a',
+    const dbSubnet = r.domains.db?.subnets.isolated?.[0]
+    expect(dbSubnet?.resource.name).toBe('acme--db--isolated--1a')
+    expect({ cidr: dbSubnet?.cidr, az: dbSubnet?.az, num: dbSubnet?.num }).toEqual({
       cidr: '10.0.0.128/28',
       az: '1a',
       num: 1,
@@ -974,6 +1010,7 @@ describe('topology() — per-domain CIDR sizing (cidrPrefix)', () => {
   it('domains of different sizes are packed in order, each aligned to its own block', () => {
     const r = new DerropsConventions({ org: 'acme' })
       .domain(['payments', 'db', 'identity'])
+      .arnContext({ accountId: MOCK_ACCOUNT_ID })
       .topology({
         vpcCidr: '10.0.0.0/16',
         azs: ['1a'],
@@ -990,6 +1027,7 @@ describe('topology() — per-domain CIDR sizing (cidrPrefix)', () => {
   it('a larger-than-default domain reserves a bigger block', () => {
     const r = new DerropsConventions({ org: 'acme' })
       .domain(['big', 'small'])
+      .arnContext({ accountId: MOCK_ACCOUNT_ID })
       .topology({
         vpcCidr: '10.0.0.0/16',
         azs: ['1a'],
@@ -1003,6 +1041,7 @@ describe('topology() — per-domain CIDR sizing (cidrPrefix)', () => {
   it('uniform default domains are unaffected by the packing refactor', () => {
     const r = new DerropsConventions({ org: 'acme' })
       .domain(['payments', 'identity'])
+      .arnContext({ accountId: MOCK_ACCOUNT_ID })
       .topology({ vpcCidr: '10.0.0.0/16', azs: ['1a', '1b', '1c'] })
     expect(r.domains.payments?.cidr).toBe('10.0.0.0/20')
     expect(r.domains.identity?.cidr).toBe('10.0.16.0/20')

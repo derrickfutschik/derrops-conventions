@@ -56,9 +56,10 @@ export interface Segments {
   num?: string
   /**
    * Workload network tier — e.g. `public`, `app`, `data-1`, `data-2`. Used by the tier-based
-   * topology (`tieredTopology()`) resource types (`tierSubnet`/`tierRouteTable`/`tierNetworkAcl`).
-   * Like `entity`, intentionally absent from `DEFAULT_SEGMENT_ORDER`; only participates in resource
-   * types that declare it explicitly in their `segments` list.
+   * topology (`tieredTopology()`) resource types `tierRouteTable` and `tierNetworkAcl`. (Tier
+   * subnets reuse the shared `subnet` type, carrying the tier in the `domain` segment slot so their
+   * names round-trip through parse() like domain subnets.) Like `entity`, intentionally absent from
+   * `DEFAULT_SEGMENT_ORDER`; only participates in resource types that declare it in their `segments`.
    */
   tier?: string
   /** Consuming service or principal for API keys and similar — e.g. `partner-a` */

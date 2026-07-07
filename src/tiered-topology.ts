@@ -1,4 +1,5 @@
 import type { DerropsConventions, NameOptions } from './DerropsConventions.js'
+import type { Resource } from './policy/Resource.js'
 import {
   parseCidr,
   intToIp,
@@ -202,6 +203,11 @@ export function buildTieredTopology(
   const orgLayer = convention.orgNetworkLayer()
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const n = (opts: object): string => convention.name(opts as NameOptions<any, any>)
+  // TODO(topology-resource-arn): see topology.ts — convention.resource() requires an ARN context
+  // even for the naming-only `subnet` type, so callers must set `.arnContext({ accountId })`.
+  const r = (opts: object): Resource =>
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    convention.resource(opts as NameOptions<any, any>)
 
   // ── Build each tier's subnets / route table / NACL name ──
   const tierTopos: Record<string, TierTopology> = {}
@@ -215,8 +221,10 @@ export function buildTieredTopology(
     const subnets: SubnetEntry[] = azAllocs.map((a, i) => {
       const num = azNums[i]!
       return {
-        // num renders into the name only when > 1 (expansion subnet), matching the domain model.
-        name: n({ type: 'tierSubnet', tier: t.name, az: a.az, ...(num > 1 ? { num: String(num) } : {}) }),
+        // A `subnet` resource. The tier name occupies the `domain` segment slot (the subnet's
+        // mid-level owner) → 'acme--{tier}--{az}'. num renders into the name only when > 1
+        // (expansion subnet), matching the domain-first model.
+        resource: r({ type: 'subnet', domain: t.name, az: a.az, ...(num > 1 ? { num: String(num) } : {}) }),
         cidr: `${intToIp(base + a.slot * azSize)}/${azPrefix}`,
         az: a.az,
         num,

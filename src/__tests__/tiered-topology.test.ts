@@ -2,8 +2,15 @@ import { describe, it, expect } from '@jest/globals'
 import { DerropsConventions } from '../DerropsConventions.js'
 import type { TieredTopologyOptions } from '../tiered-topology-types.js'
 
+// tieredTopology() builds subnet `Resource` objects, which currently require an ARN context even for
+// the naming-only `subnet` type. See TODO(topology-resource-arn) in src/topology.ts. Until that is
+// resolved, topology conventions carry this mock account id.
+const MOCK_ACCOUNT_ID = '123456789012'
+
 const baseConv = () =>
-  new DerropsConventions({ org: 'acme', env: 'prod' }).domain(['payments', 'ledger', 'reporting'])
+  new DerropsConventions({ org: 'acme', env: 'prod' })
+    .domain(['payments', 'ledger', 'reporting'])
+    .arnContext({ accountId: MOCK_ACCOUNT_ID })
 
 const baseOptions: TieredTopologyOptions = {
   vpcCidr: '10.0.0.0/16',
@@ -29,10 +36,10 @@ describe('tieredTopology() — tier subnets and CIDRs', () => {
   const plan = build()
 
   it('names subnets by tier: acme--{tier}--{az}', () => {
-    expect(plan.tiers['public']?.subnets[0]?.name).toBe('acme--public--1a')
-    expect(plan.tiers['app']?.subnets[1]?.name).toBe('acme--app--1b')
-    expect(plan.tiers['data-1']?.subnets[0]?.name).toBe('acme--data-1--1a')
-    expect(plan.tiers['data-2']?.subnets[2]?.name).toBe('acme--data-2--1c')
+    expect(plan.tiers['public']?.subnets[0]?.resource.name).toBe('acme--public--1a')
+    expect(plan.tiers['app']?.subnets[1]?.resource.name).toBe('acme--app--1b')
+    expect(plan.tiers['data-1']?.subnets[0]?.resource.name).toBe('acme--data-1--1a')
+    expect(plan.tiers['data-2']?.subnets[2]?.resource.name).toBe('acme--data-2--1c')
   })
 
   it('packs tiers into consecutive /22 blocks with /24 subnets', () => {
@@ -49,13 +56,14 @@ describe('tieredTopology() — tier subnets and CIDRs', () => {
   })
 
   it('subnet count is tiers × AZs, independent of domain count', () => {
-    const names = Object.values(plan.tiers).flatMap((t) => t.subnets.map((s) => s.name))
+    const names = Object.values(plan.tiers).flatMap((t) => t.subnets.map((s) => s.resource.name))
     expect(names.length).toBe(4 * 3)
     expect(new Set(names).size).toBe(12)
 
     // Adding more domains assigned to existing tiers creates no new subnets.
     const more = new DerropsConventions({ org: 'acme' })
       .domain(['payments', 'ledger', 'reporting', 'extra1', 'extra2'])
+      .arnContext({ accountId: MOCK_ACCOUNT_ID })
       .tieredTopology({
         ...baseOptions,
         assign: {
@@ -64,7 +72,7 @@ describe('tieredTopology() — tier subnets and CIDRs', () => {
           extra2: { app: 'app', data: 'data-2' },
         },
       })
-    const moreNames = Object.values(more.tiers).flatMap((t) => t.subnets.map((s) => s.name))
+    const moreNames = Object.values(more.tiers).flatMap((t) => t.subnets.map((s) => s.resource.name))
     expect(new Set(moreNames).size).toBe(12)
   })
 
@@ -88,14 +96,14 @@ describe('tieredTopology() — finding subnets for a deployment artifact', () =>
 
   it('domains[d].subnets[role] resolves to the assigned tier subnets', () => {
     expect(plan.domains['payments']?.subnets.app).toBe(plan.tiers['app']?.subnets)
-    expect(plan.domains['payments']?.subnets.data?.[0]?.name).toBe('acme--data-1--1a')
-    expect(plan.domains['ledger']?.subnets.data?.[0]?.name).toBe('acme--data-2--1a')
+    expect(plan.domains['payments']?.subnets.data?.[0]?.resource.name).toBe('acme--data-1--1a')
+    expect(plan.domains['ledger']?.subnets.data?.[0]?.resource.name).toBe('acme--data-2--1a')
   })
 
   it('conv.subnetsFor(plan, domain, role) returns the tier subnets', () => {
     expect(conv.subnetsFor(plan, 'payments', 'app')).toBe(plan.tiers['app']?.subnets)
-    expect(conv.subnetsFor(plan, 'payments', 'data')[0]?.name).toBe('acme--data-1--1a')
-    expect(conv.subnetsFor(plan, 'ledger', 'data')[0]?.name).toBe('acme--data-2--1a')
+    expect(conv.subnetsFor(plan, 'payments', 'data')[0]?.resource.name).toBe('acme--data-1--1a')
+    expect(conv.subnetsFor(plan, 'ledger', 'data')[0]?.resource.name).toBe('acme--data-2--1a')
   })
 
   it('two domains on the same app tier resolve to the same subnets', () => {
@@ -118,6 +126,7 @@ describe('tieredTopology() — finding subnets for a deployment artifact', () =>
 
   it('an unconstrained convention accepts any domain string', () => {
     const loose = new DerropsConventions({ org: 'acme' }) // no .domain() → domain widens to string
+      .arnContext({ accountId: MOCK_ACCOUNT_ID })
     const loosePlan = loose.tieredTopology({
       ...baseOptions,
       assign: { anything: { app: 'app' } },

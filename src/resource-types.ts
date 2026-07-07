@@ -826,7 +826,7 @@ export const RESOURCE_TYPES = {
 
   // ── Networking — boundary-aligned naming ─────────────────────────────────
   // VPC = org boundary      → vpc:         segments ['org']
-  // Subnet = domain tier    → subnet:      segments ['org', 'domain', 'kind', 'az']
+  // Subnet = a tier group   → subnet:      segments ['org', 'domain', 'kind', 'az', 'num']
   // NACL = domain guard     → networkAcl:  segments ['org', 'domain']
   // SG = service access     → ec2SecurityGroup: segments ['org', 'domain', 'service', 'purpose']
   //
@@ -843,11 +843,18 @@ export const RESOURCE_TYPES = {
     segments: ['org'],
   },
   subnet: {
-    // Domain boundary — one subnet group per domain per tier (private/public/isolated) per AZ.
-    // 'service' is intentionally absent: subnets are domain-scoped, not service-scoped.
-    // Trailing 'num' disambiguates a second+ subnet in the same tier+AZ (capacity expansion):
-    // it is omitted for the first subnet (num 1) so existing names are unchanged, and rendered
-    // as e.g. '...--1a--2' for expansion subnets.
+    // A subnet group per tier per AZ. This ONE type serves both topology models — a subnet is a
+    // subnet. The `domain` segment holds the subnet's mid-level owner, which differs per model but
+    // occupies the same structural slot, so names stay identical and round-trip through parse():
+    //   • domain-first topology()      → domain=<domain> + kind → 'acme--payments--private--1a'
+    //   • tier-first  tieredTopology() → domain=<tier>          → 'acme--app--1a'
+    // (A dedicated `tier` segment is intentionally NOT added here: an extra optional segment among
+    // domain/kind would shift the positional layout and break parse() of domain-first names.)
+    // 'service' is intentionally absent: subnets are domain/tier-scoped, not service-scoped.
+    // Trailing 'num' is the overflow/expansion index disambiguating a second+ subnet in the same
+    // tier+AZ (AWS subnets can't be resized, so IP exhaustion is handled by adding another): it is
+    // omitted for the first subnet (num 1) so existing names are unchanged, and rendered as e.g.
+    // '...--1a--2' for expansion subnets.
     global: false,
     segmentDelimiter: '--',
     wordDelimiter: '-',
@@ -872,14 +879,9 @@ export const RESOURCE_TYPES = {
   // ── Tier-based topology (tieredTopology()) ───────────────────────────────
   // In the tier-first model the subnet-owning unit is a workload TIER (public/app/data-N),
   // not a domain. Domains are assigned to tiers and share them; isolation is via NACLs +
-  // security groups. 'domain' is intentionally absent — these are tier-scoped.
-  tierSubnet: {
-    // One subnet group per tier per AZ. Trailing 'num' disambiguates expansion subnets (see subnet).
-    global: false,
-    segmentDelimiter: '--',
-    wordDelimiter: '-',
-    segments: ['org', 'tier', 'az', 'num'],
-  },
+  // security groups. 'domain' is intentionally absent — these are tier-scoped. Tier SUBNETS reuse
+  // the shared `subnet` type above (with the `tier` segment set); only the route table and NACL
+  // need their own tier-scoped types.
   tierRouteTable: {
     // One route table per tier (routing determined by the tier's role: public/private/isolated).
     global: false,

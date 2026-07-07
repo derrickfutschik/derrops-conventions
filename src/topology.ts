@@ -1,4 +1,5 @@
 import type { DerropsConventions, NameOptions } from './DerropsConventions.js'
+import type { Resource } from './policy/Resource.js'
 import type {
   AzAllocation,
   KindAllocation,
@@ -23,17 +24,27 @@ import type {
  */
 export type SubnetKind = 'private' | 'public' | 'isolated'
 
-/** A single subnet with its convention name, CIDR block, and availability zone. */
+/** A single subnet — its convention `Resource`, CIDR block, and availability zone. */
 export interface SubnetEntry {
-  /** Convention name — e.g. `'acme--payments--private--1a'` (or `'…--1a--2'` for an expansion subnet) */
-  name: string
+  /**
+   * The subnet's Derrops convention {@link Resource} — always resource type `subnet`, whether the
+   * subnet is owned by a domain (domain-first `topology()`) or a tier (tier-first `tieredTopology()`).
+   * Use `resource.name` for the subnet name (and CloudFormation logical id via `resource.logicalId`),
+   * and `resource.applyTags((k, v) => …)` to tag it. The naming components — org, domain (or tier),
+   * kind, az, and the overflow index `num` — are mapped to segments on the `subnet` type, so the name
+   * is `'acme--payments--private--1a'` (or `'acme--app--1a'` in the tier model; `'…--1a--2'` for an
+   * expansion subnet).
+   */
+  resource: Resource
   /** CIDR block — e.g. `'10.0.0.0/24'` */
   cidr: string
   /** Availability zone suffix — e.g. `'1a'` */
   az: string
   /**
-   * Ordinal within the tier + AZ. `1` for the first (and usually only) subnet; `2`, `3`, … for
-   * additional expansion subnets sharing the same AZ. The name carries this index only when > 1.
+   * Ordinal within the tier + AZ — the **overflow / expansion index**. `1` for the first (and
+   * usually only) subnet; `2`, `3`, … for additional subnets added to the same tier + AZ when the
+   * first one exhausts its IPs (AWS subnets can't be resized). `resource.name` carries this index
+   * only when > 1, so the original subnet's name stays stable when a tier is later expanded.
    */
   num: number
 }
@@ -398,6 +409,15 @@ export function buildNetworkTopology(
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     convention.name({ ...opts, domain } as NameOptions<any, any>)
 
+  // TODO(topology-resource-arn): a subnet `Resource` is built via convention.resource(), which
+  // currently calls resolveArnCtx() unconditionally and therefore throws unless the convention has
+  // an ARN context — even though `subnet` is a naming-only type with no ARN. Until buildResource()
+  // resolves the ARN context lazily (only for types with `arn` config), every convention passed to
+  // topology()/tieredTopology() must set `.arnContext({ accountId })`. Tests pass a mock account id.
+  const r = (domain: string, opts: object): Resource =>
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    convention.resource({ ...opts, domain } as NameOptions<any, any>)
+
   const resultDomains: Record<string, DomainNetworkTopology> = {}
 
   domains.forEach((domain) => {
@@ -422,8 +442,9 @@ export function buildNetworkTopology(
       subnets[kindAlloc.name] = resolvedAzs.map((azAlloc, azIdx) => {
         const num = azNums[azIdx]!
         return {
-          // num is rendered into the name only when > 1, keeping first-subnet names unchanged.
-          name: n(domain, {
+          // The subnet resource. `num` (the overflow/expansion index) is rendered into the name
+          // only when > 1, so the first subnet keeps a stable name when the tier is later expanded.
+          resource: r(domain, {
             type: 'subnet',
             kind: kindAlloc.name,
             az: azAlloc.az,
